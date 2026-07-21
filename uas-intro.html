@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAS Intro - FFI UAS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="js/menu.js"></script>
+</head>
+<body>
+
+<div class="container">
+
+    <div style="text-align:center; padding: 20px 0 40px 0;">
+        <h1>UAS Intro</h1>
+        <p style="max-width: 700px; margin: 0 auto; color: #666;">
+            Sjekkliste for introduksjon til UAS ved FFI. Fyll ut felter og kryss av momentene
+            etter hvert som de gjennomføres, og last ned skjemaet som PDF når det er komplett.
+        </p>
+    </div>
+
+    <div class="form-grid no-print">
+        <div class="form-field">
+            <label for="pilotName">Dronepilot</label>
+            <input type="text" id="pilotName">
+        </div>
+        <div class="form-field">
+            <label for="instructorName">Instruktør (hvis aktuelt)</label>
+            <input type="text" id="instructorName">
+        </div>
+        <div class="form-field">
+            <label for="trainingDate">Dato for gjennomføring</label>
+            <input type="date" id="trainingDate">
+        </div>
+    </div>
+
+    <!-- Utskriftsvennlig visning av utfylte felter (vises kun ved print) -->
+    <div class="form-grid" style="display:none;" id="printFields">
+        <div class="form-field"><label>Dronepilot</label><div id="printPilotName">&nbsp;</div></div>
+        <div class="form-field"><label>Instruktør</label><div id="printInstructorName">&nbsp;</div></div>
+        <div class="form-field"><label>Dato for gjennomføring</label><div id="printTrainingDate">&nbsp;</div></div>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-book" style="color:white;"></i>
+            <h2>Teoretisk introduksjon</h2>
+        </div>
+        <ul class="checklist">
+            <li><input type="checkbox" id="t1"><label for="t1">Kjennskap til militært regelverk for UAS</label></li>
+            <li><input type="checkbox" id="t2"><label for="t2">FFIs organisasjonsgodkjenning og manualverk</label></li>
+            <li><input type="checkbox" id="t3"><label for="t3">Informasjon på Teams</label></li>
+            <li><input type="checkbox" id="t4"><label for="t4">Fartøyliste og loggføring på Teams</label></li>
+        </ul>
+    </div>
+
+    <h3 style="margin-top: 40px;">Praktisk egentrening (A2)</h3>
+
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-map" style="color:white;"></i>
+            <h2>A. Planlegging av operasjonen</h2>
+        </div>
+        <ul class="checklist">
+            <li><input type="checkbox" id="a1"><label for="a1">FFI-tillatelse og eventuelt MÅK kategori det flys under</label></li>
+            <li><input type="checkbox" id="a2"><label for="a2">Definere operasjonsområdet</label></li>
+            <li><input type="checkbox" id="a3"><label for="a3">Vurdere bakkerisiko og sikkerhetsavstander</label></li>
+            <li><input type="checkbox" id="a4"><label for="a4">NOTAM og UAS geografiske soner</label></li>
+            <li><input type="checkbox" id="a5"><label for="a5">Værforhold</label></li>
+            <li><input type="checkbox" id="a6"><label for="a6">Koordinering med andre i området</label></li>
+            <li><input type="checkbox" id="a7"><label for="a7">Gjøre klar dronen</label></li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-clipboard-check" style="color:white;"></i>
+            <h2>B. Forberedelser før flyging</h2>
+        </div>
+        <ul class="checklist">
+            <li><input type="checkbox" id="b1"><label for="b1">Vurder faremomenter i området</label></li>
+            <li><input type="checkbox" id="b2"><label for="b2">Inspiser dronen og propellene</label></li>
+            <li><input type="checkbox" id="b3"><label for="b3">Starte opp, sjekke software og system</label></li>
+            <li><input type="checkbox" id="b4"><label for="b4">Remote ID</label></li>
+            <li><input type="checkbox" id="b5"><label for="b5">Failsafe-innstillinger</label></li>
+            <li><input type="checkbox" id="b6"><label for="b6">HemsWX / klarering</label></li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-helicopter" style="color:white;"></i>
+            <h2>C. Normale flyøvelser</h2>
+        </div>
+        <ul class="checklist">
+            <li><input type="checkbox" id="c1"><label for="c1">Avgang og sjekk av kontroller</label></li>
+            <li>
+                <input type="checkbox" id="c2">
+                <label for="c2">Flyging
+                    <span class="hint">Hover, svinger, rett frem, endre høyde, åttetall.</span>
+                </label>
+            </li>
+            <li>
+                <input type="checkbox" id="c3">
+                <label for="c3">Flyging - multirotor
+                    <span class="hint">Fly langt nok unna slik at det ikke er mulig å se dronens orientering. Deretter returner dronen til avgangsstedet uten hjelpemidler.</span>
+                </label>
+            </li>
+            <li>
+                <input type="checkbox" id="c4">
+                <label for="c4">Flyging - fixed wing
+                    <span class="hint">Flyging i forskjellige hastigheter</span>
+                </label>
+            </li>
+            <li><input type="checkbox" id="c5"><label for="c5">Holde dronen utenfor begrensede områder</label></li>
+            <li><input type="checkbox" id="c6"><label for="c6">Vurdere avstand og høyde til dronen</label></li>
+            <li><input type="checkbox" id="c7"><label for="c7">Return to home (RTH), automatisk og manuell</label></li>
+            <li><input type="checkbox" id="c8"><label for="c8">Landing</label></li>
+            <li><input type="checkbox" id="c9"><label for="c9">Avbrutt landing</label></li>
+            <li><input type="checkbox" id="c10"><label for="c10">Monitorering av batteri og linkkvalitet</label></li>
+            <li><input type="checkbox" id="c11"><label for="c11">Holde trygg avstand fra hindre</label></li>
+            <li><input type="checkbox" id="c12"><label for="c12">Trene på flyging i forskjellige flymoduser</label></li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-triangle-exclamation" style="color:white;"></i>
+            <h2>D. Unormale situasjoner</h2>
+        </div>
+        <ul class="checklist">
+            <li><input type="checkbox" id="d1"><label for="d1">Flyging uten GPS-assistanse (hvis den lar seg skru av)</label></li>
+            <li>
+                <input type="checkbox" id="d2">
+                <label for="d2">Situasjoner der personer kommer inn i området
+                    <span class="hint">Fly unna. Vurder å lande.</span>
+                </label>
+            </li>
+            <li>
+                <input type="checkbox" id="d3">
+                <label for="d3">Situasjoner der andre luftfartøy kommer inn i området
+                    <span class="hint">Fly unna. Vurder å lande.</span>
+                </label>
+            </li>
+            <li>
+                <input type="checkbox" id="d4">
+                <label for="d4">Vite hvordan motorene kan slås av i luften
+                    <span class="hint">Ikke øves på i praksis</span>
+                </label>
+            </li>
+            <li><input type="checkbox" id="d5"><label for="d5">Bruk av RTH og å avbryte RTH</label></li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-clipboard-list" style="color:white;"></i>
+            <h2>E. Debriefing og loggføring</h2>
+        </div>
+        <ul class="checklist">
+            <li><input type="checkbox" id="e1"><label for="e1">Skru av dronen før fjernkontrollen</label></li>
+            <li><input type="checkbox" id="e2"><label for="e2">Fysisk sjekk av dronen</label></li>
+            <li><input type="checkbox" id="e3"><label for="e3">Loggføring</label></li>
+            <li><input type="checkbox" id="e4"><label for="e4">Debrief - læring</label></li>
+            <li><input type="checkbox" id="e5"><label for="e5">Kjennskap til rapportering av læringspunkter og hendelser</label></li>
+        </ul>
+    </div>
+
+    <div class="signature-row">
+        <div class="signature-pad-block">
+            <div class="signature-pad-label">Signatur dronepilot</div>
+            <div class="signature-pad-wrap"><canvas id="sigPilot"></canvas></div>
+            <button type="button" class="signature-clear-btn no-print" data-clear-target="sigPilot">Nullstill signatur</button>
+        </div>
+        <div class="signature-pad-block">
+            <div class="signature-pad-label">Signatur instruktør</div>
+            <div class="signature-pad-wrap"><canvas id="sigInstructor"></canvas></div>
+            <button type="button" class="signature-clear-btn no-print" data-clear-target="sigInstructor">Nullstill signatur</button>
+        </div>
+    </div>
+
+    <div class="no-print" style="text-align:center; margin-top: 40px;">
+        <button class="btn" id="downloadPdfBtn"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
+        <button class="btn btn-secondary" id="downloadJsonBtn"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
+    </div>
+
+</div>
+
+<script src="js/signature-pad.js"></script>
+<script src="js/uas-intro.js"></script>
+</body>
+</html>
