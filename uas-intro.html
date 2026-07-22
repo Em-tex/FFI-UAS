@@ -31,12 +31,20 @@
             <input type="text" id="pilotName">
         </div>
         <div class="form-field">
-            <label for="instructorName">Instruktør (hvis aktuelt)</label>
+            <label for="instructorName">Instruktør</label>
             <input type="text" id="instructorName">
         </div>
         <div class="form-field">
             <label for="trainingDate">Dato for gjennomføring</label>
             <input type="date" id="trainingDate">
+        </div>
+        <div class="form-field">
+            <label for="droneType">Dronetype</label>
+            <select id="droneType">
+                <option value="">Velg type</option>
+                <option value="multirotor">Multirotor</option>
+                <option value="fixed-wing">Fixed wing</option>
+            </select>
         </div>
     </div>
 
@@ -45,6 +53,7 @@
         <div class="form-field"><label>Dronepilot</label><div id="printPilotName">&nbsp;</div></div>
         <div class="form-field"><label>Instruktør</label><div id="printInstructorName">&nbsp;</div></div>
         <div class="form-field"><label>Dato for gjennomføring</label><div id="printTrainingDate">&nbsp;</div></div>
+        <div class="form-field"><label>Dronetype</label><div id="printDroneType">&nbsp;</div></div>
     </div>
 
     <div class="section">
@@ -60,9 +69,18 @@
         </ul>
     </div>
 
-    <h3 style="margin-top: 40px;">Praktisk egentrening (A2)</h3>
+    <div class="section-toggle" style="margin-top: 40px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <h3 style="margin:0;">Praktisk opplæring</h3>
+        <label class="no-print" style="display:flex; align-items:center; gap:8px; font-weight:400; font-size:0.9rem; color:#444; cursor:pointer;">
+            <input type="checkbox" id="skipPractical">
+            Ikke nødvendig (har erfaring fra før)
+        </label>
+    </div>
+    <p id="skipPracticalNote" style="display:none; font-style:italic; color:#777; margin: 0 0 10px 0;">
+        Praktisk opplæring vurdert som ikke nødvendig grunnet erfaring fra tidligere.
+    </p>
 
-    <div class="section">
+    <div class="section practical-section">
         <div class="section-header">
             <i class="fa-solid fa-map" style="color:white;"></i>
             <h2>A. Planlegging av operasjonen</h2>
@@ -78,7 +96,7 @@
         </ul>
     </div>
 
-    <div class="section">
+    <div class="section practical-section">
         <div class="section-header">
             <i class="fa-solid fa-clipboard-check" style="color:white;"></i>
             <h2>B. Forberedelser før flyging</h2>
@@ -93,7 +111,7 @@
         </ul>
     </div>
 
-    <div class="section">
+    <div class="section practical-section">
         <div class="section-header">
             <i class="fa-solid fa-helicopter" style="color:white;"></i>
             <h2>C. Normale flyøvelser</h2>
@@ -106,13 +124,13 @@
                     <span class="hint">Hover, svinger, rett frem, endre høyde, åttetall.</span>
                 </label>
             </li>
-            <li>
+            <li data-drone-type="multirotor">
                 <input type="checkbox" id="c3">
                 <label for="c3">Flyging - multirotor
                     <span class="hint">Fly langt nok unna slik at det ikke er mulig å se dronens orientering. Deretter returner dronen til avgangsstedet uten hjelpemidler.</span>
                 </label>
             </li>
-            <li>
+            <li data-drone-type="fixed-wing">
                 <input type="checkbox" id="c4">
                 <label for="c4">Flyging - fixed wing
                     <span class="hint">Flyging i forskjellige hastigheter</span>
@@ -129,7 +147,7 @@
         </ul>
     </div>
 
-    <div class="section">
+    <div class="section practical-section">
         <div class="section-header">
             <i class="fa-solid fa-triangle-exclamation" style="color:white;"></i>
             <h2>D. Unormale situasjoner</h2>

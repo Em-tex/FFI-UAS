@@ -21,6 +21,11 @@ SignaturePad.prototype._setupCanvas = function () {
     this.ctx.strokeStyle = "#1a1a1a";
 };
 
+SignaturePad.prototype._getPos = function (e) {
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+};
+
 SignaturePad.prototype._bindEvents = function () {
     const self = this;
     let drawing = false;
@@ -30,20 +35,22 @@ SignaturePad.prototype._bindEvents = function () {
     this.canvas.addEventListener("pointerdown", function (e) {
         drawing = true;
         self.empty = false;
-        lastX = e.offsetX;
-        lastY = e.offsetY;
+        const pos = self._getPos(e);
+        lastX = pos.x;
+        lastY = pos.y;
         self.canvas.setPointerCapture(e.pointerId);
         e.preventDefault();
     });
 
     this.canvas.addEventListener("pointermove", function (e) {
         if (!drawing) return;
+        const pos = self._getPos(e);
         self.ctx.beginPath();
         self.ctx.moveTo(lastX, lastY);
-        self.ctx.lineTo(e.offsetX, e.offsetY);
+        self.ctx.lineTo(pos.x, pos.y);
         self.ctx.stroke();
-        lastX = e.offsetX;
-        lastY = e.offsetY;
+        lastX = pos.x;
+        lastY = pos.y;
         e.preventDefault();
     });
 

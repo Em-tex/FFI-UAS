@@ -5,10 +5,10 @@ let sigPads = {};
 
 function getFormState() {
     const state = { fields: {}, checks: {}, signatures: {} };
-    document.querySelectorAll("#pilotName, #instructorName, #trainingDate").forEach(function (el) {
+    document.querySelectorAll("#pilotName, #instructorName, #trainingDate, #droneType").forEach(function (el) {
         state.fields[el.id] = el.value;
     });
-    document.querySelectorAll(".checklist input[type=checkbox]").forEach(function (el) {
+    document.querySelectorAll(".checklist input[type=checkbox], #skipPractical").forEach(function (el) {
         state.checks[el.id] = el.checked;
     });
     Object.keys(sigPads).forEach(function (id) {
@@ -55,13 +55,30 @@ function downloadJson(filename, dataObj) {
     URL.revokeObjectURL(url);
 }
 
+function applyDroneTypeFilter() {
+    const type = document.getElementById("droneType").value;
+    document.querySelectorAll("[data-drone-type]").forEach(function (el) {
+        el.style.display = (!type || el.dataset.droneType === type) ? "" : "none";
+    });
+}
+
+function applySkipPractical() {
+    const skip = document.getElementById("skipPractical").checked;
+    document.querySelectorAll(".practical-section").forEach(function (el) {
+        el.style.display = skip ? "none" : "";
+    });
+    document.getElementById("skipPracticalNote").style.display = skip ? "block" : "none";
+}
+
 function buildSectionExport() {
     const sections = [];
     document.querySelectorAll(".section").forEach(function (sectionEl) {
+        if (sectionEl.style.display === "none") return;
         const h2 = sectionEl.querySelector(".section-header h2");
         if (!h2) return;
         const items = [];
         sectionEl.querySelectorAll(".checklist li").forEach(function (li) {
+            if (li.style.display === "none") return;
             const checkbox = li.querySelector('input[type="checkbox"]');
             const label = li.querySelector("label");
             if (!checkbox || !label) return;
@@ -83,29 +100,39 @@ document.addEventListener("DOMContentLoaded", function () {
     const pilotInput = document.getElementById("pilotName");
     const instructorInput = document.getElementById("instructorName");
     const dateInput = document.getElementById("trainingDate");
+    const droneTypeInput = document.getElementById("droneType");
+    const skipPracticalInput = document.getElementById("skipPractical");
 
     sigPads = initSignaturePads(["sigPilot", "sigInstructor"], saveState);
 
     loadState();
+    applyDroneTypeFilter();
+    applySkipPractical();
 
     if (!dateInput.value) {
         dateInput.value = new Date().toISOString().split("T")[0];
     }
 
-    document.querySelectorAll(".form-field input, .checklist input[type=checkbox]").forEach(function (el) {
+    document.querySelectorAll(".form-field input, .form-field select, .checklist input[type=checkbox], #skipPractical").forEach(function (el) {
         el.addEventListener("input", saveState);
         el.addEventListener("change", saveState);
     });
+
+    droneTypeInput.addEventListener("change", applyDroneTypeFilter);
+    skipPracticalInput.addEventListener("change", applySkipPractical);
 
     const printFields = document.getElementById("printFields");
     const printPilot = document.getElementById("printPilotName");
     const printInstructor = document.getElementById("printInstructorName");
     const printDate = document.getElementById("printTrainingDate");
+    const printDroneType = document.getElementById("printDroneType");
+    const droneTypeLabels = { "multirotor": "Multirotor", "fixed-wing": "Fixed wing" };
 
     function syncPrintFields() {
         printPilot.textContent = pilotInput.value || " ";
         printInstructor.textContent = instructorInput.value || " ";
         printDate.textContent = dateInput.value || " ";
+        printDroneType.textContent = droneTypeLabels[droneTypeInput.value] || " ";
         printFields.style.display = "grid";
     }
 
@@ -126,6 +153,7 @@ document.addEventListener("DOMContentLoaded", function () {
             dronepilot: pilotInput.value,
             instruktor: instructorInput.value,
             dato: dateInput.value,
+            dronetype: droneTypeLabels[droneTypeInput.value] || "",
             seksjoner: buildSectionExport(),
             signaturer: {
                 dronepilot: sigPads.sigPilot ? sigPads.sigPilot.toDataURL() : "",
