@@ -127,6 +127,17 @@ document.addEventListener("DOMContentLoaded", function () {
     const printDate = document.getElementById("printTrainingDate");
     const printDroneType = document.getElementById("printDroneType");
     const droneTypeLabels = { "multirotor": "Multirotor", "fixed-wing": "Fixed wing" };
+    const originalTitle = document.title;
+
+    function buildFileBaseName() {
+        const name = (pilotInput.value || "Uten navn").trim().replace(/[\\/:*?"<>|]+/g, "");
+        let date = "udatert";
+        if (dateInput.value) {
+            const parts = dateInput.value.split("-");
+            date = parts[2] + "-" + parts[1] + "-" + parts[0];
+        }
+        return "UAS Intro - " + name + " - " + date;
+    }
 
     function syncPrintFields() {
         printPilot.textContent = pilotInput.value || " ";
@@ -134,10 +145,12 @@ document.addEventListener("DOMContentLoaded", function () {
         printDate.textContent = dateInput.value || " ";
         printDroneType.textContent = droneTypeLabels[droneTypeInput.value] || " ";
         printFields.style.display = "grid";
+        document.title = buildFileBaseName();
     }
 
     function hidePrintFields() {
         printFields.style.display = "none";
+        document.title = originalTitle;
     }
 
     window.addEventListener("beforeprint", syncPrintFields);
@@ -160,8 +173,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 instruktor: sigPads.sigInstructor ? sigPads.sigInstructor.toDataURL() : ""
             }
         };
-        const namePart = (pilotInput.value || "uas-intro").trim().replace(/\s+/g, "_");
-        const datePart = dateInput.value || "udatert";
-        downloadJson("uas-intro_" + datePart + "_" + namePart + ".json", data);
+        downloadJson(buildFileBaseName() + ".json", data);
     });
 });
