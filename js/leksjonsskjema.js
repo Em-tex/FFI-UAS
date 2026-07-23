@@ -1,13 +1,25 @@
 /* js/leksjonsskjema.js */
 
 const STORAGE_KEY = "ffi-uas:leksjonsskjema";
-const FIELD_IDS = ["lessonTitle", "lessonDate", "pilotName", "uasSystem", "instructorName", "usedTime", "remainingNotes"];
+const FIELD_IDS = ["lessonTitle", "lessonDate", "pilotName", "uasSystem", "instructorName", "remainingNotes"];
 const GRADE_OPTIONS = ["", "D", "1", "2", "3"];
+const DEFAULT_EXERCISES = [
+    { exercise: "Inspeksjon av fartøyet" },
+    { exercise: "Avgang" },
+    { exercise: "Kontroll" },
+    { exercise: "Innflyging" },
+    { exercise: "Avbrutt landing" },
+    { exercise: "Landing" },
+    { exercise: "Forberedelser", generic: true },
+    { exercise: "Sjekklistebruk", generic: true },
+    { exercise: "Situasjonsforståelse", generic: true }
+];
 let sigPads = {};
 
 function createRow(data) {
     data = data || { exercise: "", grade: "", comment: "" };
     const tr = document.createElement("tr");
+    if (data.generic) tr.classList.add("generic-row");
 
     const tdNum = document.createElement("td");
     tdNum.className = "row-num";
@@ -37,11 +49,12 @@ function createRow(data) {
     tr.appendChild(tdGrade);
 
     const tdComment = document.createElement("td");
-    const commentInput = document.createElement("input");
-    commentInput.type = "text";
+    const commentInput = document.createElement("textarea");
     commentInput.className = "ex-comment";
+    commentInput.rows = 1;
     commentInput.placeholder = "Kommentar";
     commentInput.value = data.comment || "";
+    commentInput.addEventListener("input", function () { autoGrow(commentInput); });
     tdComment.appendChild(commentInput);
     tr.appendChild(tdComment);
 
@@ -60,7 +73,7 @@ function createRow(data) {
     tdRemove.appendChild(removeBtn);
     tr.appendChild(tdRemove);
 
-    tr.querySelectorAll("input, select").forEach(function (el) {
+    tr.querySelectorAll("input, select, textarea").forEach(function (el) {
         el.addEventListener("input", saveState);
         el.addEventListener("change", saveState);
     });
@@ -68,30 +81,49 @@ function createRow(data) {
     return tr;
 }
 
+function autoGrow(textarea) {
+    textarea.style.height = "auto";
+    textarea.style.height = textarea.scrollHeight + "px";
+}
+
 function renumberRows() {
-    document.querySelectorAll("#exerciseRows tr").forEach(function (tr, i) {
-        tr.querySelector(".row-num").textContent = i + 1;
+    let n = 0;
+    document.querySelectorAll("#exerciseRows tr").forEach(function (tr) {
+        const numCell = tr.querySelector(".row-num");
+        if (tr.classList.contains("generic-row")) {
+            numCell.textContent = "";
+        } else {
+            n++;
+            numCell.textContent = n;
+        }
     });
 }
 
 function addRow(data) {
-    document.getElementById("exerciseRows").appendChild(createRow(data));
+    const tr = createRow(data);
+    const tbody = document.getElementById("exerciseRows");
+    const firstGeneric = tbody.querySelector(".generic-row");
+    if (!(data && data.generic) && firstGeneric) {
+        tbody.insertBefore(tr, firstGeneric);
+    } else {
+        tbody.appendChild(tr);
+    }
+    autoGrow(tr.querySelector(".ex-comment"));
     renumberRows();
 }
 
 function getState() {
-    const state = { fields: {}, progress: "", rows: [], signatures: {} };
+    const state = { fields: {}, rows: [], signatures: {} };
     FIELD_IDS.forEach(function (id) {
         const el = document.getElementById(id);
         if (el) state.fields[id] = el.value;
     });
-    const checkedProgress = document.querySelector('input[name="progress"]:checked');
-    state.progress = checkedProgress ? checkedProgress.value : "";
     document.querySelectorAll("#exerciseRows tr").forEach(function (tr) {
         state.rows.push({
             exercise: tr.querySelector(".ex-name").value,
             grade: tr.querySelector(".ex-grade").value,
-            comment: tr.querySelector(".ex-comment").value
+            comment: tr.querySelector(".ex-comment").value,
+            generic: tr.classList.contains("generic-row")
         });
     });
     Object.keys(sigPads).forEach(function (id) {
@@ -130,9 +162,6 @@ function loadState() {
         const el = document.getElementById(entry[0]);
         if (el) el.value = entry[1];
     });
-    document.querySelectorAll('input[name="progress"]').forEach(function (radio) {
-        radio.checked = (radio.value === state.progress);
-    });
     (state.rows || []).forEach(function (row) { addRow(row); });
     Object.entries(state.signatures || {}).forEach(function (entry) {
         if (sigPads[entry[0]] && entry[1]) sigPads[entry[0]].fromDataURL(entry[1]);
@@ -151,7 +180,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     if (!hadSavedRows) {
-        for (let i = 0; i < 5; i++) addRow();
+        DEFAULT_EXERCISES.forEach(function (item) { addRow(item); });
     }
 
     document.getElementById("addRowBtn").addEventListener("click", function () {
@@ -163,9 +192,6 @@ document.addEventListener("DOMContentLoaded", function () {
         el.addEventListener("input", saveState);
         el.addEventListener("change", saveState);
     });
-    document.querySelectorAll('input[name="progress"]').forEach(function (radio) {
-        radio.addEventListener("change", saveState);
-    });
 
     function syncPrintFields() {
         document.getElementById("printLessonTitle").textContent = document.getElementById("lessonTitle").value || " ";
@@ -174,7 +200,6 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("printPilotName").textContent = document.getElementById("pilotName").value || " ";
         document.getElementById("printUasSystem").textContent = document.getElementById("uasSystem").value || " ";
         document.getElementById("printInstructorName").textContent = document.getElementById("instructorName").value || " ";
-        document.getElementById("printUsedTime").textContent = document.getElementById("usedTime").value || " ";
         document.getElementById("printFields").style.display = "grid";
     }
 
@@ -193,8 +218,17 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("downloadJsonBtn").addEventListener("click", function () {
         const state = getState();
         const data = Object.assign({ skjema: "Leksjonsskjema" }, state);
-        const namePart = (state.fields.pilotName || state.fields.lessonTitle || "leksjonsskjema").trim().replace(/\s+/g, "_");
+        const slug = function (s) { return (s || "").trim().replace(/\s+/g, "_"); };
+        const titlePart = slug(state.fields.lessonTitle) || "leksjon";
+        const pilotPart = slug(state.fields.pilotName) || "pilot";
         const datePart = state.fields.lessonDate || "udatert";
-        downloadJson("leksjonsskjema_" + datePart + "_" + namePart + ".json", data);
+        downloadJson(titlePart + "-" + pilotPart + "-" + datePart + ".json", data);
+    });
+
+    document.getElementById("resetFormBtn").addEventListener("click", function () {
+        if (confirm("Er du sikker på at du vil nullstille skjemaet? Alt utfylt innhold blir slettet.")) {
+            localStorage.removeItem(STORAGE_KEY);
+            location.reload();
+        }
     });
 });

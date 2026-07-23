@@ -25,70 +25,38 @@
     </div>
 
     <div class="form-field no-print" style="margin-bottom: 20px;">
-        <label for="lessonTitle">Leksjonstittel / tema</label>
+        <label for="lessonTitle">Leksjon</label>
         <input type="text" id="lessonTitle" placeholder="F.eks. Grunnleggende flyging">
     </div>
     <div class="form-field" id="printLessonTitleWrap" style="display:none; margin-bottom: 20px;">
-        <label>Leksjonstittel / tema</label>
+        <label>Leksjon</label>
         <div id="printLessonTitle">&nbsp;</div>
     </div>
 
     <div class="form-grid no-print">
         <div class="form-field">
-            <label for="lessonDate">Dato</label>
-            <input type="date" id="lessonDate">
-        </div>
-        <div class="form-field">
             <label for="pilotName">Dronepilot</label>
             <input type="text" id="pilotName">
-        </div>
-        <div class="form-field">
-            <label for="uasSystem">UAS-system</label>
-            <input type="text" id="uasSystem">
         </div>
         <div class="form-field">
             <label for="instructorName">Instruktør</label>
             <input type="text" id="instructorName">
         </div>
         <div class="form-field">
-            <label for="usedTime">Brukt tid</label>
-            <input type="text" id="usedTime" placeholder="t:mm">
+            <label for="uasSystem">UAS-system</label>
+            <input type="text" id="uasSystem">
+        </div>
+        <div class="form-field">
+            <label for="lessonDate">Dato</label>
+            <input type="date" id="lessonDate">
         </div>
     </div>
 
     <div class="form-grid" id="printFields" style="display:none;">
-        <div class="form-field"><label>Dato</label><div id="printLessonDate">&nbsp;</div></div>
         <div class="form-field"><label>Dronepilot</label><div id="printPilotName">&nbsp;</div></div>
-        <div class="form-field"><label>UAS-system</label><div id="printUasSystem">&nbsp;</div></div>
         <div class="form-field"><label>Instruktør</label><div id="printInstructorName">&nbsp;</div></div>
-        <div class="form-field"><label>Brukt tid</label><div id="printUsedTime">&nbsp;</div></div>
-    </div>
-
-    <div class="section">
-        <div class="section-header">
-            <i class="fa-solid fa-chart-line" style="color:white;"></i>
-            <h2>Progresjon (samlet vurdering for leksjonen)</h2>
-        </div>
-        <div style="padding: 20px;">
-            <div class="progress-row" id="progressRow">
-                <div class="progress-option">
-                    <input type="radio" name="progress" id="progress-1" value="Utilfredsstillende">
-                    <label for="progress-1">Utilfredsstillende</label>
-                </div>
-                <div class="progress-option">
-                    <input type="radio" name="progress" id="progress-2" value="Svak">
-                    <label for="progress-2">Svak</label>
-                </div>
-                <div class="progress-option">
-                    <input type="radio" name="progress" id="progress-3" value="God">
-                    <label for="progress-3">God</label>
-                </div>
-                <div class="progress-option">
-                    <input type="radio" name="progress" id="progress-4" value="Meget god">
-                    <label for="progress-4">Meget god</label>
-                </div>
-            </div>
-        </div>
+        <div class="form-field"><label>UAS-system</label><div id="printUasSystem">&nbsp;</div></div>
+        <div class="form-field"><label>Dato</label><div id="printLessonDate">&nbsp;</div></div>
     </div>
 
     <div class="section">
@@ -96,19 +64,19 @@
             <i class="fa-solid fa-list-check" style="color:white;"></i>
             <h2>Øvelser</h2>
         </div>
+        <table class="exercise-table">
+            <thead>
+                <tr>
+                    <th style="width: 34px;">Nr</th>
+                    <th>Øvelse</th>
+                    <th class="col-grade">Karakter</th>
+                    <th>Kommentar</th>
+                    <th class="col-remove"></th>
+                </tr>
+            </thead>
+            <tbody id="exerciseRows"></tbody>
+        </table>
         <div style="padding: 20px;">
-            <table class="exercise-table">
-                <thead>
-                    <tr>
-                        <th style="width: 34px;">Nr</th>
-                        <th>Øvelse</th>
-                        <th class="col-grade">Karakter</th>
-                        <th>Kommentar</th>
-                        <th class="col-remove"></th>
-                    </tr>
-                </thead>
-                <tbody id="exerciseRows"></tbody>
-            </table>
             <button type="button" class="btn add-row-btn no-print" id="addRowBtn">
                 <i class="fa-solid fa-plus"></i> Legg til øvelse
             </button>
@@ -124,7 +92,7 @@
     <div class="section">
         <div class="section-header">
             <i class="fa-solid fa-comment" style="color:white;"></i>
-            <h2>Gjenstående øvelser / kommentarer</h2>
+            <h2>Kommentarer</h2>
         </div>
         <div style="padding: 20px;">
             <textarea class="textarea-field" id="remainingNotes"></textarea>
@@ -147,6 +115,7 @@
     <div class="no-print" style="text-align:center; margin-top: 40px;">
         <button class="btn" id="downloadPdfBtn"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
         <button class="btn btn-secondary" id="downloadJsonBtn"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
+        <button class="btn btn-danger" id="resetFormBtn"><i class="fa-solid fa-rotate-left"></i> Nullstill skjema</button>
     </div>
 
 </div>
