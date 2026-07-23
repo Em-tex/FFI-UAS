@@ -8,7 +8,7 @@ function getFormState() {
     document.querySelectorAll("#pilotName, #instructorName, #trainingDate, #droneType").forEach(function (el) {
         state.fields[el.id] = el.value;
     });
-    document.querySelectorAll(".checklist input[type=checkbox], #skipPractical, #skipDebriefing").forEach(function (el) {
+    document.querySelectorAll(".checklist input[type=checkbox], #skipPractical").forEach(function (el) {
         state.checks[el.id] = el.checked;
     });
     Object.keys(sigPads).forEach(function (id) {
@@ -70,14 +70,6 @@ function applySkipPractical() {
     document.getElementById("skipPracticalNote").style.display = skip ? "block" : "none";
 }
 
-function applySkipDebriefing() {
-    const skip = document.getElementById("skipDebriefing").checked;
-    document.querySelectorAll(".debriefing-section").forEach(function (el) {
-        el.style.display = skip ? "none" : "";
-    });
-    document.getElementById("skipDebriefingNote").style.display = skip ? "block" : "none";
-}
-
 function buildSectionExport() {
     const sections = [];
     document.querySelectorAll(".section").forEach(function (sectionEl) {
@@ -110,27 +102,24 @@ document.addEventListener("DOMContentLoaded", function () {
     const dateInput = document.getElementById("trainingDate");
     const droneTypeInput = document.getElementById("droneType");
     const skipPracticalInput = document.getElementById("skipPractical");
-    const skipDebriefingInput = document.getElementById("skipDebriefing");
 
     sigPads = initSignaturePads(["sigPilot", "sigInstructor"], saveState);
 
     loadState();
     applyDroneTypeFilter();
     applySkipPractical();
-    applySkipDebriefing();
 
     if (!dateInput.value) {
         dateInput.value = new Date().toISOString().split("T")[0];
     }
 
-    document.querySelectorAll(".form-field input, .form-field select, .checklist input[type=checkbox], #skipPractical, #skipDebriefing").forEach(function (el) {
+    document.querySelectorAll(".form-field input, .form-field select, .checklist input[type=checkbox], #skipPractical").forEach(function (el) {
         el.addEventListener("input", saveState);
         el.addEventListener("change", saveState);
     });
 
     droneTypeInput.addEventListener("change", applyDroneTypeFilter);
     skipPracticalInput.addEventListener("change", applySkipPractical);
-    skipDebriefingInput.addEventListener("change", applySkipDebriefing);
 
     const printFields = document.getElementById("printFields");
     const printPilot = document.getElementById("printPilotName");
