@@ -175,4 +175,11 @@ document.addEventListener("DOMContentLoaded", function () {
         };
         downloadJson(buildFileBaseName() + ".json", data);
     });
+
+    document.getElementById("resetFormBtn").addEventListener("click", function () {
+        if (confirm("Er du sikker på at du vil nullstille skjemaet? Alt utfylt innhold blir slettet.")) {
+            localStorage.removeItem(STORAGE_KEY);
+            location.reload();
+        }
+    });
 });

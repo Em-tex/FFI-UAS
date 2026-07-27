@@ -8,6 +8,11 @@ document.addEventListener("DOMContentLoaded", function() {
                 { name: "UAS Intro", link: "uas-intro.html", icon: "fa-list-check" },
                 { name: "Leksjonsskjema", link: "leksjonsskjema.html", icon: "fa-clipboard-user" }
             ]
+        },
+        {
+            name: "Risikovurdering", icon: "fa-triangle-exclamation", children: [
+                { name: "Oversikt", link: "risikovurdering.html", icon: "fa-house" }
+            ]
         }
         // Legg til flere sider her etter hvert, f.eks.:
         // { name: "Om", link: "about.html", icon: "fa-circle-info" }
