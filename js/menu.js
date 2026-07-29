@@ -13,6 +13,11 @@ document.addEventListener("DOMContentLoaded", function() {
             name: "Risikovurdering", icon: "fa-triangle-exclamation", children: [
                 { name: "Oversikt", link: "risikovurdering.html", icon: "fa-house" }
             ]
+        },
+        {
+            name: "Simulator", icon: "fa-gamepad", children: [
+                { name: "Quadcopter", link: "simulator.html", icon: "fa-helicopter" }
+            ]
         }
         // Legg til flere sider her etter hvert, f.eks.:
         // { name: "Om", link: "about.html", icon: "fa-circle-info" }
