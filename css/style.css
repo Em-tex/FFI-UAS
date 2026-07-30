@@ -453,6 +453,58 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 .sim-status-value.sim-armed { color: #6fdc8c; }
 .sim-status-value.sim-killed { color: #ff6b6b; }
 
+.sim-crash-banner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: rgba(160, 20, 20, 0.9);
+    color: white;
+    padding: 18px 32px;
+    border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+    text-align: center;
+    pointer-events: none;
+}
+.sim-crash-banner.show { display: flex; }
+.sim-crash-banner .sim-crash-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+.sim-crash-banner .sim-crash-hint {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.sim-warning-banner {
+    position: absolute;
+    top: 34%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    background: rgba(190, 130, 15, 0.92);
+    color: white;
+    padding: 12px 26px;
+    border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+    text-align: center;
+    pointer-events: none;
+}
+.sim-warning-banner.show { display: flex; }
+.sim-warning-banner .sim-crash-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
 .sim-toolbar {
     position: absolute;
     top: 16px;
@@ -474,6 +526,45 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 .sim-btn:hover { background: white; }
 
+.sim-dropdown {
+    position: relative;
+}
+.sim-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 200px;
+    background: rgba(255,255,255,0.97);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    padding: 6px;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 5;
+}
+.sim-dropdown-menu.open {
+    display: flex;
+}
+.sim-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-weight: 600;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.85rem;
+    color: var(--ffi-blue);
+    cursor: pointer;
+    text-align: left;
+}
+.sim-dropdown-item:hover { background: rgba(3, 71, 127, 0.08); }
+.sim-dropdown-item i { width: 16px; text-align: center; }
+
 .sim-panel {
     position: absolute;
     top: 68px;
@@ -492,6 +583,32 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     margin: 0 0 12px 0;
     color: var(--ffi-blue);
     font-size: 1rem;
+}
+.sim-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+.sim-panel-header h3 {
+    margin: 0;
+    flex: 1;
+}
+.sim-panel-back,
+.sim-panel-close {
+    background: none;
+    border: none;
+    color: var(--ffi-blue);
+    cursor: pointer;
+    font-size: 0.95rem;
+    padding: 4px 7px;
+    border-radius: 5px;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+.sim-panel-back:hover,
+.sim-panel-close:hover {
+    background: rgba(3, 71, 127, 0.08);
 }
 .sim-rate-grid {
     display: flex;

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quadcopter Simulator - FFI UAS</title>
+    <title>Fixed-wing Simulator - FFI UAS</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -17,7 +17,6 @@
 
 <div class="sim-page">
     <canvas id="simCanvas"></canvas>
-    <canvas id="signalNoiseCanvas" class="sim-signal-noise"></canvas>
     <canvas id="fpvHudCanvas" class="sim-fpv-hud"></canvas>
 
     <div class="sim-hud">
@@ -25,14 +24,17 @@
             <span class="sim-crash-title">KRASJ!</span>
             <span class="sim-crash-hint">Trykk R for å resette</span>
         </div>
+        <div class="sim-warning-banner" id="tailstrikeBanner">
+            <span class="sim-crash-title">TAILSTRIKE!</span>
+        </div>
         <div class="sim-status-bar">
             <div class="sim-status-item">
                 <span class="sim-status-label">Modus</span>
                 <span id="hudMode" class="sim-status-value">Stabilized</span>
             </div>
             <div class="sim-status-item">
-                <span class="sim-status-label">Status</span>
-                <span id="hudArmed" class="sim-status-value sim-armed">Armed</span>
+                <span class="sim-status-label">Motor</span>
+                <span id="hudArmed" class="sim-status-value sim-armed">På</span>
             </div>
             <div class="sim-status-item">
                 <span class="sim-status-label">Input</span>
@@ -43,29 +45,29 @@
                 <span id="hudCamera" class="sim-status-value">Chase</span>
             </div>
             <div class="sim-status-item">
-                <span class="sim-status-label">Type</span>
-                <span id="hudDroneClass" class="sim-status-value">Racing</span>
+                <span class="sim-status-label">Fly</span>
+                <span id="hudPlaneClass" class="sim-status-value">Liten</span>
             </div>
             <div class="sim-status-item">
                 <span class="sim-status-label">Høyde</span>
                 <span id="hudAltitude" class="sim-status-value">0.0 m</span>
             </div>
             <div class="sim-status-item">
+                <span class="sim-status-label">Fart</span>
+                <span id="hudAirspeed" class="sim-status-value">0.0 m/s</span>
+            </div>
+            <div class="sim-status-item">
                 <span class="sim-status-label">Gass</span>
                 <span id="hudThrottle" class="sim-status-value">0 %</span>
             </div>
-            <div class="sim-status-item" id="hudBatteryItem" style="display:none;">
-                <span class="sim-status-label">Batteri</span>
-                <span id="hudBattery" class="sim-status-value">100 %</span>
-            </div>
-            <div class="sim-status-item" id="hudLinkItem" style="display:none;">
-                <span class="sim-status-label">Link</span>
-                <span id="hudLink" class="sim-status-value">100 %</span>
+            <div class="sim-status-item">
+                <span class="sim-status-label">Trim</span>
+                <span id="hudTrim" class="sim-status-value">0.0°</span>
             </div>
         </div>
 
         <div class="sim-toolbar no-print">
-            <button type="button" class="sim-btn" id="armToggleBtn"><i class="fa-solid fa-power-off"></i> Disarm (K)</button>
+            <button type="button" class="sim-btn" id="armToggleBtn"><i class="fa-solid fa-power-off"></i> Motor av (K)</button>
             <button type="button" class="sim-btn" id="fpvHudBtn"><i class="fa-solid fa-crosshairs"></i> OSD: Crosshair (O)</button>
             <button type="button" class="sim-btn" id="resetBtn"><i class="fa-solid fa-rotate-left"></i> Reset (R)</button>
             <button type="button" class="sim-btn" id="toggleHelpBtn"><i class="fa-solid fa-circle-question"></i> Hjelp (H)</button>
@@ -73,7 +75,7 @@
                 <button type="button" class="sim-btn" id="settingsToggleBtn"><i class="fa-solid fa-gear"></i> Settings</button>
                 <div class="sim-dropdown-menu" id="settingsMenu">
                     <button type="button" class="sim-dropdown-item" id="toggleRatesBtn"><i class="fa-solid fa-sliders"></i> Rates (T)</button>
-                    <button type="button" class="sim-dropdown-item" id="toggleDroneCameraBtn"><i class="fa-solid fa-helicopter"></i> Drone og kamera</button>
+                    <button type="button" class="sim-dropdown-item" id="toggleFlyCameraBtn"><i class="fa-solid fa-plane"></i> Fly og kamera</button>
                     <button type="button" class="sim-dropdown-item" id="toggleWindBtn"><i class="fa-solid fa-wind"></i> Vind</button>
                     <button type="button" class="sim-dropdown-item" id="toggleGamepadBtn" style="display:none;"><i class="fa-solid fa-gamepad"></i> Kontroller</button>
                 </div>
@@ -89,26 +91,27 @@
             <div class="sim-rate-grid" id="ratesGrid"></div>
         </div>
 
-        <div class="sim-panel" id="droneCameraPanel" style="display:none;">
+        <div class="sim-panel" id="flyCameraPanel" style="display:none;">
             <div class="sim-panel-header">
                 <button type="button" class="sim-panel-back" title="Tilbake"><i class="fa-solid fa-arrow-left"></i></button>
-                <h3>Drone og kamera</h3>
+                <h3>Fly og kamera</h3>
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="sim-rate-row">
-                <label>Drone-type</label>
-                <select id="droneClassSelect"></select>
+                <label>Fly-størrelse</label>
+                <select id="planeClassSelect"></select>
             </div>
             <div class="sim-rate-row">
                 <label>FPV cam-vinkel</label>
                 <input type="range" id="fpvTiltInput" min="-45" max="45" step="1">
-                <span class="sim-rate-value" id="fpvTiltValue">-15</span>
+                <span class="sim-rate-value" id="fpvTiltValue">20</span>
             </div>
             <div class="sim-rate-row">
-                <label style="flex:1;">Realistisk modus</label>
-                <input type="checkbox" id="realisticModeInput">
+                <label>Høyderor-trim</label>
+                <input type="range" id="trimInput" min="-15" max="15" step="0.5">
+                <span class="sim-rate-value" id="trimValue">0.0°</span>
             </div>
-            <p class="sim-panel-hint" style="margin-top:0;">Simulerer batteri og linkkvalitet (avstand/siktlinje til bygget) - link kan falle helt ut, med forstyrret bilde og kontroll.</p>
+            <p class="sim-panel-hint" style="margin-top:0;">Trim kan også justeres i flukt med [ / ] (tastatur).</p>
         </div>
 
         <div class="sim-panel" id="windPanel" style="display:none;">
@@ -136,7 +139,7 @@
                 <input type="range" id="windGustInput" min="0" max="1" step="0.05">
                 <span class="sim-rate-value" id="windGustValue">0.3</span>
             </div>
-            <p class="sim-panel-hint" style="margin-top:0;">Stabil vind driver droneen nedvinds - må styres imot for å holde posisjon. Vindpølsen ved avgangsplassen viser retning og styrke. "Kast" legger på naturlige, glattede vindkast oppå den stabile vinden.</p>
+            <p class="sim-panel-hint" style="margin-top:0;">Motvind forkorter start-/landingsrullingen - vindpølsen ved rullebanen viser retning og styrke.</p>
         </div>
 
         <div class="sim-panel" id="gamepadPanel" style="display:none;">
@@ -155,7 +158,7 @@
             <div id="gamepadAxesReadout" class="sim-axes-readout"></div>
             <h3 style="margin-top:16px;">Knappemapping (brytere)</h3>
             <div class="sim-rate-grid" id="gamepadButtonsGrid"></div>
-            <p class="sim-panel-hint">Trykk "Sett" og bruk deretter bryteren på senderen - fungerer enten bryteren kommer som en knapp eller som en kanal (f.eks. TBS Tango, Taranis, RadioMaster i USB-joystick-modus).</p>
+            <p class="sim-panel-hint">Trykk "Sett" og bruk deretter bryteren på senderen - fungerer enten bryteren kommer som en knapp eller som en kanal.</p>
         </div>
 
         <div class="sim-panel" id="helpPanel" style="display:none;">
@@ -164,27 +167,30 @@
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <ul class="sim-help-list">
-                <li><strong>W / S</strong><span>Pitch frem / bak</span></li>
-                <li><strong>A / D</strong><span>Roll venstre / høyre</span></li>
-                <li><strong>Q / E</strong><span>Yaw venstre / høyre</span></li>
+                <li><strong>W / S</strong><span>Høyderor (elevator) opp / ned</span></li>
+                <li><strong>A / D</strong><span>Skråror (aileron) venstre / høyre</span></li>
+                <li><strong>Q / E</strong><span>Sideror (rudder) venstre / høyre</span></li>
                 <li><strong>Shift / Ctrl</strong><span>Gass opp / ned</span></li>
-                <li><strong>1 / 2 / 3</strong><span>Acro / Stabilized / Alt Hold</span></li>
-                <li><strong>Alt Hold</strong><span>Gass ±12 % rundt 50 % holder høyden, utenfor justeres stigefart</span></li>
-                <li><strong>K</strong><span>Killswitch (arm/disarm), samme som knappen øverst</span></li>
+                <li><strong>[ / ]</strong><span>Trim høyderor ned / opp</span></li>
+                <li><strong>1 / 2</strong><span>Stabilized / Manual</span></li>
+                <li><strong>Stabilized</strong><span>Slipp pinnen -> vingene retter seg selv opp og holder trimmet stigning</span></li>
+                <li><strong>Manual</strong><span>Direkte kontroll av roret, ingen selvnivellering</span></li>
+                <li><strong>K</strong><span>Motor av/på, samme som knappen øverst</span></li>
                 <li><strong>C</strong><span>Bytt kamera (Chase → FPV → VLOS)</span></li>
-                <li><strong>VLOS</strong><span>Kamera fast ved avgangsplassen, følger droneen med blikket</span></li>
-                <li><strong>R</strong><span>Reset drone</span></li>
+                <li><strong>Høyreklikk + dra</strong><span>Se rundt flyet i Chase-kamera (påvirker ikke styringen)</span></li>
+                <li><strong>Scroll</strong><span>Zoom inn/ut i Chase-kamera</span></li>
+                <li><strong>R</strong><span>Reset - setter flyet tilbake på rullebanen</span></li>
                 <li><strong>T</strong><span>Vis/skjul Rates-panelet (også i Settings-menyen)</span></li>
                 <li><strong>H</strong><span>Vis/skjul denne hjelpen</span></li>
                 <li><strong>O</strong><span>Bytt FPV-HUD (Crosshair → Kunstig horisont → Ingen)</span></li>
-                <li><strong>Settings</strong><span>Samler Rates, Drone og kamera, Vind, Kontroller og OSD</span></li>
-                <li><strong>Rate-kurve</strong><span>Dra blått/rødt punkt på kurven for å justere direkte</span></li>
-                <li><strong>Drone-type</strong><span>Velg Racing/Middels/Cinematic i Drone og kamera-panelet - ulikt utseende og oppførsel</span></li>
-                <li><strong>Landingsben</strong><span>Middels/Cinematic kan lande på bena eller tippe over ved skjev/hard landing</span></li>
-                <li><strong>Realistisk modus</strong><span>Batteri/link i Drone og kamera-panelet; link svekkes med avstand og bak bygget</span></li>
-                <li><strong>Vind</strong><span>Aktiver i Vind-panelet - stabil vind + kast, vis retning/styrke på vindpølsen</span></li>
-                <li><strong>Racing-bane</strong><span>Stor, slynget løype med porter og en låve du flyr gjennom</span></li>
-                <li><strong>Landingsplasser</strong><span>"H"-merket ved avgangspunktet og på bygningstaket</span></li>
+                <li><strong>Fly-størrelse</strong><span>Liten/Middels/Stor i Fly og kamera-panelet - ulik fartsgrense for steiling og treghet</span></li>
+                <li><strong>Steiling</strong><span>For lav fart/for bratt sving kan la én vinge steile først - flyet ruller/faller da mot den siden</span></li>
+                <li><strong>Rullebane</strong><span>Start med full gass langs midtlinjen - flyet letter selv når farten er høy nok</span></li>
+                <li><strong>Portløype</strong><span>Vest for rullebanen - en rekke porter å fly gjennom</span></li>
+                <li><strong>Hus og låver</strong><span>Øst for rullebanen - bygninger med vindusåpninger du kan fly gjennom</span></li>
+                <li><strong>Liten by</strong><span>Litt lenger øst - landemerker å navigere etter (ikke gjennomflybar)</span></li>
+                <li><strong>Tailstrike</strong><span>Halen kan treffe bakken ved for hard rotasjon/landing - gir et eget varsel</span></li>
+                <li><strong>Vind</strong><span>Aktiver i Vind-panelet - motvind hjelper ved start/landing, sidevind krever korrigering</span></li>
             </ul>
         </div>
     </div>
@@ -192,6 +198,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="js/simulator-common.js"></script>
-<script src="js/simulator.js"></script>
+<script src="js/simulator-fixedwing.js"></script>
 </body>
 </html>

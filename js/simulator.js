@@ -10,6 +10,9 @@ const GRAVITY = 9.81;               // m/s^2
 // (Verdiene under er dempet noe ift. en ren "snap-to-rate"-følelse, slik at treghet/moment merkes tydeligere -
 // både i rotasjon og i hvor lenge droneen "seiler" videre lineært før luftmotstanden bremser den.)
 const TORQUE_GAIN = 0.30;
+// Propellskivene virker som "fallskjermer" ved vertikal bevegelse (mye mer luftmotstand opp/ned enn
+// horisontalt gjennom lufta) - uten dette føles droneen glatt/"såpete" når gassen slippes.
+const VERTICAL_DRAG_MULTIPLIER = 1.6;
 const DRONE_CLASSES = {
     racing: {
         label: "Racing (rask, lett)",
@@ -40,8 +43,8 @@ const ALT_GAIN = 6;                 // N per (m/s) avvik i Alt Hold
 const ALT_HOLD_DEADBAND = 0.12;     // ±12% rundt 50% gass regnes som "hold høyde"
 const DEFAULT_FPV_TILT_DEG = -15;   // typisk oppovervinklet FPV-kamera-montering
 const GROUND_CLEARANCE = 0.08;      // m, bakkekontakt
+const CRASH_SINK_RATE = 6;          // m/s - synkefart ved bakkeberøring som regnes som en hard krasj
 const FIXED_DT = 1 / 120;           // fysikk-tidssteg
-const STICK_RAMP_TIME = 0.22;       // sekunder til full utslag (tastatur)
 const THROTTLE_RATE = 0.7;          // gass endring per sekund (tastatur)
 
 // Realistisk modus: batteri og linkkvalitet (kun aktivt når settings.realisticMode er på).
@@ -56,7 +59,6 @@ const LINK_OBSTRUCTION_PENALTY = 0.12; // multiplikator når siktlinjen til bygg
 const MODE_LABELS = { acro: "Acro", stabilized: "Stabilized", althold: "Alt Hold" };
 const AXIS_LABELS = { roll: "Roll", pitch: "Pitch", yaw: "Yaw" };
 const CHANNEL_LABELS = { roll: "Roll", pitch: "Pitch", yaw: "Yaw", throttle: "Gass" };
-const MIN_GAMEPAD_CHANNELS = 8; // RC-sendere har typisk minst 8 kanaler i USB-joystick-modus
 
 const RATE_STORAGE_KEY = "ffi-uas:simulator-rates";
 const GAMEPAD_STORAGE_KEY = "ffi-uas:simulator-gamepad-map";
@@ -94,108 +96,34 @@ const DEFAULT_SETTINGS = {
 const FPV_HUD_MODES = ["crosshair", "horizon", "none"];
 const FPV_HUD_MODE_LABELS = { crosshair: "Crosshair", horizon: "Kunstig horisont", none: "Ingen" };
 
-/* ---------- Hjelpefunksjoner ---------- */
-function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
-
-function rampStick(current, target, dt) {
-    const maxDelta = dt / STICK_RAMP_TIME;
-    if (Math.abs(target - current) <= maxDelta) return target;
-    return current + Math.sign(target - current) * maxDelta;
-}
-
-// Betaflight "Actual Rates"-tilnærming: stick i [-1,1] -> vinkelhastighet i grader/s
-function computeRate(stick, axisRates) {
-    const expo = axisRates.expo;
-    const stickWithExpo = stick * (1 - expo) + expo * Math.pow(stick, 3);
-    const cs = axisRates.centerSensitivity;
-    const mr = axisRates.maxRate;
-    return cs * stickWithExpo + (mr - cs) * Math.pow(Math.abs(stickWithExpo), 3) * Math.sign(stickWithExpo);
-}
-
-// Integrerer orientering fra body-frame vinkelhastighet (rad/s): qdot = 0.5 * q (x) omega
-function integrateOrientation(q, angVelVec3, dt) {
-    const omegaQuat = new THREE.Quaternion(angVelVec3.x, angVelVec3.y, angVelVec3.z, 0);
-    const qDot = q.clone().multiply(omegaQuat);
-    q.x += qDot.x * 0.5 * dt;
-    q.y += qDot.y * 0.5 * dt;
-    q.z += qDot.z * 0.5 * dt;
-    q.w += qDot.w * 0.5 * dt;
-    q.normalize();
-}
+/* ---------- Hjelpefunksjoner (delt kode, se js/simulator-common.js) ---------- */
+const clamp = Sim.clamp;
+const rampStick = Sim.rampStick;
+const computeRate = Sim.computeRate;
+const computeThrottleCurve = Sim.computeThrottleCurve;
+const integrateOrientation = Sim.integrateOrientation;
 
 function loadRates() {
-    const result = {
-        roll: Object.assign({}, DEFAULT_RATES.roll),
-        pitch: Object.assign({}, DEFAULT_RATES.pitch),
-        yaw: Object.assign({}, DEFAULT_RATES.yaw),
-        throttle: Object.assign({}, DEFAULT_RATES.throttle)
-    };
-    try {
-        const raw = localStorage.getItem(RATE_STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            ["roll", "pitch", "yaw", "throttle"].forEach(function (axis) {
-                if (parsed[axis]) Object.assign(result[axis], parsed[axis]);
-            });
-        }
-    } catch (e) {}
-    return result;
+    return Sim.loadJSON(RATE_STORAGE_KEY, DEFAULT_RATES);
 }
-
-// Enkel throttle-kurve (samme kubiske expo-formel som rate-kurvene, men på gass 0..1 i stedet for grader/s).
-function computeThrottleCurve(stick01, expo) {
-    const centered = stick01 * 2 - 1;
-    const shaped = centered * (1 - expo) + expo * Math.pow(centered, 3);
-    return clamp((shaped + 1) / 2, 0, 1);
-}
-
 function saveRates() {
-    localStorage.setItem(RATE_STORAGE_KEY, JSON.stringify(rates));
+    Sim.saveJSON(RATE_STORAGE_KEY, rates);
 }
-
 function loadGamepadMap() {
-    const result = {
-        roll: Object.assign({}, DEFAULT_GAMEPAD_MAP.roll),
-        pitch: Object.assign({}, DEFAULT_GAMEPAD_MAP.pitch),
-        yaw: Object.assign({}, DEFAULT_GAMEPAD_MAP.yaw),
-        throttle: Object.assign({}, DEFAULT_GAMEPAD_MAP.throttle),
-        buttons: Object.assign({}, DEFAULT_GAMEPAD_MAP.buttons)
-    };
-    try {
-        const raw = localStorage.getItem(GAMEPAD_STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            ["roll", "pitch", "yaw", "throttle"].forEach(function (ch) {
-                if (parsed[ch]) Object.assign(result[ch], parsed[ch]);
-            });
-            if (parsed.buttons) Object.assign(result.buttons, parsed.buttons);
-        }
-    } catch (e) {}
-    return result;
+    return Sim.loadJSON(GAMEPAD_STORAGE_KEY, DEFAULT_GAMEPAD_MAP);
 }
-
 function saveGamepadMap() {
-    localStorage.setItem(GAMEPAD_STORAGE_KEY, JSON.stringify(gamepadMap));
+    Sim.saveJSON(GAMEPAD_STORAGE_KEY, gamepadMap);
 }
-
 function loadSettings() {
-    const result = Object.assign({}, DEFAULT_SETTINGS, { wind: Object.assign({}, DEFAULT_WIND) });
-    try {
-        const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            Object.assign(result, parsed);
-            result.wind = Object.assign({}, DEFAULT_WIND, parsed.wind);
-        }
-    } catch (e) {}
+    const result = Sim.loadJSON(SETTINGS_STORAGE_KEY, DEFAULT_SETTINGS);
     // Vind skal alltid være av ved sideinnlasting, uansett hva som var lagret fra en tidligere økt -
     // styrke/retning/kast huskes fortsatt, men man må aktivere vinden på nytt hver gang siden lastes.
     result.wind.enabled = false;
     return result;
 }
-
 function saveSettings() {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    Sim.saveJSON(SETTINGS_STORAGE_KEY, settings);
 }
 
 /* ---------- Tilstand ---------- */
@@ -212,33 +140,18 @@ const droneState = {
     flightMode: "stabilized",
     droneClass: DRONE_CLASSES[settings.droneClass] ? settings.droneClass : DEFAULT_DRONE_CLASS,
     batteryPercent: 100,
-    grounded: false // i bakkekontakt denne fysikk-ticken - vind skal ikke drifte den mens den står
+    grounded: false, // i bakkekontakt denne fysikk-ticken - vind skal ikke drifte den mens den står
+    crashed: false // hard landing (se CRASH_SINK_RATE) - killswitch slår automatisk inn, varsel i HUD
 };
 
 let linkQuality = 1;
 
-/* ---------- Vind (stabil + kast) ---------- */
+/* ---------- Vind (stabil + kast, se Sim.computeWind i simulator-common.js) ---------- */
 const currentWindVector = new THREE.Vector3();
 const windGustOffset = new THREE.Vector3();
 
-// Beregner gjeldende vindvektor (verdensrom, m/s): en stabil komponent pluss et jevnt glattet
-// (ikke hakkete) tilfeldig kast-element, slik at kastene føles naturlige og ikke som støy.
 function updateWind(dt) {
-    const wind = settings.wind;
-    if (!wind.enabled) {
-        currentWindVector.set(0, 0, 0);
-        return;
-    }
-    const dirRad = THREE.MathUtils.degToRad(wind.directionDeg);
-    const steady = new THREE.Vector3(Math.sin(dirRad), 0, Math.cos(dirRad)).multiplyScalar(wind.speed);
-    if (wind.gust > 0) {
-        const gustTarget = new THREE.Vector3(Math.random() * 2 - 1, 0, Math.random() * 2 - 1)
-            .multiplyScalar(wind.gust * wind.speed);
-        windGustOffset.lerp(gustTarget, Math.min(1, dt * 0.6));
-    } else {
-        windGustOffset.lerp(new THREE.Vector3(), Math.min(1, dt * 2));
-    }
-    currentWindVector.copy(steady).add(windGustOffset);
+    Sim.computeWind(dt, settings.wind, windGustOffset, currentWindVector);
 }
 
 function currentDroneSpec() {
@@ -269,125 +182,13 @@ const CAMERA_MODE_LABELS = { chase: "Chase", fpv: "FPV", vlos: "VLOS" };
 let cameraModeIndex = 0;
 
 /* ---------- Three.js: scene, drone, kameraer ---------- */
-function buildGradientSky() {
-    const skyGeo = new THREE.SphereGeometry(800, 32, 15);
-    const skyMat = new THREE.ShaderMaterial({
-        uniforms: {
-            topColor: { value: new THREE.Color(0x4a90d9) },
-            bottomColor: { value: new THREE.Color(0xdfefff) },
-            offset: { value: 20 },
-            exponent: { value: 0.6 }
-        },
-        vertexShader: [
-            "varying vec3 vWorldPosition;",
-            "void main() {",
-            "  vec4 worldPosition = modelMatrix * vec4(position, 1.0);",
-            "  vWorldPosition = worldPosition.xyz;",
-            "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
-            "}"
-        ].join("\n"),
-        fragmentShader: [
-            "uniform vec3 topColor;",
-            "uniform vec3 bottomColor;",
-            "uniform float offset;",
-            "uniform float exponent;",
-            "varying vec3 vWorldPosition;",
-            "void main() {",
-            "  float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;",
-            "  gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);",
-            "}"
-        ].join("\n"),
-        side: THREE.BackSide
-    });
-    return new THREE.Mesh(skyGeo, skyMat);
-}
-
-// Prosedural sjakkbrett-tekstur (ingen ekstern bildefil) - gir avstands-/høydereferanse mot bakken.
-function buildGroundTexture() {
-    const size = 256;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const tiles = 8;
-    const tileSize = size / tiles;
-    for (let y = 0; y < tiles; y++) {
-        for (let x = 0; x < tiles; x++) {
-            const even = (x + y) % 2 === 0;
-            ctx.fillStyle = even ? "#3a5f3a" : "#32502f";
-            ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-        }
-    }
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(125, 125); // ~2m per rute
-    return texture;
-}
-
-// Rød/hvit stripetekstur (langs pølsens lengdeakse) - ingen ekstern bildefil.
-function buildWindsockStripeTexture() {
-    const w = 32, h = 256;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    const bands = 5; // oddetall slik at både innerste og ytterste bånd blir rødt (som en ekte vindpølse)
-    const bandH = h / bands;
-    for (let i = 0; i < bands; i++) {
-        ctx.fillStyle = (i % 2 === 0) ? "#c62828" : "#f2f2f2";
-        ctx.fillRect(0, Math.floor(i * bandH), w, Math.ceil(bandH) + 1);
-    }
-    return new THREE.CanvasTexture(canvas);
-}
-
-// Vindpølse på stolpen: mount-gruppen roteres (yaw) for å peke nedvinds, henger rett ned ved 0 vind
-// og reiser seg mot vannrett med økende styrke. Én sammenhengende, jevnt avsmalnende form (ingen
-// hakkete skjøter) - "blafringen" gjøres i stedet med en myk bølge i selve geometrien.
-let windsockYawGroup = null;
-let windsockDroopPivot = null;
-let windsockSockGeometry = null;
-let windsockBasePositions = null;
-let windsockSockLength = 2.4;
-
-function buildWindsockPole() {
-    const group = new THREE.Group();
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0xff5533 });
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 7, 8), poleMat);
-    pole.position.y = 3.5;
-    pole.castShadow = true;
-    group.add(pole);
-
-    windsockYawGroup = new THREE.Group();
-    windsockYawGroup.position.y = 7;
-    group.add(windsockYawGroup);
-
-    windsockDroopPivot = new THREE.Group();
-    windsockYawGroup.add(windsockDroopPivot);
-
-    const ringMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 6, 12), ringMat);
-    ring.rotation.y = Math.PI / 2;
-    windsockDroopPivot.add(ring);
-
-    windsockSockLength = 2.4; // realistisk vindpølse-lengde
-    // radiusTop (lokal +Y) havner nærmest festeringen etter rotasjonen under, radiusBottom (lokal -Y)
-    // havner ytterst - derfor radiusTop=bred (munning) og radiusBottom=smal (hale).
-    windsockSockGeometry = new THREE.CylinderGeometry(0.35, 0.08, windsockSockLength, 16, 10, true);
-    windsockBasePositions = Float32Array.from(windsockSockGeometry.attributes.position.array);
-    const sockMat = new THREE.MeshStandardMaterial({ map: buildWindsockStripeTexture(), side: THREE.DoubleSide });
-    const sock = new THREE.Mesh(windsockSockGeometry, sockMat);
-    sock.rotation.z = Math.PI / 2;
-    sock.position.x = windsockSockLength / 2;
-    sock.castShadow = true;
-    windsockDroopPivot.add(sock);
-
-    return group;
-}
+// buildGradientSky/buildGroundTexture/buildWindsockPole/updateWindsockVisual: se
+// js/simulator-common.js (Sim.*) - delt med fixed-wing-simulatoren.
+let windsockHandle = null;
 
 function buildGround() {
     const group = new THREE.Group();
-    const groundMat = new THREE.MeshStandardMaterial({ map: buildGroundTexture() });
+    const groundMat = new THREE.MeshStandardMaterial({ map: Sim.buildGroundTexture() });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -400,9 +201,9 @@ function buildGround() {
         const r = 30;
         if (i === 6) {
             // Rett foran (-Z) avgangsplassen sett fra spawn - stolpe med vindpølse i stedet for vanlig stolpe.
-            const windsockPole = buildWindsockPole();
-            windsockPole.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
-            group.add(windsockPole);
+            windsockHandle = Sim.buildWindsockPole();
+            windsockHandle.group.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+            group.add(windsockHandle.group);
             continue;
         }
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 8), poleMat);
@@ -446,38 +247,7 @@ function buildCar() {
     return group;
 }
 
-// Prosedural "H"-landingsplass-tekstur (hvit sirkel, gul kant, sort H) - ingen ekstern bildefil.
-function buildLandingPadTexture() {
-    const size = 256;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = "#f2b100";
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2 - 14, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#151515";
-    ctx.font = "bold " + Math.round(size * 0.56) + "px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("H", size / 2, size / 2 + size * 0.02);
-    return new THREE.CanvasTexture(canvas);
-}
-
-function buildLandingPad(diameter) {
-    const mesh = new THREE.Mesh(
-        new THREE.CircleGeometry(diameter / 2, 32),
-        new THREE.MeshStandardMaterial({ map: buildLandingPadTexture() })
-    );
-    mesh.rotation.x = -Math.PI / 2;
-    return mesh;
-}
+// buildLandingPad: se Sim.buildLandingPad i simulator-common.js.
 
 // Verdenskonstanter for bygget - gjenbrukt av linje-i-sikt-sjekken for Realistisk modus (lenger ned).
 const BUILDING_POSITION = new THREE.Vector3(-35, 0, -35);
@@ -559,7 +329,7 @@ function buildBuilding() {
     roof.receiveShadow = true;
     group.add(roof);
 
-    const roofPad = buildLandingPad(Math.min(width, depth) - 1);
+    const roofPad = Sim.buildLandingPad(Math.min(width, depth) - 1);
     roofPad.position.y = height + 0.32;
     roofPad.receiveShadow = true;
     group.add(roofPad);
@@ -666,22 +436,7 @@ function buildBarn(width, height, depth, windowW, windowH, sillY) {
     return group;
 }
 
-function buildTree(height) {
-    const group = new THREE.Group();
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b3d24 });
-    const canopyMat = new THREE.MeshStandardMaterial({ color: 0x2f5d34 });
-    const trunkHeight = height * 0.45;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, trunkHeight, 8), trunkMat);
-    trunk.position.y = trunkHeight / 2;
-    trunk.castShadow = true;
-    group.add(trunk);
-    const canopyHeight = height - trunkHeight;
-    const canopy = new THREE.Mesh(new THREE.ConeGeometry(height * 0.28, canopyHeight, 10), canopyMat);
-    canopy.position.y = trunkHeight + canopyHeight / 2;
-    canopy.castShadow = true;
-    group.add(canopy);
-    return group;
-}
+// buildTree: se Sim.buildTree i simulator-common.js.
 
 const GATE_COURSE_CENTER = new THREE.Vector3(0, 0, -110);
 // Håndplasserte veipunkter (relativt til senter) gir en avlang bane (lange rettstrekk, trange svinger i
@@ -730,7 +485,7 @@ function buildGateCourse() {
 function buildWorldObjects() {
     const group = new THREE.Group();
 
-    const spawnPad = buildLandingPad(2.4);
+    const spawnPad = Sim.buildLandingPad(2.4);
     spawnPad.position.y = 0.02; // løftet litt over bakkeplanet for å unngå z-fighting/flimring
     spawnPad.receiveShadow = true;
     group.add(spawnPad); // ved avgangsplassen (0,0,0)
@@ -749,7 +504,7 @@ function buildWorldObjects() {
         { x: -50, z: 20, h: 7.5 }, { x: -20, z: -55, h: 8.5 }, { x: 15, z: -60, h: 6 },
         { x: 70, z: -40, h: 7.2 }, { x: -60, z: -10, h: 6.8 }
     ].forEach(function (t) {
-        const tree = buildTree(t.h);
+        const tree = Sim.buildTree(t.h);
         tree.position.set(t.x, 0, t.z);
         group.add(tree);
     });
@@ -908,11 +663,11 @@ function initScene() {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     scene = new THREE.Scene();
-    scene.add(buildGradientSky());
+    scene.add(Sim.buildGradientSky());
     scene.add(buildGround());
     scene.add(buildWorldObjects());
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.42)); // litt lavere enn før - gir tydeligere kontrast i den ekte skyggekart-skyggen
     const sun = new THREE.DirectionalLight(0xffffff, 0.9);
     sun.position.set(60, 90, 40);
     sun.castShadow = true;
@@ -942,6 +697,16 @@ function initScene() {
     vlosCamera.position.set(0, 1.6, 5);
     scene.add(vlosCamera);
 
+    // Pilot-figur akkurat der VLOS-kameraet står - synlig fra Chase/FPV (eget layer 1), men ikke fra
+    // VLOS selv (den kameraet IKKE aktiverer layer 1, ser derfor kun standard layer 0 - personen "ser ikke seg selv").
+    const vlosPerson = Sim.buildPersonFigure();
+    vlosPerson.position.copy(vlosCamera.position);
+    vlosPerson.position.y = 0;
+    vlosPerson.traverse(function (obj) { obj.layers.set(1); });
+    scene.add(vlosPerson);
+    chaseCamera.layers.enable(1);
+    fpvCamera.layers.enable(1);
+
     activeCamera = chaseCamera;
     resizeRenderer();
 }
@@ -960,12 +725,7 @@ function rebuildDroneMesh() {
 
 function resizeRenderer() {
     const wrap = document.querySelector(".sim-page");
-    const w = wrap.clientWidth, h = wrap.clientHeight;
-    renderer.setSize(w, h, false);
-    [chaseCamera, fpvCamera, vlosCamera].forEach(function (cam) {
-        cam.aspect = w / h;
-        cam.updateProjectionMatrix();
-    });
+    Sim.resizeRenderer(renderer, wrap, [chaseCamera, fpvCamera, vlosCamera]);
 }
 
 function updateChaseCamera(dt) {
@@ -986,121 +746,29 @@ function updateVlosCamera() {
 }
 
 /* ---------- Input ---------- */
-// Rå tilkoblingssjekk (uavhengig av inputkilde-valget) - brukes til å vise/skjule
-// "Fjernkontroll"-knappen og for å fylle kalibreringspanelet, uansett hva brukeren har valgt å bruke.
-function rawFirstGamepad() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (let i = 0; i < pads.length; i++) {
-        if (pads[i]) return pads[i];
-    }
-    return null;
-}
-
-// Inputkilde-bevisst valg - brukes for faktisk styring (updateInput/pollGamepadButtons).
+const rawFirstGamepad = Sim.rawFirstGamepad;
 function getActiveGamepad() {
-    if (settings.inputSource === "keyboard") return null;
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    if (settings.inputSource !== "auto") {
-        const idx = parseInt(settings.inputSource, 10);
-        if (pads[idx]) return pads[idx];
-        // Valgt enhet er ikke lenger tilkoblet - fall tilbake til automatisk valg under.
-    }
-    return rawFirstGamepad();
+    return Sim.getActiveGamepad(settings.inputSource);
 }
-
-function readStickAxis(gp, channelMap) {
-    const raw = gp.axes[channelMap.axis] || 0;
-    return clamp(raw * (channelMap.reverse ? -1 : 1), -1, 1);
-}
-
-function readThrottleAxis(gp, channelMap) {
-    const raw = gp.axes[channelMap.axis] || 0;
-    const signed = raw * (channelMap.reverse ? -1 : 1);
-    return clamp((signed + 1) / 2, 0, 1);
-}
+const readStickAxis = Sim.readStickAxis;
+const readThrottleAxis = Sim.readThrottleAxis;
 
 /* ---------- Gamepad knappemapping (kill/arm + flymodus-brytere) ---------- */
-// Fungerer med enhver sender i USB-joystick-modus (f.eks. Taranis/RadioMaster med EdgeTX/OpenTX) -
-// disse eksponerer gimbaler som akser og brytere som knapper via standard HTML5 Gamepad API,
-// helt uavhengig av merke/modell. Antall akser/knapper leses dynamisk fra enheten (se buildGamepadPanel).
-// Bindinger lagres som { type:"button", index } eller { type:"axis", index, onValue, offValue } -
-// mange sender-brytere (f.eks. en arm-bryter på kanal 6) kommer som en akse, ikke en HID-knapp,
-// så læringsflyten sjekker begge deler og lagrer det som faktisk beveget seg.
-let listeningForButtonAction = null;
-let learnIgnoreButtons = new Set();
-let learnAxisBaseline = [];
-const prevActionActive = {};
-
-function startListeningForButton(action) {
-    listeningForButtonAction = action;
-    learnIgnoreButtons = new Set();
-    const gp = getActiveGamepad();
-    learnAxisBaseline = gp ? gp.axes.slice() : [];
-    if (gp) {
-        for (let i = 0; i < gp.buttons.length; i++) {
-            if (gp.buttons[i].pressed || gp.buttons[i].value > 0.5) learnIgnoreButtons.add(i);
-        }
-    }
-}
-
+// Se Sim.createButtonBindingManager i simulator-common.js for læringsflyten (bryter kan komme
+// som HID-knapp eller som en akse - fungerer med enhver sender i USB-joystick-modus).
 const BUTTON_ACTIONS = {
     kill: toggleKill,
     modeAcro: function () { droneState.flightMode = "acro"; },
     modeStabilized: function () { droneState.flightMode = "stabilized"; },
     modeAltHold: function () { droneState.flightMode = "althold"; }
 };
-
-function isBindingActive(gp, binding) {
-    if (!binding) return false;
-    if (binding.type === "axis") {
-        const v = gp.axes[binding.index];
-        if (v === undefined) return false;
-        return Math.abs(v - binding.onValue) < Math.abs(v - binding.offValue);
-    }
-    const btn = gp.buttons[binding.index];
-    if (!btn) return false;
-    return btn.pressed || btn.value > 0.5;
-}
-
-function pollGamepadButtons(gp) {
-    if (listeningForButtonAction) {
-        let captured = false;
-        for (let i = 0; i < gp.buttons.length; i++) {
-            const pressed = gp.buttons[i].pressed || gp.buttons[i].value > 0.5;
-            if (pressed && !learnIgnoreButtons.has(i)) {
-                gamepadMap.buttons[listeningForButtonAction] = { type: "button", index: i };
-                captured = true;
-                break;
-            }
-        }
-        if (!captured) {
-            for (let i = 0; i < gp.axes.length; i++) {
-                const baseline = learnAxisBaseline[i] || 0;
-                if (Math.abs(gp.axes[i] - baseline) > 0.25) {
-                    gamepadMap.buttons[listeningForButtonAction] = { type: "axis", index: i, onValue: gp.axes[i], offValue: baseline };
-                    captured = true;
-                    break;
-                }
-            }
-        }
-        if (captured) {
-            saveGamepadMap();
-            listeningForButtonAction = null;
-        }
-    }
-
-    Object.keys(BUTTON_ACTIONS).forEach(function (action) {
-        const active = isBindingActive(gp, gamepadMap.buttons[action]);
-        if (active && !prevActionActive[action]) BUTTON_ACTIONS[action]();
-        prevActionActive[action] = active;
-    });
-}
+const buttonManager = Sim.createButtonBindingManager(gamepadMap.buttons, BUTTON_ACTIONS, saveGamepadMap);
 
 function updateInput(dt) {
     updateLinkAndBattery(dt);
 
     const gp = getActiveGamepad();
-    if (gp) pollGamepadButtons(gp);
+    if (gp) buttonManager.poll(gp);
 
     const dropChance = settings.realisticMode ? (1 - linkQuality) : 0;
     if (dropChance > 0 && Math.random() < dropChance) {
@@ -1237,7 +905,13 @@ function stepPhysics(dt) {
     const airRelativeVelocity = wasGrounded
         ? droneState.velocity.clone()
         : droneState.velocity.clone().sub(currentWindVector);
-    const dragVec = airRelativeVelocity.multiplyScalar(-spec.linearDrag);
+    // Anisotropisk drag: vertikal (verdens-Y) bevegelse møter mer motstand enn horisontal (se
+    // VERTICAL_DRAG_MULTIPLIER) - propellskivene bremser opp-/nedgang mye kraftigere enn linjefart.
+    const dragVec = new THREE.Vector3(
+        airRelativeVelocity.x * -spec.linearDrag,
+        airRelativeVelocity.y * -spec.linearDrag * VERTICAL_DRAG_MULTIPLIER,
+        airRelativeVelocity.z * -spec.linearDrag
+    );
     const accel = new THREE.Vector3().add(thrustVec).add(gravityVec).add(dragVec).multiplyScalar(1 / spec.mass);
 
     droneState.velocity.add(accel.clone().multiplyScalar(dt));
@@ -1249,13 +923,17 @@ function stepPhysics(dt) {
 
     droneState.grounded = false;
     if (droneHasLandingLegs(droneState.droneClass)) {
-        resolveLegGroundContact(dt);
+        resolveLegGroundContact(dt, wasGrounded);
     } else {
         // Nettopp dyttet ut av en veggside denne rammen (dvs. ikke i ferd med å lande ovenfra) - se bort fra
         // objektets topp-flate for bakkesjekken under, ellers ville den blitt tolket som en landing på taket
         // og loftet brått opp dit. Den flate bakken (0) skal likevel fanges opp som vanlig.
         const surfaceY = (pushedFromWall ? 0 : solidSurfaceHeightAt(droneState.position.x, droneState.position.z)) + GROUND_CLEARANCE;
         if (droneState.position.y <= surfaceY) {
+            if (!wasGrounded && droneState.velocity.y < -CRASH_SINK_RATE) {
+                droneState.crashed = true;
+                droneState.armed = false;
+            }
             droneState.grounded = true;
             droneState.position.y = surfaceY;
             if (droneState.velocity.y < 0) droneState.velocity.y = 0;
@@ -1293,7 +971,7 @@ const LEG_CONTACT_RIGHTING_RATE = 6;
 const LEG_CONTACT_TOLERANCE = 0.06; // m - hvor nær bakken en fot må være for å regnes som støttet
 const LEG_TIP_TORQUE = 3.0; // vinkelakselerasjon som velter droneen mot usupportert side
 
-function resolveLegGroundContact(dt) {
+function resolveLegGroundContact(dt, wasGrounded) {
     // Rekkefølge fra getLegTopLocalPositions: 0=fremre-høyre, 1=fremre-venstre, 2=bakre-høyre, 3=bakre-venstre.
     const feet = getFootWorldPositions();
     let maxPenetration = 0;
@@ -1360,6 +1038,10 @@ function resolveLegGroundContact(dt) {
         return;
     }
 
+    if (!wasGrounded && droneState.velocity.y < -CRASH_SINK_RATE) {
+        droneState.crashed = true;
+        droneState.armed = false;
+    }
     droneState.grounded = true;
     droneState.position.y += maxPenetration;
     if (droneState.velocity.y < 0) droneState.velocity.y *= 0.2; // myk/dempet landing (fjæring i bena)
@@ -1395,6 +1077,7 @@ function resetDrone() {
     droneState.angularVelocity.roll = 0;
     droneState.angularVelocity.yaw = 0;
     droneState.armed = true;
+    droneState.crashed = false;
     // Gass er en ikke-selvsentrerende "holdt" verdi på tastatur - må nullstilles eksplisitt ved reset,
     // ellers tar droneen av igjen umiddelbart. (Gamepad overskriver denne uansett neste frame.)
     inputState.stick.throttle = 0;
@@ -1402,6 +1085,7 @@ function resetDrone() {
 }
 
 function toggleKill() {
+    if (droneState.crashed) return; // må resettes (R) etter en krasj, ikke bare re-armes
     droneState.armed = !droneState.armed;
 }
 
@@ -1433,11 +1117,13 @@ const hudBatteryItem = document.getElementById("hudBatteryItem");
 const hudLinkItem = document.getElementById("hudLinkItem");
 const hudBattery = document.getElementById("hudBattery");
 const hudLink = document.getElementById("hudLink");
+const crashBanner = document.getElementById("crashBanner");
 
 function updateHud() {
     hudMode.textContent = MODE_LABELS[droneState.flightMode];
-    hudArmed.textContent = droneState.armed ? "Armed" : "Killed";
-    hudArmed.className = "sim-status-value " + (droneState.armed ? "sim-armed" : "sim-killed");
+    hudArmed.textContent = droneState.crashed ? "Krasjet" : (droneState.armed ? "Armed" : "Killed");
+    hudArmed.className = "sim-status-value " + ((droneState.armed && !droneState.crashed) ? "sim-armed" : "sim-killed");
+    crashBanner.classList.toggle("show", droneState.crashed);
     hudInput.textContent = inputState.source === "gamepad" ? "Gamepad" : "Tastatur";
     hudCamera.textContent = CAMERA_MODE_LABELS[CAMERA_MODES[cameraModeIndex]];
     hudDroneClass.textContent = currentDroneSpec().label.split(" ")[0];
@@ -1460,348 +1146,47 @@ function updateHud() {
     }
 }
 
-/* ---------- Paneler (rates / gamepad / hjelp) ---------- */
+/* ---------- Paneler (rates / drone-kamera / vind / gamepad / hjelp) ---------- */
+const ALL_PANEL_IDS = ["ratesPanel", "droneCameraPanel", "windPanel", "gamepadPanel", "helpPanel"];
 function togglePanel(panel) {
-    const wasOpen = panel.style.display !== "none";
-    ["ratesPanel", "gamepadPanel", "helpPanel"].forEach(function (id) {
-        document.getElementById(id).style.display = "none";
-    });
-    panel.style.display = wasOpen ? "none" : "block";
+    Sim.togglePanel(panel, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
 }
 
-/* ---------- Rate-kurve: visualisering + drakontroll ---------- */
-const RATE_CURVE_W = 260;
-const RATE_CURVE_H = 130;
-const RATE_CURVE_CENTER_STICK = 0.2; // referansepunkt for "center sensitivity"-håndtaket
-
-function rateCurveScale(maxRate) {
-    return Math.max(50, maxRate * 1.15);
-}
-function stickToCanvasX(stick) { return (stick + 1) / 2 * RATE_CURVE_W; }
-function canvasYToRate(y, scale) { return clamp(-(y - RATE_CURVE_H / 2) / (RATE_CURVE_H / 2) * scale, -scale, scale); }
-function rateToCanvasY(rate, scale) { return RATE_CURVE_H / 2 - (rate / scale) * (RATE_CURVE_H / 2); }
-
-function drawRateCurve(ctx, axisRates) {
-    const scale = rateCurveScale(axisRates.maxRate);
-    ctx.clearRect(0, 0, RATE_CURVE_W, RATE_CURVE_H);
-    ctx.strokeStyle = "#e0e0e0";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(RATE_CURVE_W / 2, 0);
-    ctx.lineTo(RATE_CURVE_W / 2, RATE_CURVE_H);
-    ctx.moveTo(0, RATE_CURVE_H / 2);
-    ctx.lineTo(RATE_CURVE_W, RATE_CURVE_H / 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = "#03477F";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i <= 40; i++) {
-        const stick = -1 + (i / 40) * 2;
-        const x = stickToCanvasX(stick);
-        const y = rateToCanvasY(computeRate(stick, axisRates), scale);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    const maxX = stickToCanvasX(1);
-    const maxY = rateToCanvasY(axisRates.maxRate, scale);
-    ctx.fillStyle = "#03477F";
-    ctx.beginPath();
-    ctx.arc(maxX, maxY, 5, 0, Math.PI * 2);
-    ctx.fill();
-
-    const csRate = computeRate(RATE_CURVE_CENTER_STICK, axisRates);
-    const csX = stickToCanvasX(RATE_CURVE_CENTER_STICK);
-    const csY = rateToCanvasY(csRate, scale);
-    ctx.fillStyle = "#c0392b";
-    ctx.beginPath();
-    ctx.arc(csX, csY, 5, 0, Math.PI * 2);
-    ctx.fill();
-}
-
-// Løser centerSensitivity slik at kurven treffer et gitt punkt ved RATE_CURVE_CENTER_STICK.
-function solveCenterSensitivityForRate(targetRate, axisRates) {
-    const expo = axisRates.expo;
-    const s = RATE_CURVE_CENTER_STICK;
-    const swe = s * (1 - expo) + expo * Math.pow(s, 3);
-    const swe3 = Math.pow(Math.abs(swe), 3) * Math.sign(swe);
-    const denom = swe - swe3;
-    if (Math.abs(denom) < 1e-6) return axisRates.centerSensitivity;
-    return clamp((targetRate - axisRates.maxRate * swe3) / denom, 0, 300);
-}
-
+/* ---------- Rates-panel (rate-kurver + gass-expo, se Sim.buildRateAxisBox/buildThrottleExpoBox) ---------- */
 function buildRatesPanel() {
     const grid = document.getElementById("ratesGrid");
     grid.innerHTML = "";
     ["roll", "pitch", "yaw"].forEach(function (axis) {
-        const axisRates = rates[axis];
-        const box = document.createElement("div");
-        box.className = "sim-rate-axis";
-        const title = document.createElement("div");
-        title.className = "sim-rate-axis-title";
-        title.textContent = AXIS_LABELS[axis];
-        box.appendChild(title);
-
-        const inputs = {};
-        const spans = {};
-        [
-            { key: "centerSensitivity", label: "Center sens.", min: 0, max: 300, step: 5 },
-            { key: "maxRate", label: "Max rate", min: 100, max: 1200, step: 10 },
-            { key: "expo", label: "Expo", min: 0, max: 1, step: 0.05 }
-        ].forEach(function (param) {
-            const row = document.createElement("div");
-            row.className = "sim-rate-row";
-            const label = document.createElement("label");
-            label.textContent = param.label;
-            const input = document.createElement("input");
-            input.type = "range";
-            input.min = param.min;
-            input.max = param.max;
-            input.step = param.step;
-            input.value = axisRates[param.key];
-            const valueSpan = document.createElement("span");
-            valueSpan.className = "sim-rate-value";
-            valueSpan.textContent = axisRates[param.key];
-            input.addEventListener("input", function () {
-                axisRates[param.key] = parseFloat(input.value);
-                valueSpan.textContent = input.value;
-                saveRates();
-                redraw();
-            });
-            row.appendChild(label);
-            row.appendChild(input);
-            row.appendChild(valueSpan);
-            box.appendChild(row);
-            inputs[param.key] = input;
-            spans[param.key] = valueSpan;
-        });
-
-        const canvas = document.createElement("canvas");
-        canvas.width = RATE_CURVE_W;
-        canvas.height = RATE_CURVE_H;
-        canvas.className = "sim-rate-curve";
-        box.appendChild(canvas);
-        const hint = document.createElement("p");
-        hint.className = "sim-panel-hint";
-        hint.style.margin = "6px 0 0 0";
-        hint.textContent = "Dra blått punkt (max rate) eller rødt punkt (center sensitivity) direkte på kurven.";
-        box.appendChild(hint);
-
-        const ctx = canvas.getContext("2d");
-        function redraw() { drawRateCurve(ctx, axisRates); }
-
-        let dragging = null;
-        canvas.addEventListener("pointerdown", function (e) {
-            const rect = canvas.getBoundingClientRect();
-            const px = (e.clientX - rect.left) * (RATE_CURVE_W / rect.width);
-            const py = (e.clientY - rect.top) * (RATE_CURVE_H / rect.height);
-            const scale = rateCurveScale(axisRates.maxRate);
-            const maxHandle = { x: stickToCanvasX(1), y: rateToCanvasY(axisRates.maxRate, scale) };
-            const csHandle = { x: stickToCanvasX(RATE_CURVE_CENTER_STICK), y: rateToCanvasY(computeRate(RATE_CURVE_CENTER_STICK, axisRates), scale) };
-            const distMax = Math.hypot(px - maxHandle.x, py - maxHandle.y);
-            const distCs = Math.hypot(px - csHandle.x, py - csHandle.y);
-            if (distMax <= 10 || distCs <= 10) {
-                dragging = distMax <= distCs ? "max" : "center";
-                canvas.setPointerCapture(e.pointerId);
-                e.preventDefault();
-            }
-        });
-        canvas.addEventListener("pointermove", function (e) {
-            if (!dragging) return;
-            const rect = canvas.getBoundingClientRect();
-            const py = (e.clientY - rect.top) * (RATE_CURVE_H / rect.height);
-            const scale = rateCurveScale(axisRates.maxRate);
-            const targetRate = canvasYToRate(py, scale);
-            if (dragging === "max") {
-                axisRates.maxRate = clamp(Math.round(targetRate / 10) * 10, 100, 1200);
-                inputs.maxRate.value = axisRates.maxRate;
-                spans.maxRate.textContent = axisRates.maxRate;
-            } else {
-                axisRates.centerSensitivity = Math.round(solveCenterSensitivityForRate(targetRate, axisRates) / 5) * 5;
-                inputs.centerSensitivity.value = axisRates.centerSensitivity;
-                spans.centerSensitivity.textContent = axisRates.centerSensitivity;
-            }
-            saveRates();
-            redraw();
-        });
-        function stopDrag() { dragging = null; }
-        canvas.addEventListener("pointerup", stopDrag);
-        canvas.addEventListener("pointercancel", stopDrag);
-
-        redraw();
-        grid.appendChild(box);
+        grid.appendChild(Sim.buildRateAxisBox(rates[axis], AXIS_LABELS[axis], saveRates));
     });
-
-    const throttleBox = document.createElement("div");
-    throttleBox.className = "sim-rate-axis";
-    const throttleTitle = document.createElement("div");
-    throttleTitle.className = "sim-rate-axis-title";
-    throttleTitle.textContent = "Gass";
-    throttleBox.appendChild(throttleTitle);
-
-    const throttleRow = document.createElement("div");
-    throttleRow.className = "sim-rate-row";
-    const throttleLabel = document.createElement("label");
-    throttleLabel.textContent = "Expo";
-    const throttleInput = document.createElement("input");
-    throttleInput.type = "range";
-    throttleInput.min = 0;
-    throttleInput.max = 1;
-    throttleInput.step = 0.05;
-    throttleInput.value = rates.throttle.expo;
-    const throttleValueSpan = document.createElement("span");
-    throttleValueSpan.className = "sim-rate-value";
-    throttleValueSpan.textContent = rates.throttle.expo;
-    throttleInput.addEventListener("input", function () {
-        rates.throttle.expo = parseFloat(throttleInput.value);
-        throttleValueSpan.textContent = throttleInput.value;
-        saveRates();
-    });
-    throttleRow.appendChild(throttleLabel);
-    throttleRow.appendChild(throttleInput);
-    throttleRow.appendChild(throttleValueSpan);
-    throttleBox.appendChild(throttleRow);
-
-    const throttleHint = document.createElement("p");
-    throttleHint.className = "sim-panel-hint";
-    throttleHint.style.margin = "6px 0 0 0";
-    throttleHint.textContent = "0 = lineær gass. Høyere verdi gir finere kontroll nær midten (rundt hover), mer kraftfull respons ved fullt utslag.";
-    throttleBox.appendChild(throttleHint);
-
-    grid.appendChild(throttleBox);
+    grid.appendChild(Sim.buildThrottleExpoBox(
+        rates.throttle,
+        "Gass",
+        "0 = lineær gass. Høyere verdi gir finere kontroll nær midten (rundt hover), mer kraftfull respons ved fullt utslag.",
+        saveRates
+    ));
 }
 
 function populateInputSourceSelect() {
     const select = document.getElementById("inputSourceSelect");
     if (!select) return;
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    select.innerHTML = "";
-
-    const autoOpt = document.createElement("option");
-    autoOpt.value = "auto";
-    autoOpt.textContent = "Automatisk (første tilkoblede)";
-    select.appendChild(autoOpt);
-
-    const kbOpt = document.createElement("option");
-    kbOpt.value = "keyboard";
-    kbOpt.textContent = "Tastatur";
-    select.appendChild(kbOpt);
-
-    for (let i = 0; i < pads.length; i++) {
-        if (!pads[i]) continue;
-        const opt = document.createElement("option");
-        opt.value = String(i);
-        opt.textContent = "Gamepad " + i + ": " + (pads[i].id || "ukjent enhet");
-        select.appendChild(opt);
-    }
-
-    select.value = settings.inputSource;
-    if (select.value !== settings.inputSource) {
-        // Lagret valg finnes ikke lenger (enheten er frakoblet) - fall tilbake til automatisk.
-        settings.inputSource = "auto";
-        saveSettings();
-        select.value = "auto";
-    }
+    settings.inputSource = Sim.populateInputSourceSelect(select, settings.inputSource);
+    saveSettings();
 }
 
 function buildGamepadPanel(pad) {
     populateInputSourceSelect();
     const grid = document.getElementById("gamepadGrid");
-    grid.innerHTML = "";
     // RC-sendere har typisk 8 kanaler selv om enheten (ennå) ikke rapporterer full akse-lengde -
     // vis alltid minst 8 valg, i tillegg til flere hvis enheten faktisk har det.
-    const axisCount = Math.max(pad.axes.length, MIN_GAMEPAD_CHANNELS);
-    ["roll", "pitch", "yaw", "throttle"].forEach(function (channel) {
-        const row = document.createElement("div");
-        row.className = "sim-rate-row";
-        const label = document.createElement("label");
-        label.textContent = CHANNEL_LABELS[channel];
-        const select = document.createElement("select");
-        for (let i = 0; i < axisCount; i++) {
-            const opt = document.createElement("option");
-            opt.value = i;
-            opt.textContent = "Kanal " + (i + 1);
-            if (gamepadMap[channel].axis === i) opt.selected = true;
-            select.appendChild(opt);
-        }
-        select.addEventListener("change", function () {
-            gamepadMap[channel].axis = parseInt(select.value, 10);
-            saveGamepadMap();
-        });
-
-        const reverseLabel = document.createElement("label");
-        reverseLabel.style.cssText = "display:flex; align-items:center; gap:4px; flex:0 0 60px; font-size:0.75rem;";
-        const reverseInput = document.createElement("input");
-        reverseInput.type = "checkbox";
-        reverseInput.checked = gamepadMap[channel].reverse;
-        reverseInput.addEventListener("change", function () {
-            gamepadMap[channel].reverse = reverseInput.checked;
-            saveGamepadMap();
-        });
-        reverseLabel.appendChild(reverseInput);
-        reverseLabel.appendChild(document.createTextNode("Rev."));
-
-        row.appendChild(label);
-        row.appendChild(select);
-        row.appendChild(reverseLabel);
-        grid.appendChild(row);
-    });
-
+    const axisCount = Math.max(pad.axes.length, Sim.MIN_GAMEPAD_CHANNELS);
+    Sim.buildGamepadChannelsGrid(grid, gamepadMap, CHANNEL_LABELS, axisCount, saveGamepadMap);
     buildGamepadButtonsPanel();
 }
 
 function buildGamepadButtonsPanel() {
     const container = document.getElementById("gamepadButtonsGrid");
-    container.innerHTML = "";
-    Object.keys(BUTTON_ACTION_LABELS).forEach(function (action) {
-        const row = document.createElement("div");
-        row.className = "sim-rate-row";
-        const label = document.createElement("label");
-        label.textContent = BUTTON_ACTION_LABELS[action];
-        const statusSpan = document.createElement("span");
-        statusSpan.className = "sim-rate-value";
-        statusSpan.style.cssText = "flex:1; text-align:left;";
-        function refreshStatus() {
-            const b = gamepadMap.buttons[action];
-            if (!b) statusSpan.textContent = "Ikke satt";
-            else if (b.type === "axis") statusSpan.textContent = "Kanal " + (b.index + 1) + " (bryter)";
-            else statusSpan.textContent = "Knapp " + b.index;
-        }
-        refreshStatus();
-
-        const setBtn = document.createElement("button");
-        setBtn.type = "button";
-        setBtn.className = "sim-btn";
-        setBtn.textContent = "Sett";
-        setBtn.addEventListener("click", function () {
-            setBtn.textContent = "Trykk knapp...";
-            startListeningForButton(action);
-            const checkDone = setInterval(function () {
-                if (listeningForButtonAction !== action) {
-                    setBtn.textContent = "Sett";
-                    refreshStatus();
-                    clearInterval(checkDone);
-                }
-            }, 150);
-        });
-
-        const clearBtn = document.createElement("button");
-        clearBtn.type = "button";
-        clearBtn.className = "sim-btn";
-        clearBtn.textContent = "Fjern";
-        clearBtn.addEventListener("click", function () {
-            gamepadMap.buttons[action] = null;
-            saveGamepadMap();
-            refreshStatus();
-        });
-
-        row.appendChild(label);
-        row.appendChild(statusSpan);
-        row.appendChild(setBtn);
-        row.appendChild(clearBtn);
-        container.appendChild(row);
-    });
+    Sim.buildGamepadButtonsGrid(container, gamepadMap.buttons, BUTTON_ACTION_LABELS, buttonManager, getActiveGamepad, saveGamepadMap);
 }
 
 function updateGamepadAxesReadout(gp) {
@@ -1809,18 +1194,7 @@ function updateGamepadAxesReadout(gp) {
     if (panel.style.display === "none") return;
     const readout = document.getElementById("gamepadAxesReadout");
     const activeGp = gp || getActiveGamepad();
-    if (!activeGp) {
-        readout.textContent = "Ingen fjernkontroll/gamepad tilkoblet.";
-        return;
-    }
-    readout.innerHTML = "";
-    const channelCount = Math.max(activeGp.axes.length, MIN_GAMEPAD_CHANNELS);
-    for (let i = 0; i < channelCount; i++) {
-        const v = activeGp.axes[i];
-        const line = document.createElement("div");
-        line.textContent = "Kanal " + (i + 1) + ": " + (v === undefined ? "–" : v.toFixed(2));
-        readout.appendChild(line);
-    }
+    Sim.updateGamepadAxesReadout(readout, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
 }
 
 function setGamepadButtonVisible(visible) {
@@ -1887,43 +1261,15 @@ function toggleFpvHud() {
     btn.innerHTML = '<i class="fa-solid fa-crosshairs"></i> OSD: ' + FPV_HUD_MODE_LABELS[settings.fpvHudMode] + " (O)";
 }
 
-// Betaflight-lignende OSD-crosshair: hvit, liten runding i midten med korte streker ut til hver side.
-function drawFpvCrosshair(ctx, w, h) {
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 1.5;
-    const cx = w / 2, cy = h / 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
-    ctx.stroke();
-    const gap = 9, wingLen = 16;
-    ctx.beginPath();
-    ctx.moveTo(cx - gap - wingLen, cy); ctx.lineTo(cx - gap, cy);
-    ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + gap + wingLen, cy);
-    ctx.stroke();
-}
+const drawFpvCrosshair = Sim.drawFpvCrosshair;
 
-// Betaflight-lignende kunstig horisont: ingen himmel-/bakkefarge, kun noen korte hvite streker som
-// alltid ligger vannrett i forhold til den ekte horisonten (roterer med rull, flyttes med pitch).
+// Samme aksekonvensjon-negasjon som resten av fysikken (se merknad i stepPhysics).
 function drawFpvHorizon(ctx, w, h) {
     const euler = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ");
-    // Samme aksekonvensjon-negasjon som resten av fysikken (se merknad i stepPhysics).
     const pitchDeg = -THREE.MathUtils.radToDeg(euler.x);
     const rollDeg = -THREE.MathUtils.radToDeg(euler.z);
-    const pxPerDeg = 3;
-    ctx.save();
-    ctx.translate(w / 2, h / 2 + pitchDeg * pxPerDeg);
-    ctx.rotate(THREE.MathUtils.degToRad(-rollDeg));
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 1.5;
-    const dashLen = 26, gap = 13;
-    ctx.beginPath();
-    ctx.moveTo(-gap - dashLen, 0); ctx.lineTo(-gap, 0);
-    ctx.moveTo(gap, 0); ctx.lineTo(gap + dashLen, 0);
-    ctx.moveTo(0, -5); ctx.lineTo(0, 5);
-    ctx.stroke();
-    ctx.restore();
+    Sim.drawFpvHorizonFromAngles(ctx, w, h, pitchDeg, rollDeg);
 }
-
 function updateFpvHud() {
     const canvas = document.getElementById("fpvHudCanvas");
     const mode = FPV_HUD_MODES[fpvHudModeIndex];
@@ -1938,33 +1284,8 @@ function updateFpvHud() {
     drawFpvCrosshair(fpvHudCtx, w, h);
 }
 
-// Oppdaterer vindpølsens retning (peker nedvinds), "slapphet" (henger rett ned ved 0 vind, reiser seg
-// mot vannrett med økende styrke) og en myk bølge langs selve geometrien for et levende, blafrende
-// uttrykk - uten å bryte opp den jevnt avsmalnende formen i separate (hakkete) segmenter.
 function updateWindsockVisual(now) {
-    if (!windsockYawGroup || !windsockDroopPivot) return;
-    const speed = currentWindVector.length();
-    if (speed > 0.05) {
-        windsockYawGroup.rotation.y = Math.atan2(-currentWindVector.z, currentWindVector.x);
-    }
-    const strength = clamp(speed / 12, 0, 1);
-    windsockDroopPivot.rotation.z = -Math.PI / 2 * (1 - strength);
-
-    if (windsockSockGeometry) {
-        const t = now * 0.001;
-        const amp = 0.01 + strength * 0.06;
-        const posAttr = windsockSockGeometry.attributes.position;
-        const halfLen = windsockSockLength / 2;
-        for (let i = 0; i < posAttr.count; i++) {
-            const baseY = windsockBasePositions[i * 3 + 1];
-            const baseZ = windsockBasePositions[i * 3 + 2];
-            const alongTail = clamp((baseY + halfLen) / windsockSockLength, 0, 1); // 0=munning, 1=hale
-            const wave = Math.sin(t * 3.2 + alongTail * 7) * amp * alongTail * alongTail;
-            posAttr.setZ(i, baseZ + wave);
-        }
-        posAttr.needsUpdate = true;
-        windsockSockGeometry.computeVertexNormals();
-    }
+    Sim.updateWindsockVisual(windsockHandle, now, currentWindVector);
 }
 
 /* ---------- Hovedløkke ---------- */
@@ -2005,14 +1326,31 @@ document.addEventListener("DOMContentLoaded", function () {
 
     document.getElementById("resetBtn").addEventListener("click", resetDrone);
     document.getElementById("armToggleBtn").addEventListener("click", toggleKill);
+
+    const settingsMenuEl = document.getElementById("settingsMenu");
+    Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl,
+        ["ratesPanel", "droneCameraPanel", "windPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
+    Sim.wirePanelCloseButtons(settingsMenuEl);
+    function closeSettingsMenu() { settingsMenuEl.classList.remove("open"); }
+
     document.getElementById("toggleRatesBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("ratesPanel"));
+        closeSettingsMenu();
+    });
+    document.getElementById("toggleDroneCameraBtn").addEventListener("click", function () {
+        togglePanel(document.getElementById("droneCameraPanel"));
+        closeSettingsMenu();
+    });
+    document.getElementById("toggleWindBtn").addEventListener("click", function () {
+        togglePanel(document.getElementById("windPanel"));
+        closeSettingsMenu();
     });
     document.getElementById("toggleHelpBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("helpPanel"));
     });
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));
+        closeSettingsMenu();
     });
     document.getElementById("fpvHudBtn").addEventListener("click", toggleFpvHud);
 
