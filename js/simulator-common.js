@@ -846,7 +846,13 @@
             });
         });
         document.querySelectorAll(".sim-panel-back").forEach(function (btn) {
-            btn.addEventListener("click", function () {
+            btn.addEventListener("click", function (e) {
+                // stopPropagation er nødvendig: uten den bobler klikket videre opp til document, der
+                // setupDropdown sin "lukk ved klikk utenfor"-lytter ser at klikket ikke var INNI selve
+                // dropdown-menyen (knappen sitter jo i panelet, ikke i menyen) og fjerner "open"-klassen
+                // igjen rett etter at denne håndtereren nettopp la den til - menyen så ut til å lukke seg
+                // i stedet for å gå tilbake til den.
+                e.stopPropagation();
                 const panel = btn.closest(".sim-panel");
                 if (panel) panel.style.display = "none";
                 if (settingsMenuEl) settingsMenuEl.classList.add("open");
