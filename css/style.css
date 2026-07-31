@@ -504,6 +504,10 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-size: 0.9rem;
     opacity: 0.9;
 }
+.sim-crash-banner .sim-injury-icon {
+    font-size: 2.6rem;
+    margin-bottom: 4px;
+}
 
 .sim-warning-banner {
     position: absolute;
@@ -528,6 +532,141 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-weight: 700;
     letter-spacing: 0.03em;
 }
+/* Grønn variant av varselbanneret - positiv kvittering (deløvelse fullført / øvelse bestått). */
+.sim-warning-banner.sim-banner-success {
+    background: rgba(35, 140, 70, 0.92);
+}
+
+/* Øvelses-beskrivelse i detaljvisningen: vanlig (ikke kursiv) brødtekst med luftig linjehøyde -
+   .sim-panel-hint er kursiv og beregnet på korte hint, ikke avsnitt. */
+.sim-exercise-desc {
+    font-style: normal;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    color: #333;
+    margin: 8px 0 12px;
+}
+.sim-exercise-detail-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 2px;
+}
+.sim-exercise-detail-title .sim-exercise-icon { color: var(--ffi-blue); }
+.sim-exercise-row-icon {
+    flex: 0 0 22px;
+    text-align: center;
+    color: var(--ffi-blue);
+    margin-right: 6px;
+}
+/* Diplom-raden nederst i øvelseslisten når alt er bestått - gull-aksent. */
+.sim-exercise-row-diploma { background: #fdf6df; }
+.sim-exercise-row-diploma .sim-exercise-row-icon { color: #d4af37; }
+
+/* Oppsummeringskort etter fullført øvelse (tid + ros + neste-valg). */
+.sim-exercise-summary {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    color: #222;
+    border-radius: 10px;
+    padding: 20px 26px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    text-align: center;
+    max-width: 360px;
+    pointer-events: auto;
+    z-index: 7;
+}
+.sim-exercise-summary h3 { margin: 0 0 8px; color: var(--ffi-blue); }
+.sim-exercise-summary p { margin: 0 0 14px; font-size: 0.9rem; }
+.sim-summary-buttons { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+/* Diplom-overlegg: utfyllbart navn + utskrift til PDF via nettleserens print-dialog. */
+.sim-diploma-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 10;
+}
+.sim-diploma {
+    background: white;
+    padding: 16px;
+    border-radius: 8px;
+    /* A4 (210 x 297 mm) - forhåndsvisningen på skjerm skal ha samme form/proporsjoner som papiret man
+       faktisk får ut av "Skriv ut / lagre som PDF" (se @page-regelen i @media print under). */
+    width: 210mm;
+    min-height: 297mm;
+    max-width: 92vw;
+    max-height: 92vh;
+    overflow-y: auto;
+}
+.sim-diploma-border {
+    border: 6px double var(--ffi-blue);
+    padding: 28px 24px;
+    text-align: center;
+    color: #222;
+}
+.sim-diploma-icons { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 10px; }
+.sim-diploma-quad { width: 2.6rem; height: 2.6rem; color: var(--ffi-blue); }
+.sim-diploma-medal { font-size: 3rem; color: #d4af37; }
+.sim-diploma-border h2 { margin: 0 0 2px; letter-spacing: 0.35em; color: var(--ffi-blue); }
+.sim-diploma-sub { margin: 0 0 20px; font-size: 0.85rem; color: #666; }
+.sim-diploma-line { margin: 0 0 8px; font-size: 0.95rem; }
+.sim-diploma-name {
+    border: none;
+    border-bottom: 2px solid #999;
+    font-size: 1.35rem;
+    text-align: center;
+    width: 80%;
+    font-family: inherit;
+    padding: 4px;
+    outline: none;
+    background: transparent;
+}
+.sim-diploma-text { font-size: 0.9rem; line-height: 1.55; margin: 18px 0 14px; }
+/* Bestetider per øvelse - to kolonner (navn + tid), tynn skillelinje mellom radene. */
+.sim-diploma-times {
+    margin: 0 auto 16px;
+    max-width: 380px;
+    text-align: left;
+    font-size: 0.82rem;
+}
+.sim-diploma-time-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 2px;
+    border-bottom: 1px solid #eee;
+}
+.sim-diploma-time-row span:last-child { font-variant-numeric: tabular-nums; color: var(--ffi-blue); font-weight: 600; }
+.sim-diploma-date { font-size: 0.85rem; color: #555; margin: 0; }
+.sim-diploma-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+
+/* Ved utskrift av diplomet skjules alt annet på siden - kun selve diplom-arket skrives ut, på et
+   A4-ark (ikke nettleserens/OS-ets standard papirstørrelse, som ikke nødvendigvis er A4). */
+@media print {
+    @page { size: A4; margin: 15mm; }
+    body.printing-diploma * { visibility: hidden; }
+    body.printing-diploma .sim-diploma-overlay,
+    body.printing-diploma .sim-diploma-overlay * { visibility: visible; }
+    body.printing-diploma .sim-diploma-overlay {
+        position: fixed;
+        inset: 0;
+        background: white;
+    }
+    /* min-height:0 - skjermforhåndsvisningens 297mm er ment for HELE arket; @page-margin over har
+       allerede tatt sin del, så å beholde det målet her ville dyttet innholdet over på et tomt ark 2. */
+    body.printing-diploma .sim-diploma { box-shadow: none; max-width: none; width: 100%; max-height: none; min-height: 0; }
+    body.printing-diploma .sim-diploma-actions { display: none; }
+    body.printing-diploma .sim-diploma-name { border-bottom-color: transparent; }
+    body.printing-diploma .sim-diploma-name::placeholder { color: transparent; }
+}
 
 .sim-toolbar {
     position: absolute;
@@ -549,6 +688,13 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-size: 0.85rem;
 }
 .sim-btn:hover { background: white; }
+/* Primær-variant for knapper INNE i lyse paneler (f.eks. "Start øvelse") - standard .sim-btn er
+   hvit-på-mørk-verktøylinje og blir nesten usynlig mot panelbakgrunnen. */
+.sim-btn-primary {
+    background: var(--ffi-blue);
+    color: white;
+}
+.sim-btn-primary:hover { background: #065d9e; color: white; }
 
 .sim-dropdown {
     position: relative;
@@ -723,6 +869,66 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     flex: 1;
     min-width: 0;
 }
+
+.sim-exercise-hud-bar {
+    margin-top: 8px;
+}
+.sim-exercise-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-family: 'Overpass', sans-serif;
+    text-align: left;
+    cursor: pointer;
+}
+.sim-exercise-row:hover { background: rgba(3, 71, 127, 0.08); }
+.sim-exercise-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.sim-exercise-row-title {
+    font-weight: 600;
+    color: var(--ffi-blue);
+    font-size: 0.9rem;
+}
+.sim-exercise-row-desc {
+    font-size: 0.78rem;
+    color: #777;
+}
+.sim-exercise-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #2e8b57;
+    white-space: nowrap;
+}
+.sim-exercise-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--ffi-blue);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: 'Overpass', sans-serif;
+    font-weight: 600;
+    padding: 4px 0;
+    margin-bottom: 10px;
+}
+.sim-exercise-back-btn:hover { text-decoration: underline; }
 
 /* --- Print / last ned som PDF --- */
 @media print {

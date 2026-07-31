@@ -25,6 +25,15 @@
             <span class="sim-crash-title">KRASJ!</span>
             <span class="sim-crash-hint">Trykk R for å resette</span>
         </div>
+        <div class="sim-crash-banner" id="injuryBanner">
+            <i class="fa-solid fa-user-injured sim-injury-icon"></i>
+            <span class="sim-crash-title">AU AU! DU HAR SKADET DEG SELV!</span>
+            <span class="sim-crash-hint">Legevakt: 116 117 &middot; Ambulanse: 113</span>
+            <span class="sim-crash-hint">R for å restarte</span>
+        </div>
+        <div class="sim-warning-banner" id="exerciseWarningBanner">
+            <span class="sim-crash-title" id="exerciseWarningText"></span>
+        </div>
         <div class="sim-status-bar">
             <div class="sim-status-item">
                 <span class="sim-status-label">Modus</span>
@@ -64,18 +73,43 @@
             </div>
         </div>
 
+        <div class="sim-status-bar sim-exercise-hud-bar" id="exerciseHudBar" style="display:none;">
+            <div class="sim-status-item">
+                <span class="sim-status-label">Øvelse</span>
+                <span id="exerciseHudStage" class="sim-status-value">-</span>
+            </div>
+            <div class="sim-status-item">
+                <span class="sim-status-label">Fremdrift</span>
+                <span id="exerciseHudLaps" class="sim-status-value">0/3</span>
+            </div>
+            <div class="sim-status-item">
+                <span class="sim-status-label">Avvik</span>
+                <span id="exerciseHudViolations" class="sim-status-value">-</span>
+            </div>
+            <div class="sim-status-item">
+                <span class="sim-status-label">Nese-feil</span>
+                <span id="exerciseHudHeadingError" class="sim-status-value">-</span>
+            </div>
+            <div class="sim-status-item">
+                <span class="sim-status-label">Tid</span>
+                <span id="exerciseHudTimer" class="sim-status-value">0:00</span>
+            </div>
+        </div>
+
         <div class="sim-toolbar no-print">
             <button type="button" class="sim-btn" id="armToggleBtn"><i class="fa-solid fa-power-off"></i> Disarm (K)</button>
             <button type="button" class="sim-btn" id="fpvHudBtn"><i class="fa-solid fa-crosshairs"></i> OSD: Crosshair (O)</button>
             <button type="button" class="sim-btn" id="resetBtn"><i class="fa-solid fa-rotate-left"></i> Reset (R)</button>
             <button type="button" class="sim-btn" id="toggleHelpBtn"><i class="fa-solid fa-circle-question"></i> Hjelp (H)</button>
+            <button type="button" class="sim-btn" id="toggleExercisesBtn"><i class="fa-solid fa-graduation-cap"></i> Øvelser (M)</button>
             <div class="sim-dropdown">
                 <button type="button" class="sim-btn" id="settingsToggleBtn"><i class="fa-solid fa-gear"></i> Settings</button>
                 <div class="sim-dropdown-menu" id="settingsMenu">
                     <button type="button" class="sim-dropdown-item" id="toggleRatesBtn"><i class="fa-solid fa-sliders"></i> Rates (T)</button>
                     <button type="button" class="sim-dropdown-item" id="toggleDroneCameraBtn"><i class="fa-solid fa-helicopter"></i> Drone og kamera</button>
-                    <button type="button" class="sim-dropdown-item" id="toggleWindBtn"><i class="fa-solid fa-wind"></i> Vind</button>
+                    <button type="button" class="sim-dropdown-item" id="toggleWindBtn"><i class="fa-solid fa-wind"></i> Vær</button>
                     <button type="button" class="sim-dropdown-item" id="toggleGamepadBtn" style="display:none;"><i class="fa-solid fa-gamepad"></i> Kontroller</button>
+                    <button type="button" class="sim-dropdown-item" id="clearExerciseTimesBtn"><i class="fa-solid fa-trash-can"></i> Nullstill øvelsestider</button>
                 </div>
             </div>
         </div>
@@ -109,12 +143,17 @@
                 <input type="checkbox" id="realisticModeInput">
             </div>
             <p class="sim-panel-hint" style="margin-top:0;">Simulerer batteri og linkkvalitet (avstand/siktlinje til bygget) - link kan falle helt ut, med forstyrret bilde og kontroll.</p>
+            <div class="sim-rate-row">
+                <label style="flex:1;">Airmode</label>
+                <input type="checkbox" id="airmodeInput">
+            </div>
+            <p class="sim-panel-hint" style="margin-top:0;">Uten Airmode mister droneen mye av rull/pitch/yaw-autoriteten nær 0 % og 100 % gass (motorene har ikke plass til å justere seg mer). Med Airmode beholdes kontrollen uansett gassnivå, som på en drone satt opp for freestyle/racing.</p>
         </div>
 
         <div class="sim-panel" id="windPanel" style="display:none;">
             <div class="sim-panel-header">
                 <button type="button" class="sim-panel-back" title="Tilbake"><i class="fa-solid fa-arrow-left"></i></button>
-                <h3>Vind</h3>
+                <h3>Vær</h3>
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="sim-rate-row">
@@ -137,6 +176,16 @@
                 <span class="sim-rate-value" id="windGustValue">0.3</span>
             </div>
             <p class="sim-panel-hint" style="margin-top:0;">Stabil vind driver droneen nedvinds - må styres imot for å holde posisjon. Vindpølsen ved avgangsplassen viser retning og styrke. "Kast" legger på naturlige, glattede vindkast oppå den stabile vinden.</p>
+            <div class="sim-rate-row">
+                <label style="flex:1;">Vis skyer</label>
+                <input type="checkbox" id="cloudsEnabledInput">
+            </div>
+            <div class="sim-rate-row">
+                <label>Skydekke</label>
+                <input type="range" id="cloudCoverageInput" min="10" max="100" step="10">
+                <span class="sim-rate-value" id="cloudCoverageValue">60%</span>
+            </div>
+            <p class="sim-panel-hint" style="margin-top:0;">Skyene driver over himmelen etter styrke/retning satt over, men kun mens "Aktiver vind" er på - stille luft betyr stille skyer. Skydekket kan justeres uansett.</p>
         </div>
 
         <div class="sim-panel" id="gamepadPanel" style="display:none;">
@@ -181,11 +230,85 @@
                 <li><strong>Rate-kurve</strong><span>Dra blått/rødt punkt på kurven for å justere direkte</span></li>
                 <li><strong>Drone-type</strong><span>Velg Racing/Middels/Cinematic i Drone og kamera-panelet - ulikt utseende og oppførsel</span></li>
                 <li><strong>Landingsben</strong><span>Middels/Cinematic kan lande på bena eller tippe over ved skjev/hard landing</span></li>
+                <li><strong>Propellskade</strong><span>Propeller som treffer bakke, vegg eller port skades og mister trekkraft - hardt treff ødelegger helt, lette berøringer akkumulerer. R reparerer</span></li>
+                <li><strong>Veltet drone</strong><span>Ligger den på siden/opp ned kan den ikke rulles opp med pinnene - velter den helt rundt regnes det som krasj (R for reset)</span></li>
+                <li><strong>Skraping</strong><span>Å dra understellet langs bakken i fart er ustabilt - bena hekter, nesa graver seg ned og den velter til slutt</span></li>
+                <li><strong>Piloten</strong><span>Ikke fly i deg selv (figuren ved avgangsplassen) - det gir personskade, ikke bare krasj</span></li>
                 <li><strong>Realistisk modus</strong><span>Batteri/link i Drone og kamera-panelet; link svekkes med avstand og bak bygget</span></li>
-                <li><strong>Vind</strong><span>Aktiver i Vind-panelet - stabil vind + kast, vis retning/styrke på vindpølsen</span></li>
+                <li><strong>Airmode</strong><span>I Drone og kamera-panelet - beholder rull/pitch/yaw-autoritet nær 0 %/100 % gass</span></li>
+                <li><strong>Vind</strong><span>Aktiver i Vær-panelet - stabil vind + kast, vis retning/styrke på vindpølsen</span></li>
+                <li><strong>Fjell/skog/skyer</strong><span>Bakgrunnslandskap uten kollisjon - skyene driver med styrke/retning fra Vær-panelet, der skydekke også justeres</span></li>
                 <li><strong>Racing-bane</strong><span>Stor, slynget løype med porter og en låve du flyr gjennom</span></li>
                 <li><strong>Landingsplasser</strong><span>"H"-merket ved avgangspunktet og på bygningstaket</span></li>
+                <li><strong>M</strong><span>Øvelser - ni treningsøvelser med veiledningslinjer, fra hover og firkant til åttetall i vind</span></li>
             </ul>
+        </div>
+
+        <div class="sim-panel" id="exercisesPanel" style="display:none;">
+            <div class="sim-panel-header">
+                <h3>Øvelser</h3>
+                <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="exerciseListView">
+                <div id="exerciseListItems"></div>
+            </div>
+            <div id="exerciseDetailView" style="display:none;">
+                <button type="button" class="sim-exercise-back-btn" id="exerciseBackToListBtn">
+                    <i class="fa-solid fa-arrow-left"></i> Tilbake
+                </button>
+                <h4 id="exerciseDetailTitle" class="sim-exercise-detail-title"></h4>
+                <p class="sim-exercise-desc" id="exerciseDetailDescription"></p>
+                <p class="sim-panel-hint" id="exerciseDetailProgress" style="display:none;"></p>
+                <div class="sim-rate-row">
+                    <button type="button" class="sim-btn sim-btn-primary" id="exerciseStartBtn">Start</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="exerciseCancelBtn" style="display:none;">Avbryt</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="sim-exercise-summary" id="exerciseSummary" style="display:none;">
+            <h3 id="exerciseSummaryTitle"></h3>
+            <p id="exerciseSummaryText"></p>
+            <div class="sim-summary-buttons">
+                <button type="button" class="sim-btn sim-btn-primary" id="exerciseNextBtn">Neste</button>
+                <button type="button" class="sim-btn sim-btn-primary" id="exerciseSummaryCloseBtn">Lukk</button>
+            </div>
+        </div>
+
+        <div class="sim-diploma-overlay" id="diplomaOverlay" style="display:none;">
+            <div class="sim-diploma">
+                <div class="sim-diploma-border">
+                    <div class="sim-diploma-icons">
+                        <!-- Font Awesome har ikke et faktisk quadcopter-ikon i gratisversjonen - tegnet
+                             som et lite inline SVG-ikon i stedet (X-ramme + fire rotorer), fremfor å
+                             bruke helikopter-ikonet som ikke ligner en quad. -->
+                        <svg class="sim-diploma-quad" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" aria-hidden="true">
+                            <line x1="32" y1="32" x2="13" y2="13"></line>
+                            <line x1="32" y1="32" x2="51" y2="13"></line>
+                            <line x1="32" y1="32" x2="13" y2="51"></line>
+                            <line x1="32" y1="32" x2="51" y2="51"></line>
+                            <circle cx="13" cy="13" r="8"></circle>
+                            <circle cx="51" cy="13" r="8"></circle>
+                            <circle cx="13" cy="51" r="8"></circle>
+                            <circle cx="51" cy="51" r="8"></circle>
+                            <rect x="25" y="25" width="14" height="14" rx="2" fill="currentColor" stroke="none"></rect>
+                        </svg>
+                        <i class="fa-solid fa-award sim-diploma-medal"></i>
+                    </div>
+                    <h2>DIPLOM</h2>
+                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter stikkeferdigheter</p>
+                    <p class="sim-diploma-line">tildeles</p>
+                    <input type="text" id="diplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
+                    <p class="sim-diploma-text">for å ha bestått alle ti treningsøvelsene i
+                        quadkopter-simulatoren, gjennomført i stabilisert modus (ingen GPS-assistanse).</p>
+                    <div class="sim-diploma-times" id="diplomaTimes"></div>
+                    <p class="sim-diploma-date" id="diplomaDate"></p>
+                </div>
+                <div class="sim-diploma-actions no-print">
+                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaPrintBtn"><i class="fa-solid fa-print"></i> Skriv ut / lagre som PDF</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaCloseBtn">Lukk</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>

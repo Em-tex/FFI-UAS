@@ -127,19 +127,18 @@
             <div class="sim-rate-row">
                 <label>Styrke</label>
                 <input type="range" id="windSpeedInput" min="0" max="20" step="0.5">
-                <span class="sim-rate-value" id="windSpeedValue">5</span>
+                <span class="sim-rate-value" id="windSpeedValue">5 m/s</span>
             </div>
             <div class="sim-rate-row">
                 <label>Retning</label>
                 <input type="range" id="windDirectionInput" min="0" max="359" step="1">
                 <span class="sim-rate-value" id="windDirectionValue">0°</span>
             </div>
-            <div class="sim-rate-row">
-                <label>Kast</label>
+            <div class="sim-rate-row" title="Hvor mye kastene kan legge til på toppen av styrken over, som andel av den - 30% betyr at kastene kan variere vinden opptil 30% sterkere/svakere enn den jevne styrken.">
+                <label>Kast (andel av styrke)</label>
                 <input type="range" id="windGustInput" min="0" max="1" step="0.05">
-                <span class="sim-rate-value" id="windGustValue">0.3</span>
+                <span class="sim-rate-value" id="windGustValue">30%</span>
             </div>
-            <p class="sim-panel-hint" style="margin-top:0;">Motvind forkorter start-/landingsrullingen - vindpølsen ved rullebanen viser retning og styrke.</p>
         </div>
 
         <div class="sim-panel" id="gamepadPanel" style="display:none;">

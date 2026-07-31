@@ -724,7 +724,8 @@
     // observatøren står. Kalleren er ansvarlig for å sette figuren på et eget layer og skjule det laget
     // for VLOS-kameraet (personen skal ikke se seg selv), f.eks.:
     //   person.traverse(o => o.layers.set(1)); chaseCamera.layers.enable(1); fpvCamera.layers.enable(1);
-    function buildPersonFigure() {
+    function buildPersonFigure(opts) {
+        const holdingController = !!(opts && opts.holdingController);
         const group = new THREE.Group();
         const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0b088 });
         const vestMat = new THREE.MeshStandardMaterial({ color: 0xff7a1a });
@@ -756,9 +757,21 @@
         group.add(head);
 
         [-1, 1].forEach(function (side) {
-            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 0.09), vestMat);
-            arm.position.set(side * 0.21, legHeight + torsoHeight - 0.18, 0);
-            arm.rotation.z = side * 0.12;
+            let arm;
+            if (holdingController) {
+                // Armene bøyd frem og inn slik at hendene møtes på fjernkontrollen foran magen
+                // (kalleren fester selve kontrolleren ved ca. (0, 1.05, 0.28) i figurens ramme).
+                const shoulder = new THREE.Vector3(side * 0.21, 1.17, 0.02);
+                const hand = new THREE.Vector3(side * 0.07, 1.06, 0.24);
+                const dir = new THREE.Vector3().subVectors(shoulder, hand);
+                arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, dir.length() + 0.06, 0.09), vestMat);
+                arm.position.copy(hand).addScaledVector(dir, 0.5);
+                arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+            } else {
+                arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 0.09), vestMat);
+                arm.position.set(side * 0.21, legHeight + torsoHeight - 0.18, 0);
+                arm.rotation.z = side * 0.12;
+            }
             arm.castShadow = true;
             group.add(arm);
         });

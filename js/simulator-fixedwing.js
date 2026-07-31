@@ -13,70 +13,49 @@ const GRAVITY = 9.81;
 const AIR_DENSITY = 1.225; // kg/m^3, havnivå
 
 // Skrog-mål (bygge-enheter, FØR visualScale) - DELT mellom buildPlane (visuell mesh) og fysikk-sjekker
-// som checkTailStrike, slik at de aldri kan drifte ut av synk med hverandre. De pleide å være separate,
-// uavhengige tall, og etter flere runder med modell-justering (skroglengde/hale kortet inn osv.) hadde
-// checkTailStrike sin egen, grove tilnærming falt bakpå - det ga et falskt tailstrike-varsel lenge FØR
-// halen faktisk var i nærheten av bakken visuelt.
+// som checkTailStrike, slik at de aldri kan drifte ut av synk med hverandre (endres skroget, oppdateres
+// tailstrike-punktet automatisk med).
 const FUSELAGE_LENGTH_BUILD = 1.35;
 const CABIN_RADIUS_BUILD = 0.07;
 const CABIN_LEN_RATIO = 0.32;
-// Kortet inn (0.38 -> 0.33) - halekjeglen stakk synlig lenger bak enn høyderoret/sideroret (kjeglens
-// tupp endte ved z≈0.73, mot høyderorets bakkant på kun z≈0.68, uavhengig av flyklasse siden forskjellen
-// domineres av de DELTE, klasse-uavhengige skrog-konstantene) - så kjeglen stakk ut bak hele haleflaten
-// i stedet for å avsluttes omtrent der halen sitter. Siden denne er DELT med checkTailStrike (se
-// merknaden over), flytter denne fiksen automatisk varselpunktet tilsvarende fremover også - riktig,
-// ikke en bieffekt: en kortere kjegle skal treffe bakken ved en litt mindre rotasjonsvinkel i
-// virkeligheten også.
-const TAIL_LEN_RATIO = 0.33;
+const TAIL_LEN_RATIO = 0.33; // halekjeglens tupp skal lande omtrent der høyderor/sideror sitter, ikke lenger bak
 const TAIL_TIP_RADIUS_RATIO = 0.16;
+// Vingens monteringshøyde over CG (andel av cabinRadius) - DELT mellom buildPlane og bakkeeffekt-
+// beregningen i stepPhysics, siden bakkeeffekt virker fra VINGEN, ikke fra CG/planeState.position.y
+// direkte (denne er høyvinget - vingen sitter tydelig høyere enn CG).
+const WING_MOUNT_HEIGHT_RATIO = 1.3;
 
 // I motsetning til quad-simulatorens Acro-modus (som setter ønsket vinkelhastighet direkte) styres et
 // ekte fly ALDRI ved å kommandere en rate - pinnen avbøyer en rorflate, og rorflaten skaper et
-// dreiemoment proporsjonalt med dynamisk trykk (0.5*rho*V^2), dempet av en motsatt rettet
-// dreiemoment fra flyets egen vinkelhastighet (aerodynamisk demping - uten den ville flyet spunnet
-// evig som i verdensrommet). Dette gir automatisk de to viktigste treningsegenskapene til et ekte fly:
-// nesten ingen kontroll ved lav fart (qDyn liten -> begge momentene er små -> treg respons/"mushy" ror),
-// og fast/hurtig respons ved høy fart - uten noen egen "svekk kontroll ved lav fart"-multiplikator.
-// (Effektivitet og demping skalert opp ~3x fra første forsøk - responstiden ved gitt fart er
-// proporsjonal med treghet/(fart^2 * demping), så den første tuningen ga en merkbart treg/"gummi-aktig"
-// respons selv ved marsjfart. Forholdet effektivitet/demping - og dermed rotasjonshastigheten ved full
-// utslag - er uendret, kun hvor RASKT den nås.)
-// Økt (0.15 -> 0.24) - Liten sin rulling var fortsatt treg selv etter å ha kuttet inertiaRoll kraftig
-// (0.25 -> 0.12). Det er en viktig forskjell mellom de to: inertia styrer kun hvor RASKT toppfarten nås,
-// mens EFFECTIVENESS/DAMPING-FORHOLDET styrer selve toppfarten (steady-state rate = effectiveness/damping
-// * qDyn/qDyn, uavhengig av inertia). Å bare kutte inertia mer og mer hjelper ikke hvis toppfarten selv
-// er for lav - dette økte selve forholdet (0.15/0.03=5 -> 0.24/0.03=8), som øker toppfarten for ALLE
-// klasser (delt konstant), ikke bare responstiden for Liten.
+// dreiemoment proporsjonalt med dynamisk trykk (0.5*rho*V^2), dempet av et motsatt rettet moment fra
+// flyets egen vinkelhastighet (aerodynamisk demping). Gir automatisk lav kontrollautoritet ved lav fart
+// og fast/hurtig respons ved høy fart, uten noen egen "svekk kontroll"-multiplikator. Steady-state
+// rotasjonsrate ved fullt utslag styres av forholdet EFFECTIVENESS/DAMPING (uavhengig av inertia -
+// inertia styrer kun hvor RASKT den nås), så disse to må tunes sammen, ikke hver for seg.
 const ROLL_CONTROL_EFFECTIVENESS = 0.24;
 const ROLL_DAMPING = 0.03;
-// Skråror (aileron) endrer nå OGSÅ vingens EFFEKTIVE angrepsvinkel direkte (i tillegg til den
-// eksisterende flate ROLL_CONTROL_EFFECTIVENESS over, beholdt uendret for ikke å rokke ved en nylig
-// stabilisert rullrespons) - se rightWing/leftWing i stepPhysics. Dette gir to realistiske effekter
-// "gratis" fra samme mekanisme: (1) "adverse yaw" - vingen med nedadgående klaff får mer løft OG mer
-// indusert drag, som gir et girmoment MOTSATT rullretningen (grunnen til at koordinerte svinger trenger
-// sideror), og (2) mer realistisk spinn/autorotasjon - samme differensial-drag-mekanisme oppstår også
-// fra selve ROTASJONEN (ikke bare rorutslag), slik at en steilet/indre vinge i en spinn gir et
-// gir-moment som FORSTERKER rotasjonen, akkurat som i et ekte fly.
-// Økt (10 -> 22) - dette var det egentlige treghetspunktet, ikke ROLL_CONTROL_EFFECTIVENESS (som bare
-// øker TELLEREN i steady-state-forholdet control/demping). Regnet ut faktisk NEVNER for Liten ved
-// marsjfart (12 m/s, ~5.85° cruise-AoA for å bære vekten): rollWingDampCoeff (vinge-modellens EGEN,
-// nå korrekt lineariserte rate-demping) ≈ 13.9, mot den flate qDynControl*ROLL_DAMPING ≈ 2.6 - vinge-
-// dempingen dominerer med over 5x! Å øke ROLL_CONTROL_EFFECTIVENESS (som kun virker på den FLATE, lille
-// delen av telleren) kunne derfor aldri monne. AILERON_MAX_AOA_DEG virker derimot gjennom SAMME
-// vinge-mekanisme som denne dominerende dempingen kommer fra, og treffer dermed den faktiske flaskehalsen.
+// Skråror (aileron) endrer nå OGSÅ vingens EFFEKTIVE angrepsvinkel direkte (se rightWing/leftWing i
+// stepPhysics), i tillegg til den flate ROLL_CONTROL_EFFECTIVENESS over. Gir to realistiske effekter
+// gratis: (1) "adverse yaw" - vingen med nedadgående klaff får mer løft OG mer indusert drag, som girer
+// MOTSATT rullretningen (derfor trenger koordinerte svinger sideror), og (2) mer realistisk spinn/
+// autorotasjon - samme differensial-drag-mekanisme oppstår fra selve ROTASJONEN, ikke bare rorutslag.
+// AILERON_MAX_AOA_DEG (ikke ROLL_CONTROL_EFFECTIVENESS) er den reelle flaskehalsen for rull-autoritet:
+// vinge-modellens egen rate-demping (rollWingDampCoeff) dominerer over den flate ROLL_DAMPING-termen med
+// >5x ved marsjfart, så bare denne (som virker gjennom SAMME vinge-mekanisme) monner.
 const AILERON_MAX_AOA_DEG = 22;
-// (To tidligere forsøk på å forsterke "yaw induserer rull" (Clr) - først ved å multiplisere gir-rate-
-// bidraget inni rightRot/leftRot direkte (kvalte gir-responsen ved utilsiktet å forsterke gir-dempingen
-// like mye), så et eget ekstra-ledd proporsjonalt med rå yawRate (kvalte i stedet rull-autoriteten, siden
-// det reagerte likt på YAW FRA ADVERSE YAW også - se historikk i git/samtalelogg). Begge fjernet - nå som
-// vinge-modellens egen Clr-kobling (rollWingF0) har riktig linearisert demping, gir den denne effekten
-// selv, korrekt skalert til akkurat den kilden til yaw som faktisk er til stede.)
 // Dihedral-effekt (Clβ - rull fra SIDESLIP-VINKEL, ikke gir-rate) - se rollTorqueFromDihedral i
-// stepPhysics. Denne er VEDVARENDE (ikke rate-avhengig som Clr/Cnp-koblingen over): et sideror holdt
-// inne gir et sideslip som varer så lenge roret holdes, og dermed et rullmoment som OGSÅ varer så lenge
-// - ikke bare et kortvarig napp. Dette er det som gjør at kryssede ror (skråror én vei, sideror andre
-// veien) kan holde flyet i en rett, sideslippende bane, akkurat som en ekte "forward slip".
-const DIHEDRAL_EFFECT = 0.02;
+// stepPhysics. VEDVARENDE (ikke rate-avhengig som Clr/Cnp over): et sideror holdt inne gir et sideslip
+// som varer så lenge roret holdes, og dermed et rullmoment som også varer - dette er det som gjør at
+// kryssede ror kan holde flyet i en rett, sideslippende "forward slip"-bane. Skalert med qDynControl
+// (rekalibrert fra en tidligere u-skalert 0.02 til samme effekt ved ~12 m/s - se stepPhysics).
+const DIHEDRAL_EFFECT = 0.02 / 88.2;
+// Skrogets sidekraft/sidedrag i sideslip - se fuselageCrossflowDrag i stepPhysics. Skroget er i praksis
+// en butt kropp som møter luften på TVERS under sideslip (en "forward slip"/kryssede ror, som dihedral-
+// effekten over allerede lar flyet holde), og et flatt legeme på tvers av strømmen gir betydelig
+// motstand - det er selve POENGET med manøveren (brattere synkefart uten å øke farten). Uten dette leste
+// finnen alene ALL sidekraft/-drag i sideslip, som ga en for lett/svak slip-effekt.
+const FUSELAGE_SIDE_AREA_RATIO = 0.3;  // skrogets sideprofil-areal, som andel av vingearealet
+const FUSELAGE_SIDE_CD = 1.2;          // typisk normalkraft-koeffisient for et butt/flatt legeme på tvers
 // Stigemomentet (pitch) er IKKE lenger et flatt, håndjustert "kontrolleffektivitet"-tall - se
 // beregningen av tailArm/tailLift i stepPhysics, som modellerer et ekte vekt-og-balanse-prinsipp:
 // halen henger et stykke bak tyngdepunktet og produserer selve stigemomentet fra sitt EGET løft, akkurat
@@ -86,6 +65,11 @@ const TAIL_ARM_RATIO = 0.55;      // halens moment-arm fra CG, som andel av ving
 const TAIL_AREA_RATIO = 0.22;     // halens areal, som andel av vingearealet (typisk for lette fly)
 const TAIL_CL_SLOPE_RATIO = 0.85; // halens løftekurve-helning relativt til hovedvingens
 const ELEVATOR_MAX_AOA_DEG = 16;  // grader endring i halens angrepsvinkel ved fullt rorutslag
+// Nedvask (downwash) fra vingen treffer halen og reduserer dens EFFEKTIVE AoA-endring når vingens egen
+// AoA endres - halen ser i praksis IKKE fri luftstrøm, den sitter i vingens avbøyde nedvask. Uten dette
+// var flyet mer stigestabilt enn selve geometrien skulle tilsi (halen "så" hele vinge-AoA-endringen
+// direkte). Typisk 30-50% av vingens AoA-endring for et lavt/normalt halehøyde-forhold.
+const DOWNWASH_RATIO = 0.4;
 // Gir-momentet (yaw) brukte tidligere et flatt, håndjustert par (YAW_CONTROL_EFFECTIVENESS/YAW_DAMPING +
 // en egen yawStability-konstant per klasse) - i motsetning til stigemomentet, som er en ekte vekt-og-
 // balanse-modell. Erstattet med akkurat samme prinsipp som halen: finnen henger på samme moment-arm
@@ -95,16 +79,11 @@ const ELEVATOR_MAX_AOA_DEG = 16;  // grader endring i halens angrepsvinkel ved f
 // fra én modell - i stedet for tre separate, håndjusterte tall.
 const FIN_AREA_RATIO = 0.13;      // finnens areal, som andel av vingearealet
 const FIN_CL_SLOPE_RATIO = 0.75;  // finnens løftekurve-helning relativt til hovedvingens
-// Økt (18 -> 32) - dette er en RATIO-bug, ikke en fartsavhengig en: den naturlige (urettede) sideslip-
-// VINKELEN finnen ser (baseSlip = atan2(vx,-vz)) er en ren GEOMETRISK vinkel som ikke avhenger av selve
-// vind-STYRKEN - selv "litt" vind gir en stor vinkel når fartsvektoren nesten er null (stillestående på
-// bakken, eller i utflating/berøring ved landing), siden luften da kommer nesten rett fra siden uansett
-// hvor svak vinden er. Ved 18° kunne fullt sideror aldri kansellere en naturlig sideslip på 25-35°
-// (vanlig ved lav fart i vind - se finAoaDeg sin egen klemming til ±35°) - piloten hadde rett og slett
-// ikke nok rorutslag til å holde nesen rett, uansett hvor mye sideror som ble brukt. Siden BÅDE det
-// naturlige momentet og rorets moment skalerer med SAMME dynamiske trykk, er dette en ren gradtall-/
-// autoritets-ubalanse, ikke noe som endrer seg med fart - derfor samme fiks for både bakke-vindkantring
-// og sideslip-landing.
+// Den naturlige (urettede) sideslip-VINKELEN finnen ser er en ren GEOMETRISK vinkel, uavhengig av selve
+// vind-STYRKEN - nærmer seg 90° når fartsvektoren er nesten null (stillestående/utflating), selv i svak
+// vind. Fullt utslag må derfor kunne kansellere en naturlig sideslip opp mot 25-35° (klemt til ±35° i
+// finAoaDeg), noe et lavere gradtall (18°, tidligere verdi) ikke klarte - påvirker både bakke-
+// vindkantring og sideslip-landing likt, siden begge momenter skalerer med samme dynamiske trykk.
 const RUDDER_MAX_AOA_DEG = 32;    // grader endring i finnens angrepsvinkel ved fullt sideror-utslag
 // Se yawDampCoeff i stepPhysics for utregningen (dempingsforhold ζ≈0.29 uten denne, en tydelig
 // underdempet "Dutch roll"-lignende gir-oscillasjon) - en ekte yaw-damper-boost, ikke en fiktiv fiks.
@@ -113,27 +92,26 @@ const YAW_DAMPER_GAIN = 3;
 // Propellstrøm (propwash/slipstream): halen/finnen sitter rett i propellens luftstrøm, som akselereres
 // UAVHENGIG av flyets EGEN bakkefart/luftfart - gir aksielt (0.5*rho*A*v²-momentum-teori, se
 // propwashDeltaV i stepPhysics) reell rorautoritet (høyderor/sideror) selv ved lav fart så lenge gassen
-// står på (f.eks. haleroterende taksing med full gass, eller å "fange" nesen med gass rett før stall/ved
-// avgang) - noe som manglet helt før (rorautoriteten der kom KUN fra flyets egen luftfart, som er akkurat
-// null der propwash trengs mest).
-// VIKTIG (fikset bug - propwash ble helt urealistisk voldsom, kunne gire flyet rundt midt i luften):
-// PROPWASH_EFFECTIVE_AREA_RATIO ble først satt til 0.06 (tolket som selve propellskivens fysiske areal,
-// ~6% av vingearealet) - momentum-teori-farten v_i går som sqrt(T/A), så et SÅ lite areal ga en statisk
-// (V=0) slipstrøm-økning på over 35 m/s for Liten (18N/0.0228m²) - langt mer enn selv marsjfarten (12
-// m/s). Arealet her representerer i praksis IKKE selve propellskiven, men hvor mye slipstrømmen har
-// SPREDD/blandet seg med omgivelsene idet den når halen/finnen et stykke bak - derfor et langt større
-// "effektivt" areal enn selve skiven. Kalibrert til å gi en statisk (stillestående, full gass) fart-økning
-// på ca. 5 m/s for alle klasser (tydelig og nyttig ved lav fart/taksing, men ikke urealistisk voldsom) -
-// se v_i-formelen i stepPhysics.
+// står på, noe som manglet helt før (rorautoriteten kom KUN fra flyets egen luftfart, null der propwash
+// trengs mest). Arealet under er IKKE selve propellskiven, men hvor mye slipstrømmen har spredd seg idet
+// den når halen/finnen - et for lite areal (f.eks. skivens fysiske ~6%) gir en urealistisk stor statisk
+// fartsøkning (over 35 m/s), siden momentum-teoriens v_i går som sqrt(T/A). Kalibrert til ~5 m/s statisk
+// fartsøkning for alle klasser (se v_i-formelen i stepPhysics).
 const PROPWASH_EFFECTIVE_AREA_RATIO = 3.0;
 
-// Bakkeeffekt: reduserer indusert motstand når vingen er lavere enn ca. ett vingespenn over bakken
-// (bakken hindrer vingetupp-virvlene/nedvasken i å utvikle seg fullt ut) - se groundEffectFactor i
-// stepPhysics. Dette er det som gir "flyting" (redusert synkefart/lengre utrulling i luften rett før
-// touchdown) ved landing, og mindre motstand/kortere rulling rett etter avgang mens flyet ennå er lavt.
-// Kun indusert DRAG er modellert (ikke en egen løft-økning) - det er den klart mest merkbare av de to i
-// praksis, og unngår å innføre en ekstra, vanskeligere-å-verifisere løft-korreksjon.
-const GROUND_EFFECT_HEIGHT_FACTOR = 16; // høyere tall = bakkeeffekten forsvinner raskere med høyde
+// Bakkeeffekt: reduserer indusert motstand når VINGEN (ikke CG - se wingHeightAboveGround i stepPhysics)
+// er lavere enn ca. ett vingespenn over bakken, og er tydelig merkbar (halvveis til fullt bortfalt) rundt
+// et HALVT vingespenn (bakken hindrer vingetupp-virvlene/nedvasken i å utvikle seg fullt ut) - se
+// groundEffectFactor i stepPhysics. Dette er det som gir "flyting" (redusert synkefart/lengre utrulling i
+// luften rett før touchdown) ved landing, og mindre motstand/kortere rulling rett etter avgang mens flyet
+// ennå er lavt. HEIGHT_FACTOR=2 gir nøyaktig halvveis-bortfall ved h/b=0.5 og ~20% effekt igjen ved h/b=1.
+const GROUND_EFFECT_HEIGHT_FACTOR = 2; // høyere tall = bakkeeffekten forsvinner raskere med høyde
+// Bakkeeffekten gir også en liten LØFT-økning nær bakken (ikke bare redusert drag, se over) - typisk
+// 5-10% ved bakkenivå, forsvinner sammen med resten av bakkeeffekten idet høyden nærmer seg ett
+// vingespenn. Dette er selve kilden til den karakteristiske "flyter forbi setepunktet"-følelsen ved
+// landing (flyet nekter å synke helt til sist selv med gass i tomgang) - kun redusert drag alene gir
+// ikke denne følelsen like tydelig.
+const GROUND_EFFECT_LIFT_BOOST_MAX = 0.08;
 const PASSIVE_ANGULAR_DAMPING = 0.995;
 
 const MAX_BANK_ANGLE = 50;      // grader, Stabilized: pinne-utslag -> ønsket krengevinkel
@@ -156,16 +134,11 @@ const STABILIZED_PITCH_AUTHORITY_DEG = 12;
 // standard PID-forbedring (PD i stedet for ren P) som bremser tilnærmingen FØR den treffer målet.
 const STABILIZED_BANK_D_GAIN = 0.02;
 const STABILIZED_PITCH_D_GAIN = 0.02;
-// D-leddet over målte RÅ vinkelrate (finite-difference over ETT tick, 1/120s) uten noe filter - enhver
-// liten, forbigående forstyrrelse i vinkelen mellom to fysikk-tick (f.eks. bakkekontaktens svake
-// nivelleringskorreksjon, eller bare selve turbulensen i vinge-/hale-modellens ikke-lineære respons)
-// blir da FORSTERKET med en faktor på 120 (1/dt) idet den differensieres, og gir seg utslag som synlig
-// "hakking" i rorutslaget/rullet - klassisk digital-kontroll-fenomen ("derivative kick"/støyforsterkning
-// fra et ufiltrert D-ledd), ikke en reell ustabilitet i selve flyfysikken. Fikset med et lavpassfilter på
-// selve raten (samme prinsipp/idiom som AUTO_TRIM_FILTER_TAU under) FØR den ganges med D_GAIN - kort nok
-// tidskonstant til at ekte, tilsiktet demping av tilnærmingen mot målvinkelen fortsatt skjer omtrent
-// like raskt (den ekte kommanderte raten endrer seg over titalls-hundretalls ms), men lang nok til å
-// dempe vekk enkelttick-støy.
+// D-leddets rate måles via finite-difference over ETT fysikk-tick (1/120s) - uten filter forsterkes enhver
+// liten forstyrrelse (bakkekontaktens nivelleringskorreksjon, vinge-modellens ikke-lineære respons) med en
+// faktor på 120 idet den differensieres ("derivative kick", et kjent digital-kontroll-fenomen, ikke en
+// reell ustabilitet i selve flyfysikken). Lavpassfiltrert (samme idiom som AUTO_TRIM_FILTER_TAU) før bruk -
+// kort nok til at ekte demping fortsatt skjer omtrent like raskt, lang nok til å dempe enkelttick-støy.
 const STABILIZED_D_FILTER_TAU = 0.12;
 
 const TRIM_RANGE_DEG = 15;      // maks høyderor-trim, begge retninger
@@ -179,9 +152,7 @@ const AUTO_TRIM_RATE_DEG_PER_SEC = 3;
 // i stedet for kun å ta over den VEDVARENDE/faste delen av utslaget. TAU er tidskonstanten (sekunder)
 // for hvor fort det filtrerte signalet følger faktisk utslag - typisk RC-autopilot-oppførsel.
 const AUTO_TRIM_FILTER_TAU = 2.5;
-// Utvidet (6 -> 11) - løftet falt fra topp til kun 30% i løpet av bare 6 grader, et brått nok fall/
-// gjenvinning av 70% av vingens løft til å oppleves som et rykk/kast hvis flyet manøvreres nær
-// steilegrensen, i stedet for en mer gradvis inntreden.
+// Bred nok overgangssone (11°) til at løftet ikke faller brått/rykkete idet flyet krysser inn i steiling.
 const STALL_POST_RANGE_DEG = 11; // bredde på overgangssonen rett etter kritisk vinkel før dyp steiling
 
 const ROLLING_FRICTION = 0.045; // rullemotstand (hjul mot asfalt) ved normal rulling/taxi
@@ -191,6 +162,12 @@ const GROUND_YAW_FRICTION = 3;  // eksponentiell demping (1/s) av gir-rotasjon f
 // yawTorqueF0 i stepPhysics. Skalert med vekt (mass*GRAVITY), som normalkraften på dekkene i
 // virkeligheten - et tyngre fly har mer dekk-grep og er dermed mer motstandsdyktig mot vindkantring.
 const GROUND_YAW_FRICTION_TORQUE_COEFF = 0.15;
+// Samme statiske-friksjon-prinsipp som over, men for LATERAL (sideveis) kraft i stedet for gir-moment -
+// resolveGroundContact sin egen lateralSpeed-demping er kun RATE-basert (bremser en eksisterende
+// sidebevegelse) og motstår aldri en VEDVARENDE sidekraft (f.eks. vind-drag i kryssvind), som ellers gir
+// en nullforskjellig likevektsfart der flyet sakte men uendelig driver sidelengs. Kansellerer små/
+// moderate sidekrefter helt, reduserer bare (ikke fjerner) sterkere kast.
+const GROUND_LATERAL_FRICTION_COEFF = 0.25;
 const GROUND_CLEARANCE_FW = 0.05;
 const CRASH_SINK_RATE = 6;      // m/s synkefart ved berøring som teller som hard landing
 const CRASH_BANK_DEG = 45;      // krengevinkel ved berøring som teller som hard landing
@@ -216,34 +193,30 @@ const RUNWAY_SPAWN_Z = 8;   // spawn litt bak terskelen, klar for avgang nedover
 const PLANE_CLASSES = {
     small: {
         label: "Liten (trener)",
-        // Lett og godt motorisert (typisk for en liten elektrisk skoleflymaskin) - skal føles nimbel og
-        // lettflydd, ikke tung/undermotorisert. Trekkraft/vekt ≈ 0.83.
-        // wingArea redusert (strekkforhold ~8.5 i stedet for ~5.9) - forrige vinge var for bred/kort
-        // ("låvedør") relativt til skroget. Øker steilefarten noe (~7.6 -> ~9.2 m/s), en akseptabel
-        // avveining mot et fly som faktisk ser ut som et fly.
+        // Lett og godt motorisert (trekkraft/vekt ≈ 0.83) - skal føles nimbel og lettflydd. wingArea gir
+        // strekkforhold ~8.5 (et fly-aktig silhuett, ikke en "låvedør"-vinge), på bekostning av noe høyere
+        // steilefart (~9.2 m/s).
         mass: 2.2, wingArea: 0.38, wingSpan: 1.8,
-        maxThrust: 18, cd0: 0.045, inducedDragK: 0.9, clSlope: 0.11, stallAngleDeg: 14,
-        // inertiaRoll redusert videre (0.25 -> 0.17 -> 0.12) - fortsatt for treg respons for en liten
-        // skoleflymaskin. Merk: siden ROLL_CONTROL_EFFECTIVENESS/-DAMPING er delt mellom alle klasser (se
-        // merknad over), endrer lavere inertia KUN hvor RASKT toppfarten nås, ikke selve toppfarten
-        // (som styres av forholdet effektivitet/demping, uendret) - trygt å skru ned uten å gjøre roll
-        // urealistisk kraftig i steady state, bare raskere å komme dit.
+        // propPitchSpeed: farten der en fastpitch-propell teoretisk gir null trekkraft (se thrustForce i
+        // stepPhysics) - godt over normal marsjfart så cruise ikke strupes, men lavt nok til å begrense
+        // den gamle, drag-begrensede toppfarten (~41 m/s) til noe mer troverdig for en liten trener.
+        maxThrust: 18, cd0: 0.045, inducedDragK: 0.9, clSlope: 0.11, stallAngleDeg: 14, propPitchSpeed: 32,
+        // Lav inertiaRoll gir kun RASKERE respons, ikke sterkere - selve toppraten styres av det delte
+        // ROLL_CONTROL_EFFECTIVENESS/-DAMPING-forholdet over, uavhengig av inertia.
         inertiaRoll: 0.12, inertiaPitch: 0.42, inertiaYaw: 0.42,
-        // Økt (fra -0.14) sammen med lengre understell i buildPlane - propellen var lengre enn
-        // hjulklaringen og stakk ned i rullebanen.
         gearOffsetY: -0.22, visualScale: 1.0
     },
     medium: {
         label: "Middels",
         mass: 8, wingArea: 0.65, wingSpan: 2.4,
-        maxThrust: 22, cd0: 0.04, inducedDragK: 1.0, clSlope: 0.105, stallAngleDeg: 13,
+        maxThrust: 22, cd0: 0.04, inducedDragK: 1.0, clSlope: 0.105, stallAngleDeg: 13, propPitchSpeed: 34,
         inertiaRoll: 0.9, inertiaPitch: 1.3, inertiaYaw: 1.5,
         gearOffsetY: -0.28, visualScale: 1.4
     },
     large: {
         label: "Stor",
         mass: 22, wingArea: 1.2, wingSpan: 3.4,
-        maxThrust: 42, cd0: 0.035, inducedDragK: 1.1, clSlope: 0.1, stallAngleDeg: 12,
+        maxThrust: 42, cd0: 0.035, inducedDragK: 1.1, clSlope: 0.1, stallAngleDeg: 12, propPitchSpeed: 36,
         inertiaRoll: 2.6, inertiaPitch: 3.6, inertiaYaw: 4.0,
         gearOffsetY: -0.35, visualScale: 2.0
     }
@@ -374,8 +347,194 @@ let planeAileronLeft, planeAileronRight, planeElevator, planeRudder;
 let propSpinSpeed = 0;
 let cameraModeIndex = 0;
 let windsockHandles = [];
+// Trær som vaier i vinden (se updateTreeSway) - hvert tre lagres med sin egen tilfeldige fase/frekvens
+// slik at de ikke svaier helt synkront (som ville sett kunstig/robotisk ut), pluss sin egen naturlige
+// hvile-rotasjon (opprinnelig rotasjon.z/x - normalt 0, men bevart for evt. fremtidig skrå plassering).
+let treeHandles = [];
+function addSwayingTree(group) {
+    treeHandles.push({ group: group, phase: Math.random() * Math.PI * 2, freq: 0.7 + Math.random() * 0.5 });
+    return group;
+}
+
+// To norske treslag i stedet for én generisk trekjegle - begge bygges rundt samme origo-konvensjon
+// (basen på bakken, y=0) som Sim.buildTree, slik at addSwayingTree/updateTreeSway sin pivot-rundt-basen
+// fungerer identisk for begge.
+// Bjørk: lys, tynn stamme med noen mørke "bjørkeflekker", og en rundere, fyldigere krone bygget av flere
+// overlappende klumper (i stedet for én kjegle) - gir et løvtre-preg.
+function buildBirch(height) {
+    const group = new THREE.Group();
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0xd8d0c0 });
+    const barkMat = new THREE.MeshStandardMaterial({ color: 0x2a2a26 });
+    const canopyMat = new THREE.MeshStandardMaterial({ color: 0x7ba050 });
+    const trunkHeight = height * 0.55;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, trunkHeight, 8), trunkMat);
+    trunk.position.y = trunkHeight / 2;
+    trunk.castShadow = true;
+    group.add(trunk);
+    for (let i = 0; i < 4; i++) {
+        const mark = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), barkMat);
+        mark.position.set(0.09, trunkHeight * (0.15 + i * 0.2), 0.06);
+        mark.rotation.y = i * 1.3;
+        group.add(mark);
+    }
+    const canopyBaseY = trunkHeight * 0.85;
+    [
+        { dx: 0, dz: 0, dy: 0, r: height * 0.22 },
+        { dx: height * 0.13, dz: height * 0.05, dy: height * 0.08, r: height * 0.16 },
+        { dx: -height * 0.11, dz: -height * 0.07, dy: height * 0.14, r: height * 0.15 }
+    ].forEach(function (c) {
+        const cluster = new THREE.Mesh(new THREE.IcosahedronGeometry(c.r, 1), canopyMat);
+        cluster.position.set(c.dx, canopyBaseY + c.dy, c.dz);
+        cluster.castShadow = true;
+        group.add(cluster);
+    });
+    return group;
+}
+// Furu: mørk, tykkere stamme og en lagvis krone av avtagende kjeglesegmenter (typisk bartre-silhuett) i
+// stedet for én stor, jevn kjegle.
+function buildPine(height) {
+    const group = new THREE.Group();
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3320 });
+    const canopyMat = new THREE.MeshStandardMaterial({ color: 0x264a2e });
+    const trunkHeight = height * 0.3;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.15, trunkHeight, 8), trunkMat);
+    trunk.position.y = trunkHeight / 2;
+    trunk.castShadow = true;
+    group.add(trunk);
+    const layerCount = 4;
+    const canopyTotalHeight = height - trunkHeight;
+    let y = trunkHeight;
+    for (let i = 0; i < layerCount; i++) {
+        const progress = i / (layerCount - 1);
+        const layerH = canopyTotalHeight * 0.42 * (1 - progress * 0.35);
+        const layerR = height * 0.24 * (1 - progress * 0.55);
+        const layer = new THREE.Mesh(new THREE.ConeGeometry(layerR, layerH, 9), canopyMat);
+        layer.position.y = y + layerH * 0.45;
+        layer.castShadow = true;
+        group.add(layer);
+        y += layerH * 0.62;
+    }
+    return group;
+}
+// Tilfeldig bjørk eller furu, med litt tilfeldig høyde-/skala-variasjon for et mindre ensartet utseende.
+function buildRandomTree(height) {
+    const h = height * (0.9 + Math.random() * 0.2);
+    return Math.random() < 0.5 ? buildBirch(h) : buildPine(h);
+}
+
+// Løv/rusk som driver langs bakken i vindretningen - synlig, retningsvisende vindtegn nær rullebanen (der
+// piloten uansett ser under taksing/avgang/landing), i tillegg til vindpølsene. Kun synlig når vind er
+// aktivert OG merkbar - resirkuleres ("wrappes") til motsatt kant av regionen når de driver ut av syne,
+// slik at det ser ut som en kontinuerlig strøm i stedet for at partiklene tar slutt.
+const WIND_LEAF_COUNT = 28;
+const WIND_LEAF_REGION = {
+    xHalf: RUNWAY_WIDTH / 2 + 20,
+    zNear: RUNWAY_NEAR_Z + 20,
+    zFar: RUNWAY_NEAR_Z - RUNWAY_LENGTH - 20
+};
+let windLeaves = [];
+function buildWindLeaves() {
+    const group = new THREE.Group();
+    const leafColors = [0x8a5a2a, 0xa06a2a, 0x6a7a2a, 0xb0742a];
+    for (let i = 0; i < WIND_LEAF_COUNT; i++) {
+        const mat = new THREE.MeshStandardMaterial({ color: leafColors[i % leafColors.length], side: THREE.DoubleSide });
+        const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.08), mat);
+        leaf.rotation.x = -Math.PI / 2;
+        leaf.position.set(
+            (Math.random() * 2 - 1) * WIND_LEAF_REGION.xHalf,
+            0.04,
+            WIND_LEAF_REGION.zNear + Math.random() * (WIND_LEAF_REGION.zFar - WIND_LEAF_REGION.zNear)
+        );
+        leaf.visible = false;
+        windLeaves.push({ mesh: leaf, spin: (Math.random() * 2 - 1) * 4, bobPhase: Math.random() * Math.PI * 2 });
+        group.add(leaf);
+    }
+    return group;
+}
+function updateWindLeaves(dt, now) {
+    const windSpeed = currentWindVector.length();
+    const active = settings.wind.enabled && windSpeed > 0.3;
+    windLeaves.forEach(function (leaf) {
+        leaf.mesh.visible = active;
+        if (!active) return;
+        leaf.mesh.position.x += currentWindVector.x * 0.4 * dt;
+        leaf.mesh.position.z += currentWindVector.z * 0.4 * dt;
+        leaf.mesh.position.y = 0.04 + Math.sin(now / 1000 * 3 + leaf.bobPhase) * 0.02;
+        leaf.mesh.rotation.z += leaf.spin * dt;
+        if (leaf.mesh.position.x > WIND_LEAF_REGION.xHalf) leaf.mesh.position.x = -WIND_LEAF_REGION.xHalf;
+        if (leaf.mesh.position.x < -WIND_LEAF_REGION.xHalf) leaf.mesh.position.x = WIND_LEAF_REGION.xHalf;
+        if (leaf.mesh.position.z > WIND_LEAF_REGION.zNear) leaf.mesh.position.z = WIND_LEAF_REGION.zFar;
+        if (leaf.mesh.position.z < WIND_LEAF_REGION.zFar) leaf.mesh.position.z = WIND_LEAF_REGION.zNear;
+    });
+}
+
+// Røyk fra en skorstein (by-huset og fabrikkpipa - se buildTown/buildFactory) - stiger og driver med
+// vinden, retningsuavhengig av vindpølsene/løvet (alltid synlig, ikke bare når vind er aktivert - en ekte
+// skorstein røyker uansett, selve DRIFTEN er det som viser vindretning/-styrke). Resirkulerer via life
+// (0..1) i stedet for å opprette/fjerne objekter - unngår allokering i animasjonsløkken. opts lar
+// fabrikkpipa få en tydelig større/tettere/høyere-stigende røyksky enn den vanlige husskorsteinen.
+const WIND_SMOKE_COUNT = 10;
+const WIND_SMOKE_LIFETIME = 4.5;
+let windSmoke = [];
+function buildWindSmoke(originLocal, opts) {
+    opts = opts || {};
+    const count = opts.count || WIND_SMOKE_COUNT;
+    const lifetime = opts.lifetime || WIND_SMOKE_LIFETIME;
+    const riseHeight = opts.riseHeight || 2.4;
+    const maxScale = opts.maxScale || 1.8;
+    const baseOpacity = opts.baseOpacity || 0.45;
+    const driftSpeed = opts.driftSpeed || 1.5;
+    const puffRadius = opts.puffRadius || 0.16;
+    const color = opts.color || 0xaaaaaa;
+    const fadeStart = opts.fadeStart || SMOKE_FADE_START;
+    const group = new THREE.Group();
+    for (let i = 0; i < count; i++) {
+        const mat = new THREE.MeshStandardMaterial({ color: color, transparent: true, opacity: baseOpacity });
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(puffRadius, 8, 6), mat);
+        windSmoke.push({
+            mesh: puff, life: i / count, origin: originLocal.clone(), phase: Math.random() * Math.PI * 2,
+            lifetime: lifetime, riseHeight: riseHeight, maxScale: maxScale, baseOpacity: baseOpacity,
+            driftSpeed: driftSpeed, fadeStart: fadeStart
+        });
+        group.add(puff);
+    }
+    return group;
+}
+// Hver puff vandrer litt sidelengs (fase-forskjøvet sinus, økende med alder) i tillegg til å drive med
+// vinden - en ren rett linje av voksende kuler så ut som en formfast "kjegle" i stedet for en bølgende
+// røyksky. Opasiteten holdes oppe til fadeStart av levetiden og trappes først ned deretter, så røyken
+// ikke visuelt dør ut rett over pipa (tidligere falmet den lineært fra dag én, altså mest synlig lengst nede).
+const SMOKE_FADE_START = 0.55;
+function updateWindSmoke(dt) {
+    windSmoke.forEach(function (p) {
+        p.life += dt / p.lifetime;
+        if (p.life >= 1) p.life -= 1;
+        const wander = p.life * 0.6;
+        p.mesh.position.set(
+            p.origin.x + currentWindVector.x * p.life * p.driftSpeed + Math.sin(p.life * 6 + p.phase) * wander,
+            p.origin.y + p.life * p.riseHeight,
+            p.origin.z + currentWindVector.z * p.life * p.driftSpeed + Math.cos(p.life * 5 + p.phase) * wander
+        );
+        p.mesh.scale.setScalar(0.5 + p.life * (p.maxScale - 0.5));
+        const fade = p.life < p.fadeStart ? 1 : 1 - (p.life - p.fadeStart) / (1 - p.fadeStart);
+        p.mesh.material.opacity = p.baseOpacity * fade;
+    });
+}
 
 /* ---------- Three.js: scene, rullebane, fly, kameraer ---------- */
+// Flate "dekaler" som ligger noen cm over bakkeplanet (rullebane, veier, plasser, plener, dam) flimrer
+// (z-fighting) sett fra lufta: på flere hundre meters avstand i slak vinkel er dybdebufferets oppløsning
+// langt grovere enn 4-5 cm, og å løfte flatene mer ville sett svevende ut på nært hold. polygonOffset
+// biaser dybdeverdien under rastrering i stedet - factor-leddet skaleres med dybde-gradienten, som er
+// nøyaktig kompensasjonen slake innsynsvinkler trenger. Brukes på ALLE flate bakke-dekaler.
+function groundDecalProps(opts) {
+    const result = opts || {};
+    result.polygonOffset = true;
+    result.polygonOffsetFactor = -2;
+    result.polygonOffsetUnits = -2;
+    return result;
+}
+
 function buildGround() {
     const group = new THREE.Group();
     const groundMat = new THREE.MeshStandardMaterial({ map: Sim.buildGroundTexture() });
@@ -432,7 +591,7 @@ function buildRunwayTexture() {
 
 function buildRunway() {
     const geo = new THREE.PlaneGeometry(RUNWAY_WIDTH, RUNWAY_LENGTH);
-    const mat = new THREE.MeshStandardMaterial({ map: buildRunwayTexture() });
+    const mat = new THREE.MeshStandardMaterial(groundDecalProps({ map: buildRunwayTexture() }));
     const mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(0, 0.04, RUNWAY_NEAR_Z - RUNWAY_LENGTH / 2);
@@ -588,21 +747,262 @@ function buildBuildingArea() {
 }
 
 // Enkelt hus (solid, ikke gjennomflybart som barn/hus-området) med saltak - brukt til å fylle den
-// lille byen med variasjon uten å trenge vindusåpninger.
-function buildSimpleHouse(width, height, depth, wallColor, roofColor) {
+// lille byen med variasjon uten å trenge vindusåpninger. Vinduer (svakt selvlysende, leser som opplyst
+// interiør uansett tid på døgnet/lysvinkel) og dør på fasaden (lokal +Z) gir husene liv på nært hold.
+// Saltak (møne-tak) - to skråstilte plater fra møne til takutstikk på hver side, pluss trekantede
+// gavlfelt (veggfarge, ikke takfarge) i endene som fyller hullet mellom flat vegg-topp og skrått tak.
+// Dette leser som et ekte, gjenkjennelig norsk saltak i stedet for den forrige firkantede "pyramide"-
+// takformen (en 4-kant kjegle), som var en vesentlig grunn til at husene virket blokkete/kunstige.
+function buildGableRoof(width, depth, roofHeight, overhang, roofColor) {
+    const group = new THREE.Group();
+    const roofMat = new THREE.MeshStandardMaterial({ color: roofColor });
+    const halfSpan = width / 2 + overhang;
+    const slopeLen = Math.hypot(halfSpan, roofHeight);
+    const angle = Math.atan2(roofHeight, halfSpan);
+    const thickness = 0.12;
+    const panelDepth = depth + overhang * 1.6;
+    [-1, 1].forEach(function (side) {
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(slopeLen, thickness, panelDepth), roofMat);
+        panel.rotation.z = side > 0 ? -angle : angle;
+        panel.position.set(side * halfSpan / 2, roofHeight / 2, 0);
+        panel.castShadow = true;
+        panel.receiveShadow = true;
+        group.add(panel);
+    });
+    return group;
+}
+function buildGableEndFill(width, peakHeight, wallColor, zPos, wallHeight) {
+    const shape = new THREE.Shape();
+    shape.moveTo(-width / 2, 0);
+    shape.lineTo(width / 2, 0);
+    shape.lineTo(0, peakHeight);
+    shape.lineTo(-width / 2, 0);
+    const thickness = 0.1;
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+    geo.translate(0, 0, -thickness / 2);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: wallColor }));
+    // Trekantens Y=0 er "under mønet" (toppen av veggen), IKKE bakken - må løftes opp til veggtoppen,
+    // ellers havner gavlfeltet nede ved bakken og etterlater et stort hull oppunder taket.
+    mesh.position.set(0, wallHeight, zPos);
+    mesh.castShadow = true;
+    return mesh;
+}
+
+function buildSimpleHouse(width, height, depth, wallColor, roofColor, decorativeChimney) {
+    if (decorativeChimney === undefined) decorativeChimney = true;
     const group = new THREE.Group();
     const wallMat = new THREE.MeshStandardMaterial({ color: wallColor });
-    const roofMat = new THREE.MeshStandardMaterial({ color: roofColor });
     const walls = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), wallMat);
     walls.position.y = height / 2;
     walls.castShadow = true;
     walls.receiveShadow = true;
     group.add(walls);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(width, depth) * 0.72, height * 0.55, 4), roofMat);
-    roof.rotation.y = Math.PI / 4;
-    roof.position.y = height + height * 0.55 * 0.5;
-    roof.castShadow = true;
+
+    // Mørkere grunnmur-stripe nederst - bryter opp den ellers ensfargede veggflaten.
+    const foundation = new THREE.Mesh(new THREE.BoxGeometry(width + 0.06, height * 0.12, depth + 0.06), new THREE.MeshStandardMaterial({ color: 0x555550 }));
+    foundation.position.y = height * 0.06;
+    group.add(foundation);
+
+    const winMat = new THREE.MeshStandardMaterial({ color: 0xbfe0e8, emissive: 0x3a5560, emissiveIntensity: 0.4 });
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x4a3322 });
+    const winW = width * 0.18, winH = height * 0.3, winY = height * 0.58, winZ = depth / 2 + 0.02;
+    [-1, 1].forEach(function (side) {
+        const win = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, 0.05), winMat);
+        win.position.set(side * width * 0.25, winY, winZ);
+        group.add(win);
+    });
+    const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.16, height * 0.5, 0.06), doorMat);
+    door.position.set(0, height * 0.25, winZ);
+    group.add(door);
+
+    const roofHeight = height * 0.5, overhang = 0.35;
+    const roof = buildGableRoof(width, depth, roofHeight, overhang, roofColor);
+    roof.position.y = height;
     group.add(roof);
+    [-1, 1].forEach(function (side) {
+        group.add(buildGableEndFill(width, roofHeight, wallColor, side * depth / 2, height));
+    });
+
+    // Enkel pipe på taket - et lite, men effektivt detaljbrudd i den ellers rette mønelinjen. Rådhuset
+    // styrer sin egen pipe+røyk manuelt (se buildTown) og skrur denne av for å unngå to piper på ett tak.
+    if (decorativeChimney) {
+        const chimney = new THREE.Mesh(new THREE.BoxGeometry(width * 0.1, roofHeight * 0.7, width * 0.1), new THREE.MeshStandardMaterial({ color: 0x5a4a44 }));
+        chimney.position.set(width * 0.2, height + roofHeight * 0.55, depth * 0.15);
+        chimney.castShadow = true;
+        group.add(chimney);
+    }
+    return group;
+}
+
+// Lavt gjerde rundt husets tomt (stolper + to gjennomgående rekkverk per side) - rent visuelt, ingen
+// kollisjon. plotW/plotD er noe større enn selve husets fotavtrykk. Siden mot veien (lokal +Z, samme
+// side som døra - se buildSimpleHouse) får en portåpning (gateWidth) midt på, slik at oppkjørselen fra
+// veien kan møte tunet uten å gå tvers gjennom gjerdet.
+function buildFence(plotW, plotD, gateWidth) {
+    const group = new THREE.Group();
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x6b4a30 });
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x7a5a3a });
+    const postH = 0.9, postR = 0.05;
+    const railYs = [0.35, 0.75];
+
+    function side(length, isXAxis, offset, gap) {
+        const halfGap = gap ? gap / 2 : 0;
+        const postCount = Math.max(2, Math.round(length / 2.2) + 1);
+        for (let i = 0; i < postCount; i++) {
+            const t = (i / (postCount - 1) - 0.5) * length;
+            if (gap && Math.abs(t) < halfGap) continue;
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, postH, 6), postMat);
+            post.position.set(isXAxis ? t : offset, postH / 2, isXAxis ? offset : t);
+            group.add(post);
+        }
+        const spans = gap ? [[-length / 2, -halfGap], [halfGap, length / 2]] : [[-length / 2, length / 2]];
+        railYs.forEach(function (railY) {
+            spans.forEach(function (span) {
+                const segLen = span[1] - span[0];
+                if (segLen <= 0.05) return;
+                const mid = (span[0] + span[1]) / 2;
+                const rail = new THREE.Mesh(
+                    isXAxis ? new THREE.BoxGeometry(segLen, 0.06, 0.06) : new THREE.BoxGeometry(0.06, 0.06, segLen),
+                    railMat
+                );
+                rail.position.set(isXAxis ? mid : offset, railY, isXAxis ? offset : mid);
+                group.add(rail);
+            });
+        });
+    }
+    side(plotW, true, -plotD / 2, 0);
+    side(plotW, true, plotD / 2, gateWidth || 0);
+    side(plotD, false, -plotW / 2, 0);
+    side(plotD, false, plotW / 2, 0);
+    return group;
+}
+
+// Prosedural veitekstur (asfalt + stiplet midtlinje) - RepeatWrapping langs lengderetningen slik at
+// stripemønsteret ser jevnt ut uansett hvor lang den enkelte veistrekningen er.
+let roadTextureBase = null;
+function buildRoadTexture() {
+    if (roadTextureBase) return roadTextureBase;
+    const texW = 64, texH = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = texW;
+    canvas.height = texH;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#48453f";
+    ctx.fillRect(0, 0, texW, texH);
+    ctx.fillStyle = "#c8c0a8";
+    ctx.fillRect(texW / 2 - 2, texH * 0.15, 4, texH * 0.7);
+    roadTextureBase = new THREE.CanvasTexture(canvas);
+    return roadTextureBase;
+}
+
+// Rett veistrekning mellom to punkter - brukt til å binde husene i den lille byen sammen med
+// rådhuset/sentrum (se buildTown), i stedet for at de bare står spredt i gresset.
+function buildRoadSegment(length, width) {
+    const group = new THREE.Group();
+    const tex = buildRoadTexture().clone();
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, Math.max(1, length / 3));
+    const mat = new THREE.MeshStandardMaterial(groundDecalProps({ map: tex }));
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, length), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return group;
+}
+
+// Enkel asfaltert/betong flate (plass, forplass, parkeringsplass) - rund, så den ikke krever at man
+// vet hvilken vei et (eventuelt rotert) bygg vender for at den skal se riktig ut.
+function buildPavedCircle(radius, color) {
+    const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 20), new THREE.MeshStandardMaterial(groundDecalProps({ color: color })));
+    mesh.rotation.x = -Math.PI / 2;
+    // 0.05, ikke 0.02 - samme erfaring som dammen (se buildTown): 0.02 er for tynn margin mot bakkeplanet
+    // under og flimrer (z-fighting), særlig på en stor flate som denne.
+    mesh.position.y = 0.05;
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+// Enkel parkert bil - grov boks-tilnærming, nok til å lese som "det står biler her" på avstand.
+function buildParkedCar(color) {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: color });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.55, 4), bodyMat);
+    body.position.y = 0.45;
+    body.castShadow = true;
+    group.add(body);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 2), bodyMat);
+    cabin.position.set(0, 0.92, -0.2);
+    cabin.castShadow = true;
+    group.add(cabin);
+    return group;
+}
+
+// Fraktcontainer (ISO-proporsjoner, grov tilnærming) - noen stablet ved fabrikken gir et "aktivt
+// industriområde"-preg i stedet for en bar bygning midt i gresset.
+function buildContainer(color) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(6, 2.6, 2.4), new THREE.MeshStandardMaterial({ color: color }));
+    box.position.y = 1.3;
+    box.castShadow = true;
+    box.receiveShadow = true;
+    return box;
+}
+
+// Plentekstur (klippestriper, mørkere/mer ensartet grønt enn den ville bakketeksturen utenfor gjerdet -
+// se Sim.buildGroundTexture) - brukt på inngjerdede hageflater (se buildTown) slik at man kan SE at det
+// er en stelt hage, ikke bare umerket gress.
+let lawnTextureBase = null;
+function buildLawnTexture() {
+    if (lawnTextureBase) return lawnTextureBase;
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const stripes = 8, stripeW = size / stripes;
+    for (let i = 0; i < stripes; i++) {
+        ctx.fillStyle = (i % 2 === 0) ? "#4a7a3a" : "#427030";
+        ctx.fillRect(i * stripeW, 0, stripeW, size);
+    }
+    lawnTextureBase = new THREE.CanvasTexture(canvas);
+    return lawnTextureBase;
+}
+function buildLawnPatch(width, depth) {
+    const tex = buildLawnTexture().clone();
+    tex.needsUpdate = true;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(Math.max(1, Math.round(width / 2)), Math.max(1, Math.round(depth / 2)));
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), new THREE.MeshStandardMaterial(groundDecalProps({ map: tex })));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = 0.05; // se buildPavedCircle - 0.02 flimret (z-fighting) mot bakkeplanet under
+    mesh.receiveShadow = true;
+    // Pakket i en egen gruppe (uroterte) slik at buildTown trygt kan sette group.rotation.y for å
+    // orientere hagen etter huset - å sette .rotation.y direkte på selve meshet (som allerede har
+    // .rotation.x satt) hadde kombinert begge aksene i Euler-rekkefølge og vridd flaten skjevt/på kant,
+    // i stedet for bare å dreie den flate flaten rundt vertikalaksen (samme mønster som buildRoadSegment).
+    const group = new THREE.Group();
+    group.add(mesh);
+    return group;
+}
+
+// Enkel busk (lav, flattrykt ikosaeder) og et lite blomsterbed - hagedetaljer som bryter opp den
+// ellers tomme plenflaten mellom hus og gjerde.
+function buildBush() {
+    const bush = new THREE.Mesh(new THREE.IcosahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0x3a5a2a }));
+    bush.position.y = 0.28;
+    bush.scale.y = 0.75;
+    bush.castShadow = true;
+    return bush;
+}
+function buildFlowerPatch(color) {
+    const group = new THREE.Group();
+    const flowerMat = new THREE.MeshStandardMaterial({ color: color });
+    for (let i = 0; i < 5; i++) {
+        const flower = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), flowerMat);
+        flower.position.set((Math.random() - 0.5) * 0.6, 0.16, (Math.random() - 0.5) * 0.6);
+        group.add(flower);
+    }
     return group;
 }
 
@@ -630,45 +1030,501 @@ function buildWaterTower() {
     return group;
 }
 
+// Fabrikkens posisjon relativt TOWN_CENTER_X/Z - delt konstant slik at buildWorldObjects (plassering)
+// og buildTownRoads (adkomstvei fra ringveien, se under) alltid er i synk.
+const FACTORY_DX = 65, FACTORY_DZ = -75;
+
+// Fabrikk med en høy pipe - et tredje, tydelig kraftigere vindtegn (stor, tett røyksky) i tillegg til
+// vindpølsene og husskorsteinen, plassert et stykke utenfor selve byen (ikke i boligklyngen). Hovedbygg
+// + lavere sidefløy gir et større, mer sammensatt fotavtrykk enn én enkel boks.
+function buildFactory() {
+    const group = new THREE.Group();
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x6b6b66 });
+    const stackMat = new THREE.MeshStandardMaterial({ color: 0x8a3a2e });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x3a3a38 });
+    const winMat = new THREE.MeshStandardMaterial({ color: 0x2a3a42, emissive: 0x18262c, emissiveIntensity: 0.35 });
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x33302a });
+
+    const base = new THREE.Mesh(new THREE.BoxGeometry(11, 7, 9), baseMat);
+    base.position.y = 3.5;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    group.add(base);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(6, 4.5, 7), baseMat);
+    wing.position.set(-7.5, 2.25, 0.5);
+    wing.castShadow = true;
+    wing.receiveShadow = true;
+    group.add(wing);
+
+    // Vindusrekke på hovedhallens fasade (lokal +Z), personaldør, og en bred lasteport med kai/rampe -
+    // gir bygget et gjenkjennelig "industrihall"-uttrykk i stedet for en ren, blank boks.
+    for (let i = -3; i <= 3; i++) {
+        if (i === 0) continue;
+        const win = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.2, 0.06), winMat);
+        win.position.set(i * 1.25, 4.6, 4.52);
+        group.add(win);
+    }
+    const personnelDoor = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.1, 0.08), doorMat);
+    personnelDoor.position.set(0, 1.05, 4.53);
+    group.add(personnelDoor);
+    const dockDoor = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.1, 0.1), trimMat);
+    dockDoor.position.set(-3.6, 1.85, 4.55);
+    group.add(dockDoor);
+    const dockPlatform = new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 1.5), baseMat);
+    dockPlatform.position.set(-3.6, 0.25, 5.25);
+    dockPlatform.castShadow = true;
+    dockPlatform.receiveShadow = true;
+    group.add(dockPlatform);
+
+    // Takventiler
+    [-2.5, 2.5].forEach(function (x) {
+        const vent = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.5, 0.8), trimMat);
+        vent.position.set(x, 7.25, -1.5);
+        vent.castShadow = true;
+        group.add(vent);
+    });
+
+    // Lagringstank ved siden av hovedhallen, godt utenfor bygningskroppen.
+    const tankMat = new THREE.MeshStandardMaterial({ color: 0xb0b8bc });
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 4.5, 16), tankMat);
+    tank.position.set(7.2, 2.25, -2);
+    tank.castShadow = true;
+    group.add(tank);
+    const tankCap = new THREE.Mesh(new THREE.SphereGeometry(1.4, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), tankMat);
+    tankCap.position.set(7.2, 4.5, -2);
+    group.add(tankCap);
+
+    const stackHeight = 20;
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.9, stackHeight, 14), stackMat);
+    stack.position.set(3, stackHeight / 2, 0);
+    stack.castShadow = true;
+    group.add(stack);
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.3, 0.4, 14), trimMat);
+    rim.position.set(3, stackHeight + 0.2, 0);
+    group.add(rim);
+    const smokeOrigin = new THREE.Vector3(3, stackHeight + 0.6, 0);
+    group.add(buildWindSmoke(smokeOrigin, {
+        count: 34, lifetime: 13, riseHeight: 15, maxScale: 6.5, driftSpeed: 1.5, baseOpacity: 0.6,
+        puffRadius: 0.36, color: 0x8f8f8a, fadeStart: 0.72
+    }));
+    return group;
+}
+
 // Liten by et godt stykke øst for hus-/låve-området (utenfor rekkevidde for gjennomflyging) - gir
 // simulatoren mye mer å se på i overflyging/navigasjonstrening, ikke bare rullebanen og noen få trær.
+//
+// Nabolaget er lagt opp som en ringvei med husene langs utsiden - ikke tilfeldig spredte punkt bundet
+// sammen med en stjerne av veier til ett sentrum (så helt urealistisk ut, og veiene gikk rett gjennom
+// gjerder/husvegger). Husene ligger jevnt fordelt i vinkel rundt sentrum (med en liten radius- og
+// vinkel-variasjon per hus for et naturlig, ikke-perfekt-sirkulært preg), med fasaden (dør/vinduer,
+// se buildSimpleHouse) vendt inn mot ringveien. Selve veien ligger et godt stykke innenfor husene
+// (TOWN_ROAD_SETBACK) - hvert hus har en kort oppkjørsel fra veien inn til en portåpning i eget gjerde,
+// slik at veien aldri går gjennom gjerdet eller rett inn i husveggen.
 const TOWN_CENTER_X = BUILDING_AREA_X + 70;
 const TOWN_CENTER_Z = RUNWAY_NEAR_Z - 150;
-const TOWN_HOUSES = [
-    { dx: -22, dz: -22, w: 6, h: 4, d: 6, wall: 0xd8c9a0, roof: 0x7a3a2a, ry: 0.3 },
-    { dx: 4, dz: -28, w: 5, h: 3.6, d: 5, wall: 0xc9d0d8, roof: 0x4a4a52, ry: 1.1 },
-    { dx: 26, dz: -16, w: 7, h: 4.5, d: 6, wall: 0xe0d8c0, roof: 0x6a3a3a, ry: -0.4 },
-    { dx: -26, dz: 4, w: 5, h: 3.8, d: 5, wall: 0xd0c8b8, roof: 0x5a4a3a, ry: 0.8 },
-    { dx: 20, dz: 10, w: 6, h: 4, d: 5, wall: 0xc8d0c8, roof: 0x4a3a3a, ry: -1.0 },
-    { dx: -12, dz: 26, w: 5, h: 3.5, d: 6, wall: 0xd8d0c0, roof: 0x6a4a2a, ry: 0.2 },
-    { dx: 15, dz: 30, w: 6, h: 4, d: 5, wall: 0xc0c8d0, roof: 0x3a4a4a, ry: 1.4 },
-    { dx: -30, dz: -42, w: 5, h: 3.8, d: 5, wall: 0xd0d8c8, roof: 0x5a3a3a, ry: -0.6 },
-    { dx: 32, dz: -38, w: 6, h: 4.2, d: 6, wall: 0xe0d0c8, roof: 0x4a3a2a, ry: 0.9 },
-    { dx: 0, dz: -46, w: 6, h: 4, d: 5, wall: 0xd0c8c0, roof: 0x5a4a4a, ry: 0 }
+const TOWN_HOUSE_DEFS = [
+    { w: 6, h: 4, d: 6, wall: 0xd8c9a0, roof: 0x7a3a2a },
+    { w: 5, h: 3.6, d: 5, wall: 0xc9d0d8, roof: 0x4a4a52 },
+    { w: 7, h: 4.5, d: 6, wall: 0xe0d8c0, roof: 0x6a3a3a },
+    { w: 5, h: 3.8, d: 5, wall: 0xd0c8b8, roof: 0x5a4a3a },
+    { w: 6, h: 4, d: 5, wall: 0xc8d0c8, roof: 0x4a3a3a },
+    { w: 5, h: 3.5, d: 6, wall: 0xd8d0c0, roof: 0x6a4a2a },
+    { w: 6, h: 4, d: 5, wall: 0xc0c8d0, roof: 0x3a4a4a },
+    { w: 5, h: 3.8, d: 5, wall: 0xd0d8c8, roof: 0x5a3a3a },
+    { w: 6, h: 4.2, d: 6, wall: 0xe0d0c8, roof: 0x4a3a2a },
+    { w: 6, h: 4, d: 5, wall: 0xd0c8c0, roof: 0x5a4a4a }
 ];
+const TOWN_HOUSE_RADIUS = 34;
+const TOWNHALL_CLEARANCE = 8; // rådhusets halve diagonal (~6 m) + margin
+const FACTORY_CLEARANCE = 14; // fabrikkens halve diagonal inkl. sidefløy (~11.4 m) + margin
+const TOWN_ROAD_SETBACK = 12; // avstand fra ringveien inn til hvert hus (> halve tunbredden - se plotD)
+const TOWN_GATE_WIDTH = 3.2; // > oppkjørselens bredde (2.4, se buildTown) så den ikke klipper gjerdestolpene
+const TOWN_HOUSES = TOWN_HOUSE_DEFS.map(function (def, i) {
+    const angle = (i / TOWN_HOUSE_DEFS.length) * Math.PI * 2 + ((i % 2 === 0) ? 0 : 0.12);
+    const radius = TOWN_HOUSE_RADIUS + ((i % 3) - 1) * 4;
+    const sin = Math.sin(angle), cos = Math.cos(angle);
+    return {
+        dx: sin * radius, dz: cos * radius,
+        roadDx: sin * (radius - TOWN_ROAD_SETBACK), roadDz: cos * (radius - TOWN_ROAD_SETBACK),
+        angle: angle,
+        ry: angle + Math.PI, // fasaden vender inn mot ringveien/sentrum
+        fenced: i % 2 === 0, // bare annethvert hus gjerdes inn (se buildTown og buildTownRoads)
+        w: def.w, h: def.h, d: def.d, wall: def.wall, roof: def.roof
+    };
+});
+
+// Ringvei gjennom byen (se kommentaren over TOWN_HOUSES) - koblingene følger vinkelrekkefølgen husene
+// allerede er generert i, så hver strekning binder sammen to faktiske romlige naboer. Hvert hus får i
+// tillegg en kort oppkjørsel rett inn til sin egen portåpning (se buildTown), og rådhuset (som ligger
+// for seg selv i sentrum, uten gjerde) får en enkel stikkvei til nærmeste ringvei-punkt.
+function buildTownRoads(group) {
+    const n = TOWN_HOUSES.length;
+    for (let i = 0; i < n; i++) {
+        const a = TOWN_HOUSES[i], b = TOWN_HOUSES[(i + 1) % n];
+        const dx = b.roadDx - a.roadDx, dz = b.roadDz - a.roadDz;
+        const len = Math.hypot(dx, dz);
+        const road = buildRoadSegment(len, 3);
+        road.position.set(TOWN_CENTER_X + (a.roadDx + b.roadDx) / 2, 0.03, TOWN_CENTER_Z + (a.roadDz + b.roadDz) / 2);
+        road.rotation.y = Math.atan2(dx, dz);
+        group.add(road);
+    }
+    // Stikkvei til rådhuset: stopper TOWNHALL_CLEARANCE unna sentrum (rådhusets egen halve diagonal er
+    // ca 6 m) i stedet for å gå helt til (0,0) - ellers kjørte veien rett gjennom bygningskroppen. Den
+    // åpne flaten mellom der veien slutter og veggen blir en enkel forplass/plass (se buildTown).
+    let nearest = TOWN_HOUSES[0], nearestDist = Infinity;
+    TOWN_HOUSES.forEach(function (h) {
+        const d = Math.hypot(h.roadDx, h.roadDz);
+        if (d < nearestDist) { nearestDist = d; nearest = h; }
+    });
+    const ux = nearest.roadDx / nearestDist, uz = nearest.roadDz / nearestDist;
+    const startX = ux * TOWNHALL_CLEARANCE, startZ = uz * TOWNHALL_CLEARANCE;
+    const spurLen = Math.max(1, nearestDist - TOWNHALL_CLEARANCE);
+    const spur = buildRoadSegment(spurLen, 3);
+    spur.position.set(TOWN_CENTER_X + (startX + nearest.roadDx) / 2, 0.03, TOWN_CENTER_Z + (startZ + nearest.roadDz) / 2);
+    spur.rotation.y = Math.atan2(nearest.roadDx - startX, nearest.roadDz - startZ);
+    group.add(spur);
+
+    // Adkomstvei til fabrikken (se buildWorldObjects) - grener av fra ringveien et sted MELLOM to
+    // nabohus (den vinkelrette "gapet" mellom dem, ikke en ren rett linje fra sentrum til fabrikken,
+    // som i praksis skar rett gjennom et av hus-tunene på veien ut). Første strekning går radielt ut
+    // langs dette gapet til den er utenfor hele boligringen (inkludert største hage), andre strekning
+    // går derfra rett til fabrikken - så veien aldri kutter gjennom et tun den passerer.
+    const factoryAngle = Math.atan2(FACTORY_DX, FACTORY_DZ);
+    let branchA = TOWN_HOUSES[0], branchB = TOWN_HOUSES[1], bestDiff = Infinity;
+    for (let i = 0; i < n; i++) {
+        const a = TOWN_HOUSES[i], b = TOWN_HOUSES[(i + 1) % n];
+        const midAngle = Math.atan2(a.roadDx + b.roadDx, a.roadDz + b.roadDz);
+        let diff = Math.abs(midAngle - factoryAngle);
+        if (diff > Math.PI) diff = Math.PI * 2 - diff;
+        if (diff < bestDiff) { bestDiff = diff; branchA = a; branchB = b; }
+    }
+    // T-krysset (branchX/branchZ) er midt mellom de to nabohusenes veinoder - det er trygt uansett,
+    // siden ringveinodene alltid ligger godt innenfor tunkantene. Selve UTKJØRINGSVINKELEN derimot må
+    // vris bort fra et eventuelt inngjerdet nabohus (større tun = mindre klaring) og heller mot det
+    // ugjerdede - ellers kunne den rette strekningen ut av ringen skrape borti et gjerde.
+    const branchX = (branchA.roadDx + branchB.roadDx) / 2, branchZ = (branchA.roadDz + branchB.roadDz) / 2;
+    const biasT = branchA.fenced ? 0.6 : (branchB.fenced ? 0.4 : 0.5);
+    const gapX = branchA.roadDx * (1 - biasT) + branchB.roadDx * biasT;
+    const gapZ = branchA.roadDz * (1 - biasT) + branchB.roadDz * biasT;
+    const gapAngle = Math.atan2(gapX, gapZ);
+    const clearRadius = TOWN_HOUSE_RADIUS + 4 + 10; // størst mulig husradius + størst mulig hageutstrekning + margin
+    const wpX = Math.sin(gapAngle) * clearRadius, wpZ = Math.cos(gapAngle) * clearRadius;
+
+    const seg1dx = wpX - branchX, seg1dz = wpZ - branchZ;
+    const seg1 = buildRoadSegment(Math.hypot(seg1dx, seg1dz), 3.4);
+    seg1.position.set(TOWN_CENTER_X + (branchX + wpX) / 2, 0.03, TOWN_CENTER_Z + (branchZ + wpZ) / 2);
+    seg1.rotation.y = Math.atan2(seg1dx, seg1dz);
+    group.add(seg1);
+
+    // Stopper FACTORY_CLEARANCE unna fabrikkens senter - ellers kjørte veien rett inn i bygningskroppen.
+    // Åpen flate mellom veistopp og bygg blir en enkel oppstillings-/parkeringsplass (se buildWorldObjects).
+    const seg2dx = FACTORY_DX - wpX, seg2dz = FACTORY_DZ - wpZ;
+    const seg2FullLen = Math.hypot(seg2dx, seg2dz);
+    const seg2Len = Math.max(1, seg2FullLen - FACTORY_CLEARANCE);
+    const ux2 = seg2dx / seg2FullLen, uz2 = seg2dz / seg2FullLen;
+    const seg2 = buildRoadSegment(seg2Len, 3.4);
+    seg2.position.set(TOWN_CENTER_X + wpX + ux2 * seg2Len / 2, 0.03, TOWN_CENTER_Z + wpZ + uz2 * seg2Len / 2);
+    seg2.rotation.y = Math.atan2(seg2dx, seg2dz);
+    group.add(seg2);
+}
+
+// Murstein-tekstur - samme prosedurale prinsipp som bakke-/rullebane-teksturene (Sim.buildGroundTexture,
+// buildRunwayTexture): ett lite, tilbart mønster med RepeatWrapping, ikke én stor fastmalt flate.
+let brickTextureBase = null;
+function buildBrickTexture() {
+    if (brickTextureBase) return brickTextureBase;
+    const texW = 64, texH = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = texW;
+    canvas.height = texH;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#8a4a3a";
+    ctx.fillRect(0, 0, texW, texH);
+    ctx.strokeStyle = "#5a2e22";
+    ctx.lineWidth = 2;
+    const rows = 8, brickH = texH / rows, cols = 4;
+    for (let r = 0; r <= rows; r++) {
+        const y = r * brickH;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(texW, y);
+        ctx.stroke();
+    }
+    for (let r = 0; r < rows; r++) {
+        const offset = (r % 2) * (texW / cols / 2);
+        for (let c = 0; c <= cols; c++) {
+            const x = ((c * (texW / cols) + offset) % texW + texW) % texW;
+            ctx.beginPath();
+            ctx.moveTo(x, r * brickH);
+            ctx.lineTo(x, (r + 1) * brickH);
+            ctx.stroke();
+        }
+    }
+    brickTextureBase = new THREE.CanvasTexture(canvas);
+    return brickTextureBase;
+}
+function buildBrickMaterial(repeatX, repeatY) {
+    const tex = buildBrickTexture().clone();
+    tex.needsUpdate = true;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeatX, repeatY);
+    return new THREE.MeshStandardMaterial({ map: tex });
+}
+
+// Urskive-tekstur UTEN visere (bare bunnplate + rand + time-streker) - viserne er egne mesh-"armer" på
+// separate dreiepunkt-grupper (se buildClockFace) som roteres fra PC-ens klokke i updateClockTowers,
+// i stedet for å tegnes fast inn i selve teksturen.
+let clockTextureBase = null;
+function buildClockTexture() {
+    if (clockTextureBase) return clockTextureBase;
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#3a3a38";
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = "#e8e2c8";
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#2a2a28";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const r1 = size * 0.42, r2 = size * (i % 3 === 0 ? 0.34 : 0.38);
+        ctx.beginPath();
+        ctx.moveTo(size / 2 + Math.sin(a) * r1, size / 2 - Math.cos(a) * r1);
+        ctx.lineTo(size / 2 + Math.sin(a) * r2, size / 2 - Math.cos(a) * r2);
+        ctx.stroke();
+    }
+    clockTextureBase = new THREE.CanvasTexture(canvas);
+    return clockTextureBase;
+}
+
+// Klokkehendene registreres her (dreiepunkt-grupper, ikke selve viser-meshene) slik at
+// updateClockTowers kan rotere dem fra PC-ens klokke hvert bilde - samme "handles"-mønster som
+// windsockHandles/treeHandles.
+let clockHandles = [];
+function buildClockFace(radius) {
+    const group = new THREE.Group();
+    const face = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), new THREE.MeshStandardMaterial({ map: buildClockTexture() }));
+    group.add(face);
+
+    const handMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28 });
+    const hourPivot = new THREE.Group();
+    const hourHand = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.1, radius * 0.5, 0.02), handMat);
+    hourHand.position.set(0, radius * 0.25, 0.015);
+    hourPivot.add(hourHand);
+    group.add(hourPivot);
+
+    const minutePivot = new THREE.Group();
+    const minuteHand = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.07, radius * 0.78, 0.02), handMat);
+    minuteHand.position.set(0, radius * 0.39, 0.02);
+    minutePivot.add(minuteHand);
+    group.add(minutePivot);
+
+    clockHandles.push({ hour: hourPivot, minute: minutePivot });
+    return group;
+}
+// Setter viserne til faktisk PC-klokkeslett - kalt en gang ved bygging og hvert bilde fra animate()
+// (se updateClockTowers), akkurat som updateTreeSway/updateWindsockVisual leser andre live-verdier.
+function updateClockTowers() {
+    const now = new Date();
+    const hourFrac = (now.getHours() % 12) / 12 + now.getMinutes() / 720;
+    const minuteFrac = now.getMinutes() / 60 + now.getSeconds() / 3600;
+    const hourAngle = hourFrac * Math.PI * 2;
+    const minuteAngle = minuteFrac * Math.PI * 2;
+    clockHandles.forEach(function (c) {
+        c.hour.rotation.z = -hourAngle;
+        c.minute.rotation.z = -minuteAngle;
+    });
+}
+
+// Klokketårn - en forenklet nikk til Oslo rådhus' karakteristiske tårn (ikke en kopi, bare samme idé:
+// en smal, høy tårnkropp med urskiver og en spiss topp, som skiller rådhuset visuelt fra alle
+// bolighusene rundt det). Urskive på alle fire sider, ikke bare front/side.
+function buildClockTower(width, towerHeight) {
+    const group = new THREE.Group();
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(width, towerHeight, width), buildBrickMaterial(1, towerHeight / width));
+    tower.position.y = towerHeight / 2;
+    tower.castShadow = true;
+    tower.receiveShadow = true;
+    group.add(tower);
+
+    const clockY = towerHeight * 0.82, clockR = width * 0.32, faceOffset = width / 2 + 0.02;
+    [
+        { pos: [0, clockY, faceOffset], ry: 0 },
+        { pos: [faceOffset, clockY, 0], ry: Math.PI / 2 },
+        { pos: [0, clockY, -faceOffset], ry: Math.PI },
+        { pos: [-faceOffset, clockY, 0], ry: -Math.PI / 2 }
+    ].forEach(function (side) {
+        const clock = buildClockFace(clockR);
+        clock.position.set(side.pos[0], side.pos[1], side.pos[2]);
+        clock.rotation.y = side.ry;
+        group.add(clock);
+    });
+
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(width * 0.75, towerHeight * 0.35, 4), new THREE.MeshStandardMaterial({ color: 0x2a2a28 }));
+    cap.rotation.y = Math.PI / 4;
+    cap.position.y = towerHeight + towerHeight * 0.35 * 0.5;
+    cap.castShadow = true;
+    group.add(cap);
+    return group;
+}
+
+// Rådhuset - et tydelig OFFENTLIG bygg (murstein, flatt tak, store vinduer, søyleinngang, klokketårn
+// og flaggstang), ikke bare et stort bolighus i samme stil som resten av byen.
+function buildTownHall(width, height, depth) {
+    const group = new THREE.Group();
+    const walls = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildBrickMaterial(width / 2.2, height / 2.2));
+    walls.position.y = height / 2;
+    walls.castShadow = true;
+    walls.receiveShadow = true;
+    group.add(walls);
+
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x3a3a38 });
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(width + 0.3, 0.4, depth + 0.3), roofMat);
+    roof.position.y = height + 0.2;
+    roof.castShadow = true;
+    group.add(roof);
+
+    const winMat = new THREE.MeshStandardMaterial({ color: 0xbfe0e8, emissive: 0x3a5560, emissiveIntensity: 0.35 });
+    const winCount = 4;
+    for (let i = 0; i < winCount; i++) {
+        const t = (i / (winCount - 1) - 0.5) * (width * 0.72);
+        const win = new THREE.Mesh(new THREE.BoxGeometry(width * 0.11, height * 0.42, 0.06), winMat);
+        win.position.set(t, height * 0.56, depth / 2 + 0.03);
+        group.add(win);
+    }
+
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a });
+    const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.2, height * 0.55, 0.08), doorMat);
+    door.position.set(0, height * 0.28, depth / 2 + 0.04);
+    group.add(door);
+
+    const columnMat = new THREE.MeshStandardMaterial({ color: 0xf0ece0 });
+    const porticoWidth = width * 0.42, porticoHeight = height * 0.85, porticoDepth = 1.6;
+    [-1, 1].forEach(function (side) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, porticoHeight, 10), columnMat);
+        col.position.set(side * porticoWidth / 2, porticoHeight / 2, depth / 2 + porticoDepth * 0.85);
+        col.castShadow = true;
+        group.add(col);
+    });
+    const porticoRoof = new THREE.Mesh(new THREE.BoxGeometry(porticoWidth + 0.8, 0.3, porticoDepth + 0.6), roofMat);
+    porticoRoof.position.set(0, porticoHeight + 0.15, depth / 2 + porticoDepth * 0.55);
+    porticoRoof.castShadow = true;
+    group.add(porticoRoof);
+
+    const tower = buildClockTower(width * 0.32, height * 1.6);
+    tower.position.set(0, height + 0.4, -depth * 0.15);
+    group.add(tower);
+
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, height * 1.1, 8), poleMat);
+    pole.position.set(width * 0.4, height * 0.55, depth / 2 + 0.5);
+    group.add(pole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshStandardMaterial({ color: 0xba1522, side: THREE.DoubleSide }));
+    flag.position.set(width * 0.4 + 0.3, height * 1.0, depth / 2 + 0.5);
+    group.add(flag);
+
+    return group;
+}
 
 function buildTown() {
     const group = new THREE.Group();
-    TOWN_HOUSES.forEach(function (h) {
+    buildTownRoads(group);
+    TOWN_HOUSES.forEach(function (h, i) {
         const house = buildSimpleHouse(h.w, h.h, h.d, h.wall, h.roof);
         house.position.set(TOWN_CENTER_X + h.dx, 0, TOWN_CENTER_Z + h.dz);
         house.rotation.y = h.ry;
         group.add(house);
+
+        // Bare annethvert hus gjerdes inn (ikke gjerder overalt) - med en beskjeden hageflate som
+        // holder god avstand til nabotomtenes gjerder (husene ligger ~36-40° fra hverandre i ringen).
+        // Gjerdet har en portåpning mot veien (samme side som inngangsdøra) der oppkjørselen munner ut.
+        const plotW = h.w + 6, plotD = h.d + 6;
+        if (h.fenced) {
+            const fence = buildFence(plotW, plotD, TOWN_GATE_WIDTH);
+            fence.position.set(TOWN_CENTER_X + h.dx, 0, TOWN_CENTER_Z + h.dz);
+            fence.rotation.y = h.ry;
+            group.add(fence);
+
+            // Hageflate (egen plentekstur, se buildLawnPatch) pluss et par busker og et blomsterbed -
+            // gir de inngjerdede tunene et faktisk "hage"-preg i stedet for bare vanlig bakketekstur.
+            const lawn = buildLawnPatch(plotW, plotD);
+            lawn.position.set(TOWN_CENTER_X + h.dx, 0, TOWN_CENTER_Z + h.dz);
+            lawn.rotation.y = h.ry;
+            group.add(lawn);
+
+            const yardGroup = new THREE.Group();
+            yardGroup.position.set(TOWN_CENTER_X + h.dx, 0, TOWN_CENTER_Z + h.dz);
+            yardGroup.rotation.y = h.ry;
+            [[-h.w / 2 - 0.6, -h.d / 2 - 0.6], [h.w / 2 + 0.6, -h.d / 2 - 0.6]].forEach(function (p) {
+                const bush = buildBush();
+                bush.position.set(p[0], 0, p[1]);
+                yardGroup.add(bush);
+            });
+            const flowers = buildFlowerPatch(0xd8b23a);
+            flowers.position.set(h.w * 0.28, 0, h.d / 2 + 0.6);
+            yardGroup.add(flowers);
+            group.add(yardGroup);
+        }
+
+        // Oppkjørsel: rett strekning fra ringveien til tunkanten - begge ligger på samme radielle
+        // linje fra sentrum som selve huset, siden fasaden vender rett inn mot sentrum.
+        const gateRadius = Math.hypot(h.dx, h.dz) - plotD / 2;
+        const sin = Math.sin(h.angle), cos = Math.cos(h.angle);
+        const gateX = sin * gateRadius, gateZ = cos * gateRadius;
+        const dx = gateX - h.roadDx, dz = gateZ - h.roadDz;
+        const driveway = buildRoadSegment(Math.hypot(dx, dz), 2.4);
+        driveway.position.set(TOWN_CENTER_X + (h.roadDx + gateX) / 2, 0.03, TOWN_CENTER_Z + (h.roadDz + gateZ) / 2);
+        driveway.rotation.y = Math.atan2(dx, dz);
+        group.add(driveway);
     });
 
-    // Litt større "rådhus"-aktig bygg midt i byen som et landemerke å navigere etter.
-    const townHall = buildSimpleHouse(9, 5.5, 8, 0xe8e0d0, 0x3a3a3a);
+    // Litt større "rådhus"-aktig bygg midt i byen som et landemerke å navigere etter, med en enkel
+    // brolagt plass foran inngangen (mellom veggen og der stikkveien inn til sentrum stopper - se
+    // buildTownRoads/TOWNHALL_CLEARANCE) og et par benker - en liten "møteplass"/park-følelse.
+    const townHall = buildTownHall(9, 5.5, 8);
     townHall.position.set(TOWN_CENTER_X, 0, TOWN_CENTER_Z);
     group.add(townHall);
 
+    const plaza = buildPavedCircle(TOWNHALL_CLEARANCE, 0x9a9484);
+    plaza.position.x = TOWN_CENTER_X;
+    plaza.position.z = TOWN_CENTER_Z;
+    group.add(plaza);
+    const benchMat = new THREE.MeshStandardMaterial({ color: 0x5a4530 });
+    [-2.4, 2.4].forEach(function (bx) {
+        const bench = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 0.5), benchMat);
+        bench.position.set(TOWN_CENTER_X + bx, 0.2, TOWN_CENTER_Z + TOWNHALL_CLEARANCE - 1.2);
+        bench.castShadow = true;
+        group.add(bench);
+    });
+
+    // Skorstein + røyk - et retningsuavhengig vindtegn (røyken driver med vinden) synlig fra lang avstand,
+    // i tillegg til vindpølsene ved rullebanen og de vaiende trærne (se updateTreeSway).
+    const chimneyMat = new THREE.MeshStandardMaterial({ color: 0x555550 });
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, 0.5), chimneyMat);
+    const chimneyLocalPos = new THREE.Vector3(2.8, 5.5 + 0.65, 1.6);
+    chimney.position.copy(chimneyLocalPos);
+    chimney.castShadow = true;
+    townHall.add(chimney);
+    townHall.add(buildWindSmoke(chimneyLocalPos.clone().add(new THREE.Vector3(0, 0.8, 0))));
+
+    // Plassert godt utenfor selv den største hagen (maks husradius + maks hageutstrekning ~44) - sto
+    // tidligere nesten oppi et hus-tun.
     const tower = buildWaterTower();
-    tower.position.set(TOWN_CENTER_X - 42, 0, TOWN_CENTER_Z + 6);
+    tower.position.set(TOWN_CENTER_X - 49, 0, TOWN_CENTER_Z + 7);
     group.add(tower);
 
     // Liten dam ved kanten av byen - rent visuelt landemerke.
     // Løftet fra 0.02 til 0.05 over bakken - samme prinsipp som rullebanen/rutenettet (se buildGround) -
     // 0.02 var for tynn en margin og flimret (z-fighting) mot bakkeplanet under.
-    const pond = new THREE.Mesh(new THREE.CircleGeometry(8, 24), new THREE.MeshStandardMaterial({ color: 0x2a5a78 }));
+    const pond = new THREE.Mesh(new THREE.CircleGeometry(8, 24), new THREE.MeshStandardMaterial(groundDecalProps({ color: 0x2a5a78 })));
     pond.rotation.x = -Math.PI / 2;
     pond.position.set(TOWN_CENTER_X + 40, 0.05, TOWN_CENTER_Z - 10);
     group.add(pond);
@@ -679,9 +1535,9 @@ function buildTown() {
         { dx: 50, dz: 25, h: 7 }, { dx: -20, dz: 50, h: 6.8 }, { dx: 25, dz: 52, h: 7.2 },
         { dx: 0, dz: -60, h: 8 }, { dx: 55, dz: -10, h: 6.5 }
     ].forEach(function (t) {
-        const tree = Sim.buildTree(t.h);
+        const tree = buildRandomTree(t.h);
         tree.position.set(TOWN_CENTER_X + t.dx, 0, TOWN_CENTER_Z + t.dz);
-        group.add(tree);
+        group.add(addSwayingTree(tree));
     });
 
     return group;
@@ -705,6 +1561,39 @@ function buildWorldObjects() {
     group.add(buildGateArea());
     group.add(buildBuildingArea());
     group.add(buildTown());
+    group.add(buildWindLeaves());
+
+    const factory = buildFactory();
+    factory.position.set(TOWN_CENTER_X + FACTORY_DX, 0, TOWN_CENTER_Z + FACTORY_DZ);
+    factory.rotation.y = THREE.MathUtils.degToRad(20);
+    group.add(factory);
+
+    // Asfaltert industritomt rundt fabrikken (ikke gress helt inntil bygget) - stor nok til å romme
+    // hele bygningskroppen uansett rotasjon (FACTORY_CLEARANCE), pluss noen parkerte biler og
+    // fraktcontainere for et "aktivt anlegg"-preg. Sirkulær flate - trenger ikke vite hvilken vei det
+    // (roterte) bygget vender for at kantene skal se riktige ut.
+    const factoryYard = buildPavedCircle(FACTORY_CLEARANCE + 4, 0x3d3a36);
+    factoryYard.position.x = TOWN_CENTER_X + FACTORY_DX;
+    factoryYard.position.z = TOWN_CENTER_Z + FACTORY_DZ;
+    group.add(factoryYard);
+    [
+        { dx: 10, dz: 8, ry: 0.3, color: 0x445566 },
+        { dx: 11.5, dz: -6, ry: -0.6, color: 0x883333 },
+        { dx: -9, dz: 10.5, ry: 1.1, color: 0x336644 }
+    ].forEach(function (c) {
+        const car = buildParkedCar(c.color);
+        car.position.set(TOWN_CENTER_X + FACTORY_DX + c.dx, 0, TOWN_CENTER_Z + FACTORY_DZ + c.dz);
+        car.rotation.y = c.ry;
+        group.add(car);
+    });
+    [
+        { dx: -12.5, dz: -8, color: 0xb03a2a }, { dx: -12.5, dz: -4.6, color: 0x2a5a8a },
+        { dx: -6, dz: -12, color: 0x8a7a2a }
+    ].forEach(function (c) {
+        const container = buildContainer(c.color);
+        container.position.set(TOWN_CENTER_X + FACTORY_DX + c.dx, 0, TOWN_CENTER_Z + FACTORY_DZ + c.dz);
+        group.add(container);
+    });
 
     // God del flere trær spredt bredere rundt hele kartet enn før - gjør overflyging/navigasjon mer
     // interessant å se på, ikke bare rullebanen og de nære flyv-gjennom-områdene.
@@ -724,32 +1613,24 @@ function buildWorldObjects() {
         { x: 30, z: RUNWAY_NEAR_Z - RUNWAY_LENGTH - 5, h: 6.8 },
         { x: -30, z: RUNWAY_NEAR_Z - RUNWAY_LENGTH - 15, h: 7.3 }
     ].forEach(function (t) {
-        const tree = Sim.buildTree(t.h);
+        const tree = buildRandomTree(t.h);
         tree.position.set(t.x, 0, t.z);
-        group.add(tree);
+        group.add(addSwayingTree(tree));
     });
 
     return group;
 }
 
-// Genererer en enkel, realistisk vingeprofil-kontur (i stedet for et rent rektangel): avrundet forkant,
-// buet overside, flat underside, jevnt tilspisset mot bakkant. Bruker en NACA-00xx-lignende symmetrisk
-// tykkelsesfordeling (5*t*(0.2969*sqrt(x) - 0.126*x - 0.3516*x² + 0.2843*x³ - 0.1015*x⁴)) - denne
-// formelen gir BÅDE den avrundede nesen (sqrt(x)-leddet har uendelig stigning ved x=0, som geometrisk
-// gir en butt, avrundet spiss i stedet for et skarpt hjørne) OG den jevnt tilspissede bakkanten (går mot
-// 0 ved x=1) helt av seg selv, uten noen egen håndkodet avrunding. Oversiden bruker denne tykkelsen
-// direkte (litt forsterket for en tydelig buet/kambret følelse), undersiden bruker SAMME kurve nær
-// nesen (for en glatt, avrundet overgang) men blandes raskt over til flat (y=0) innen ~15% korde -
-// altså en klassisk "flat-bunn"-profil (Clark-Y-lignende), som brukeren spesifikt ba om.
-// xStart/xEnd (0..1, andel av FULL korde chordLen) lar oss bygge "fremre hoveddel" (xStart=0, med den
-// ekte avrundede nesen) og "bakre del/balanseror" (xEnd=1, med den ekte tilspissede bakkanten) som to
-// separate, men konturmessig SAMMENHENGENDE biter - akkurat som boks-versjonen hadde et fremre/bakre
-// skille for balanserorets utsparing på vingetuppen.
-// flatBottom (default true): true = kambret vingeprofil (buet overside/flat underside, som brukeren ba
-// om for selve vingen); false = SYMMETRISK profil (samme kurve begge veier) - brukt for hale-/finne-
-// flater, som i et ekte fly nesten alltid er symmetriske (må gi løft/sideveis kraft like godt begge
-// veier - nese opp OG ned, sideror høyre OG venstre - noe en kambret profil ville gjort dårligere den
-// ene veien).
+// Genererer en realistisk vingeprofil-kontur (avrundet forkant, buet overside, flat underside, tilspisset
+// bakkant) i stedet for et rent rektangel. Bruker en NACA-00xx-lignende symmetrisk tykkelsesfordeling
+// (5*t*(0.2969*sqrt(x) - 0.126*x - 0.3516*x² + 0.2843*x³ - 0.1015*x⁴)) som gir BÅDE den avrundede nesen
+// (sqrt(x)-leddet har uendelig stigning ved x=0) OG den tilspissede bakkanten (går mot 0 ved x=1) av seg
+// selv. Undersiden bruker samme kurve nær nesen (glatt overgang) men blandes raskt til flat innen ~15%
+// korde - en klassisk "flat-bunn"-profil (Clark-Y-lignende).
+// xStart/xEnd (0..1, andel av FULL korde chordLen) lar oss bygge "fremre hoveddel" og "bakre del/
+// balanseror" som to separate, men konturmessig sammenhengende biter (balanserorets utsparing på
+// vingetuppen). flatBottom (default true) styrer kambret (vinge) vs. symmetrisk (hale/finne, som må
+// virke like godt begge veier) profil.
 function buildAirfoilProfileShape(chordLen, xStart, xEnd, thicknessRatio, flatBottom) {
     const SAMPLES = 16;
     function halfThickness(x) {
@@ -875,11 +1756,8 @@ function buildPlane(classKey) {
 
     // Skrog: nesekjegle -> kabin (bredest) -> jevnt avsmalnende bakkropp mot halen, tre sylinderseksjoner
     // med matchende radius i skjøtene i stedet for én enkelt sylinder - gir et langt mer fly-aktig silhuett.
-    // cabinRadius redusert ytterligere (0.095 -> 0.07) - skroget leste fortsatt som en "ubåt/luftskip"
-    // (for tykk midje i forhold til lengden) i skjermbildene selv etter forrige runde.
-    // fuselageLength/cabinRadius/CABIN_LEN_RATIO/TAIL_LEN_RATIO er DELT med checkTailStrike (se disse
-    // konstantene øverst i filen) - IKKE gjør disse til lokale, uavhengige tall igjen, det var nettopp
-    // det som fikk tailstrike-varselet til å drifte ut av synk med skroget sist.
+    // fuselageLength/cabinRadius/CABIN_LEN_RATIO/TAIL_LEN_RATIO er DELT med checkTailStrike (se konstantene
+    // øverst i filen) - IKKE gjør disse til lokale, uavhengige tall, det holder tailstrike-varselet i synk.
     const fuselageLength = FUSELAGE_LENGTH_BUILD, cabinRadius = CABIN_RADIUS_BUILD;
     const noseLen = fuselageLength * 0.18, cabinLen = fuselageLength * CABIN_LEN_RATIO, tailLen = fuselageLength * TAIL_LEN_RATIO;
     // (radiusTop/radiusBottom var byttet om - nesen buttet ut ved tuppen og snørte seg inn mot kabinen
@@ -921,25 +1799,16 @@ function buildPlane(classKey) {
     group.add(canopy);
 
     // Høyvinge (over skroget, som en typisk skoleflymaskin) - se buildWing.
-    // VIKTIG (fikset bug - vingen "fløt" synlig over hele skroget, verst på Middels/Stor): spec.wingSpan/
-    // wingArea er EKTE, fysiske verdensrom-mål (brukt direkte i fysikken - se stepPhysics/
-    // resolveGroundContact, som IKKE bruker visualScale i det hele tatt, siden fysikken allerede opererer
-    // i sanne verdensrom-enheter). Men HELE flygruppen skaleres uniformt med spec.visualScale helt til
-    // slutt (group.scale.setScalar under) - så all geometri bygget FØR den skaleringen må være i
-    // "bygge-rom" (FØR visualScale), akkurat som fuselageLength/cabinRadius allerede er (se merknaden
-    // ved FUSELAGE_LENGTH_BUILD øverst i filen). Vinge/hale/finne/understells-spor ble tidligere bygget
-    // DIREKTE fra spec.wingSpan/wingArea (de sanne verdensrom-tallene), og fikk dermed visualScale
-    // påført EN GANG FOR MYE - Middels sitt vingespenn endte 1.4x for stort I TILLEGG TIL at det
-    // allerede var 1.33x større enn Liten sitt (2.4 vs 1.8), altså faktisk 1.87x - som fikk vingen til å
-    // se ut som en overdimensjonert flate som dekket hele skroget, ikke en proporsjonalt montert vinge.
-    // Fikset ved å dele wingSpan/wingArea på visualScale (areal på visualScale² - areal skalerer med
-    // LENGDE i annen potens) FØR de brukes til å bygge geometri her, akkurat som gearHeight allerede
-    // gjorde riktig for understellets HØYDE (se gearHeight-merknaden lenger ned) - resten av denne
-    // fila brukte samme fiks kun for det ene tallet, ikke konsekvent for alt som bruker wingSpan/wingArea.
+    // spec.wingSpan/wingArea er EKTE verdensrom-mål (brukt direkte i fysikken, som ikke bruker visualScale
+    // i det hele tatt) - men HELE flygruppen skaleres uniformt med spec.visualScale til slutt
+    // (group.scale.setScalar under), så all geometri bygget FØR den skaleringen må være i "bygge-rom",
+    // akkurat som fuselageLength/cabinRadius allerede er. Derfor deles wingSpan/wingArea på visualScale
+    // (areal på visualScale², siden areal skalerer med lengde i annen potens) FØR de brukes til å bygge
+    // geometri her - samme prinsipp som gearHeight bruker for understellets høyde (se lenger ned).
     const buildWingSpan = spec.wingSpan / spec.visualScale;
     const buildWingArea = spec.wingArea / (spec.visualScale * spec.visualScale);
     const wingChord = buildWingArea / buildWingSpan;
-    const wingMountY = cabinRadius * 1.3;
+    const wingMountY = cabinRadius * WING_MOUNT_HEIGHT_RATIO;
     const wing = buildWing({ wingArea: buildWingArea, wingSpan: buildWingSpan }, wingMat, darkMat);
     wing.position.set(0, wingMountY, 0.02);
     group.add(wing);
@@ -995,35 +1864,22 @@ function buildPlane(classKey) {
     rudderPivot.add(rudderMesh);
     group.add(rudderPivot);
 
-    // Understellet må gi nok bakkeklaring til hele propellsveipet (se bladeLen under) - ellers stikker
-    // propellen ned i rullebanen. gearHeight avledes direkte av spec.gearOffsetY (fysikkens faktiske
-    // bakkekontaktpunkt), delt på visualScale siden hele modellen skaleres uniformt til slutt - dermed
-    // stemmer det visuelle understellet nøyaktig med fysikkens bakkekontakt for alle tre flystørrelsene,
-    // ikke bare den ene klassen en fast konstant tilfeldigvis passet for.
-    // Hjulets BUNNPUNKT (senter minus radius), ikke hjulsenteret, må lande nøyaktig på -gearHeight -
-    // ellers stikker hjulets underkant synlig ned i rullebanen selv om fysikken sier "på bakken" (dette
-    // var årsaken til at hjulene så ut til å "glitche" delvis gjennom asfalten). Derfor stopper strebene
-    // ved hjulaksling-høyde (gearHeight - hjulradius), ikke ved selve bakkekontaktpunktet.
+    // Understellet må gi nok bakkeklaring til propellsveipet (se bladeLen under). gearHeight avledes
+    // direkte av spec.gearOffsetY (fysikkens faktiske bakkekontaktpunkt) delt på visualScale, slik at det
+    // visuelle understellet stemmer nøyaktig med fysikkens bakkekontakt for alle tre flystørrelsene.
+    // Hjulets BUNNPUNKT (senter minus radius), ikke hjulsenteret, må lande på -gearHeight - derfor stopper
+    // strebene ved hjulaksling-høyde (gearHeight - hjulradius), ikke ved selve bakkekontaktpunktet.
     const wheelRadius = 0.04, noseWheelRadius = 0.03;
     const gearHeight = -spec.gearOffsetY / spec.visualScale;
-    // Samme dobbel-skalering-fiks som vingen (se merknaden ved buildWingSpan over) - understellssporet
-    // ble bygget fra RÅ spec.wingSpan, som fikk visualScale påført en ekstra gang og ga hjul som satt
-    // synlig FEIL i forhold til fysikkens faktiske bakkekontaktpunkter. Koeffisienten er også endret
-    // fra 0.22 til 0.25 slik at den er IDENTISK med resolveGroundContact sin egen gearTrack-formel
-    // (spec.wingSpan*0.25) - de visuelle hjulene sitter dermed nå NØYAKTIG der fysikken faktisk
-    // registrerer bakkekontakt, i stedet for en tilnærmet (og, pga. dobbel-skaleringen, økende feil for
-    // større klasser) plassering.
+    // Samme bygge-rom-prinsipp som vingen (se buildWingSpan over) - koeffisienten (0.25) er også identisk
+    // med resolveGroundContact sin egen gearTrack-formel, slik at de visuelle hjulene sitter nøyaktig der
+    // fysikken faktisk registrerer bakkekontakt.
     const gearTrack = buildWingSpan * 0.25;
     const strutLenMain = gearHeight - wheelRadius;
-    // VIKTIG (fikset bug - "understellet henger i løse lufta, hjulene har kontakt med bakken men ikke
-    // med flyet"): strebene stod tidligere LODDRETT, rett under hjulsporet (side*gearTrack/2) - men
-    // hjulsporet er langt bredere enn selve skroget (cabinRadius, kun 0.07 bygge-enheter), så streben
-    // sin egen TOPP endte godt UTENFOR skrogsylinderen i X-retning, med et synlig gap mellom skrogets
-    // buk og strebens toppunkt (se skjermbildet - bekreftet). Fikset ved å la hver strebe gå DIAGONALT
-    // fra et festepunkt PÅ skrogets buk (rett under senterlinjen) og skrå utover til hjulet - akkurat
-    // som en ekte "cantilever"-fjærbein (typisk på en høyvinget trener, f.eks. Cessna 152/172-stil),
-    // ikke to separate, uavhengige loddrette bein. attachPoint/wheelPoint + setFromUnitVectors orienterer
-    // sylinderen langs den faktiske retningen mellom de to punktene i stedet for å anta loddrett.
+    // Strebene går DIAGONALT fra et festepunkt på skrogets buk og skrår utover til hjulet, som en ekte
+    // "cantilever"-fjærbein (typisk høyvinget trener, f.eks. Cessna 152/172-stil) - ikke loddrett rett
+    // under hjulsporet, som ville latt streben sveve fritt utenfor det smale skroget uten synlig feste.
+    // setFromUnitVectors orienterer sylinderen langs den faktiske retningen mellom de to punktene.
     const gearAttachPoint = new THREE.Vector3(0, -cabinRadius * 0.9, 0.02);
     [-1, 1].forEach(function (side) {
         const wheelPoint = new THREE.Vector3(side * gearTrack / 2, -strutLenMain, 0.02);
@@ -1102,15 +1958,18 @@ function initScene() {
     const aspect = window.innerWidth / Math.max(1, window.innerHeight - 70);
     // Nærmere far-plan (1500 er rikelig - himmelkulen har radius 800) gir bedre dybdebuffer-presisjon enn
     // 3000, som reduserer flimring/z-fighting mellom rullebanen og bakkeplanet under den.
-    chaseCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1500);
-    fpvCamera = new THREE.PerspectiveCamera(90, aspect, 0.05, 1500);
+    // Near-planene er løftet (0.1/0.05 -> 0.3/0.1): dybdebufferets oppløsning er proporsjonal med
+    // near-verdien, og de gamle verdiene ga synlig z-fighting på bakke-dekalene sett fra lufta
+    // (sammen med polygonOffset-biasen i groundDecalProps, som er hovedgrepet).
+    chaseCamera = new THREE.PerspectiveCamera(60, aspect, 0.3, 1500);
+    fpvCamera = new THREE.PerspectiveCamera(90, aspect, 0.1, 1500);
     fpvCamera.position.set(0, 0.08, -0.55);
     fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
 
     rebuildPlaneMesh();
 
     // VLOS-observatøren står rett ved siden av rullebanen (ikke på den) og ser nedover mot avgangsenden.
-    vlosCamera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1500);
+    vlosCamera = new THREE.PerspectiveCamera(50, aspect, 0.5, 1500); // høy near = bedre dybdepresisjon på avstand (se chaseCamera)
     vlosCamera.position.set(RUNWAY_WIDTH / 2 + 4, 1.6, RUNWAY_SPAWN_Z);
     scene.add(vlosCamera);
 
@@ -1148,11 +2007,11 @@ function resizeRenderer() {
 // Vinkel/avstand er en offset OVENPÅ flyets egen heading - dvs. kameraet henger fortsatt bak flyet
 // og følger det rundt svinger, men piloten kan se seg rundt (f.eks. for å ta skjermbilder) uten at det
 // påvirker selve styringen av flyet.
-const CHASE_DEFAULT_DIST = Math.hypot(3.2, 15);
 const CHASE_DEFAULT_PITCH = Math.atan2(3.2, 15);
+const CHASE_ZOOM_MIN = 4, CHASE_ZOOM_MAX = 60;
 let chaseOrbitYaw = 0;
 let chaseOrbitPitch = CHASE_DEFAULT_PITCH;
-let chaseZoomDistance = CHASE_DEFAULT_DIST;
+let chaseZoomDistance = CHASE_ZOOM_MIN; // starter nærmest mulig ved innlasting av siden
 let isOrbitingChase = false;
 let lastPointerX = 0, lastPointerY = 0;
 
@@ -1237,32 +2096,41 @@ function updateInput(dt) {
 /* ---------- Aerodynamikk: løft/drag-koeffisienter med steiling ---------- */
 // Lineær region opp til kritisk vinkel, så et raskt kollapsende overgangssjikt (klassisk steile-oppførsel),
 // og til slutt en grov "flat plate"-tilnærming for dyp steiling (sin(2*AoA), typisk flate-plate-normalkraft).
+// WING_ALPHA0_DEG: nullløft-vinkelen til en kambret vingeprofil (buet overside/flat underside, se
+// buildAirfoilProfileShape) - en SYMMETRISK profil har løft=0 ved AoA=0, men en kambret profil gir
+// fortsatt litt løft ved AoA=0 (og trenger en NEGATIV AoA, ~-2 til -4°, for å gi null løft). Delt/lik for
+// alle klasser (samme profilfamilie), ikke per-klasse - konsistent med hvordan f.eks. DIHEDRAL_EFFECT
+// også er delt. Gir tre realistiske ting gratis: lavere marsjfart-AoA (mindre indusert drag i cruise),
+// et reelt vinge-stigemoment (Cm0, via at drag/løft nå er asymmetrisk fordelt om AoA=0 - se
+// dragCoefficient), og at rygg-flyging (invertert) krever et tydelig dytt/negativt utslag for å holde
+// høyden i stedet for å "falle" naturlig oppover.
+const WING_ALPHA0_DEG = -3;
+
 function liftCoefficient(aoaDeg, spec) {
     const stall = spec.stallAngleDeg;
     const absA = Math.abs(aoaDeg);
     const sign = aoaDeg < 0 ? -1 : 1;
-    const peak = spec.clSlope * stall;
-    if (absA < stall) return spec.clSlope * aoaDeg;
+    if (absA < stall) return spec.clSlope * (aoaDeg - WING_ALPHA0_DEG);
+    // signedPeak: verdien den lineære formelen over FAKTISK gir ved grensevinkelen for DENNE siden (+/-
+    // stall) - en kambret profil gir ulik CL-magnitude for +stall og -stall (se WING_ALPHA0_DEG), så dette
+    // kan ikke lenger være ett delt, symmetrisk tall slik "peak" var før kamber ble lagt til. Selve
+    // steilevinkelen (stall) er fortsatt den RÅ, geometriske AoA'en, HELT uendret av kamber-skiftet - kun
+    // formen/magnituden på løftkurven som ruller av den er påvirket. Garantert kontinuerlig med
+    // linjeformelen over per konstruksjon (samme uttrykk, evaluert nøyaktig ved grensen).
+    const signedPeak = spec.clSlope * (sign * stall - WING_ALPHA0_DEG);
     if (absA < stall + STALL_POST_RANGE_DEG) {
         const progress = (absA - stall) / STALL_POST_RANGE_DEG;
-        return sign * (peak * (1 - progress) + peak * 0.3 * progress);
+        return signedPeak * (1 - progress) + signedPeak * 0.3 * progress;
     }
-    // VIKTIG (fikset bug - den reelle årsaken til "rullingen hopper fram og tilbake, virker unaturlig"
-    // under en steiling): den faste 0.6-faktoren under var UAVHENGIG av selve grensevinkelen
-    // (stall+STALL_POST_RANGE_DEG), og falt så å si ALDRI sammen med overgangssonens sluttverdi
-    // (peak*0.3) rett over - for f.eks. Middels-klassen (stall=13°) hoppet CL diskontinuerlig fra
-    // 0.3*peak til 0.6*sin(48°)*peak ≈ 0.446*peak (et ~49% sprang) I SAMME TICK som AoA krysset 24°.
-    // Siden vingens AoA naturlig svinger litt fram og tilbake rundt akkurat denne grensen under en
-    // steiling (fra egen rotasjon/turbulens i selve steilingen), hoppet løftet - og dermed rull-/
-    // gir-dreiemomentet - diskontinuerlig hver gang grensen ble krysset, som ga nettopp en rykkete,
-    // retningsvekslende rulling i stedet for en jevn vingedypp. Fikset ved å skalere flate-plate-
-    // formelen slik at den er KONTINUERLIG med overgangssonen akkurat ved grensevinkelen, uansett
-    // klassens stallAngleDeg (peak*0.3 forblir uendret - kun HVORDAN den fortsetter videre forbi
-    // grensen er glattet ut).
+    // Flate-plate-formelen for dyp steiling skaleres slik at den er KONTINUERLIG med overgangssonens
+    // sluttverdi (0.3*signedPeak) akkurat ved grensevinkelen, for enhver klasses stallAngleDeg - en fast
+    // skalafaktor uavhengig av grensevinkelen ga tidligere et diskontinuerlig CL-sprang der (~49% for
+    // Middels), som viste seg som rykkete, retningsvekslende rulling når AoA naturlig svinget over grensen
+    // under en steiling.
     const boundaryDeg = stall + STALL_POST_RANGE_DEG;
     const boundaryRaw = Math.abs(Math.sin(2 * THREE.MathUtils.degToRad(boundaryDeg)));
     const flatPlateScale = boundaryRaw > 0.05 ? 0.3 / boundaryRaw : 0.6;
-    return sign * peak * flatPlateScale * Math.abs(Math.sin(2 * THREE.MathUtils.degToRad(absA)));
+    return sign * Math.abs(signedPeak) * flatPlateScale * Math.abs(Math.sin(2 * THREE.MathUtils.degToRad(absA)));
 }
 
 // groundEffectFactor (0..1, default 1 = ingen effekt) skalerer KUN den induserte motstanden - se
@@ -1272,7 +2140,12 @@ function liftCoefficient(aoaDeg, spec) {
 // rekkevidde i bakkeeffekt ved landing, og er den vanligste, mest merkbare av de to.
 function dragCoefficient(aoaDeg, spec, groundEffectFactor) {
     const aoaRad = THREE.MathUtils.degToRad(aoaDeg);
-    let cd = spec.cd0 + spec.inducedDragK * aoaRad * aoaRad * (groundEffectFactor === undefined ? 1 : groundEffectFactor);
+    // Indusert drag måles fra samme nullløft-vinkel som liftCoefficient nå bruker (WING_ALPHA0_DEG) -
+    // indusert drag er reelt sett en funksjon av LØFTET (~CL²), ikke av den rå geometriske AoA² alene.
+    // Uten dette skiftet ville vingen ha reelt løft ved AoA=0 (fra kamberet) men modellen ville likevel
+    // late som om indusert drag var omtrent null der - inkonsistent med selve løftkurven over.
+    const shiftedRad = THREE.MathUtils.degToRad(aoaDeg - WING_ALPHA0_DEG);
+    let cd = spec.cd0 + spec.inducedDragK * shiftedRad * shiftedRad * (groundEffectFactor === undefined ? 1 : groundEffectFactor);
     if (Math.abs(aoaDeg) > spec.stallAngleDeg) cd += 0.3 * Math.abs(Math.sin(aoaRad));
     return cd;
 }
@@ -1292,16 +2165,10 @@ function wingLocalAirspeedAoa(localAirVelCG, rotContribLocal) {
 function stepPhysics(dt) {
     const spec = currentPlaneSpec();
 
-    // Sikkerhetsnett mot enhver uforklarlig dreining i stillstand (parkert/rett etter reset/spawn, før
-    // flyet har fart): tvinger orienteringen HELT til identitet (rett ned rullebanen, nivå). VIKTIG: kun
-    // FØR flyet noensinne har vært i luften (hasBeenAirborne) - denne fikk opprinnelig lov til å kjøre
-    // ubetinget for ENHVER lav fart, som var en reell bug: et fly som lander og bremser ned til under
-    // 0.4 m/s (helt normalt ved full stopp etter landing) ble da teleportert 180°/til vilkårlig retning
-    // TILBAKE til spawn-retningen, uansett hvilken vei det faktisk pekte etter en helt normal landing og
-    // utrulling. Nå gjelder identitets-tvangen kun i det smale vinduet "har aldri lettet ennå" (parkert
-    // rett etter reset/spawn), der det opprinnelige problemet (uforklarlig dreining) faktisk oppsto -
-    // vinkelhastighetene nullstilles fortsatt uansett (forhindrer restspinn ved full stopp, uavhengig av
-    // retning - det er alltid riktig).
+    // Sikkerhetsnett mot uforklarlig dreining i stillstand: tvinger orienteringen til identitet (rett ned
+    // rullebanen, nivå), men KUN før flyet noensinne har vært i luften (hasBeenAirborne) - ellers ville
+    // dette teleportert et fly som lander og bremser ned under 0.4 m/s tilbake til spawn-retningen, uansett
+    // hvilken vei det faktisk landet. Vinkelhastighetene nullstilles alltid uansett (forhindrer restspinn).
     if (planeState.velocity.length() < 0.4) {
         if (!planeState.hasBeenAirborne) planeState.quaternion.identity();
         planeState.angularVelocity.roll = 0;
@@ -1323,7 +2190,6 @@ function stepPhysics(dt) {
 
     const stick = inputState.stick;
     const throttleShaped = computeThrottleCurve(stick.throttle, rates.throttle.expo);
-    const thrustForce = planeState.engineOn ? throttleShaped * spec.maxThrust : 0;
 
     const q = planeState.quaternion;
     const invQ = q.clone().invert();
@@ -1334,6 +2200,15 @@ function stepPhysics(dt) {
     const aoaDeg = airspeed > 0.3 ? THREE.MathUtils.radToDeg(Math.atan2(-localAirVel.y, -localAirVel.z)) : 0;
     const sideslipDeg = airspeed > 0.3 ? THREE.MathUtils.radToDeg(Math.atan2(localAirVel.x, -localAirVel.z)) : 0;
 
+    const forwardAirspeedIntoProp = Math.max(-localAirVel.z, 0);
+    // En ekte (særlig fastpitch) propell mister trekkraft omtrent lineært med farten, fra full statisk
+    // trekkraft ved V=0 til ~null idet flyet nærmer seg propellens "pitch speed" (spec.propPitchSpeed) -
+    // uten dette var toppfarten satt av drag alene (urealistisk høy for en liten trener), og gass av i
+    // høy fart ga ikke den brattere glidebanen en vindmøllende propell faktisk gir.
+    const thrustForce = planeState.engineOn
+        ? throttleShaped * spec.maxThrust * Math.max(0, 1 - forwardAirspeedIntoProp / spec.propPitchSpeed)
+        : 0;
+
     // Propellstrøm (propwash) - se PROP_DISK_AREA_RATIO-merknaden ved konstanten. Momentum-teori for en
     // aktuator-skive: skiven induserer en hastighet v_i som løser T = 2*rho*A*v_i*(V0+v_i), der V0 er
     // flyets EGEN forover-luftfart inn i skiven (klemt til >=0 - motoren "suger" uansett, selv i revers-
@@ -1342,18 +2217,24 @@ function stepPhysics(dt) {
     // legges KUN til halens/finnens EGEN lokale luftstrøm (se tailTorqueAtPitchRate/finTorqueAtYawRate),
     // ikke vingens - en enkeltmotors nese-propell vasker i praksis kun skrog/hale, ikke hele vingespennet.
     const propwashEffectiveArea = spec.wingArea * PROPWASH_EFFECTIVE_AREA_RATIO;
-    const forwardAirspeedIntoProp = Math.max(-localAirVel.z, 0);
     const propwashDeltaV = thrustForce > 0.01
         ? Math.sqrt(forwardAirspeedIntoProp * forwardAirspeedIntoProp + (2 * thrustForce) / (AIR_DENSITY * propwashEffectiveArea)) - forwardAirspeedIntoProp
         : 0;
 
-    // Bakkeeffekt - se GROUND_EFFECT_HEIGHT_FACTOR-merknaden ved konstanten. h/b = høyde over bakken
-    // (her brukt direkte som posisjonens Y - vingen sitter uansett nær CG-høyden på disse småflyene)
-    // delt på vingespennet. Faktoren går mot 0 (ingen indusert drag) helt ved bakken, og mot 1 (ingen
-    // effekt) idet høyden nærmer seg/overstiger ett vingespenn - en vanlig, enkel empirisk tilnærming
-    // (Wieselsberger-lignende form).
-    const groundEffectRatio = GROUND_EFFECT_HEIGHT_FACTOR * Math.max(planeState.position.y, 0) / spec.wingSpan;
+    // Bakkeeffekt - se GROUND_EFFECT_HEIGHT_FACTOR-merknaden ved konstanten. h/b = VINGENS høyde over
+    // bakken (IKKE CG/planeState.position.y direkte - dette er høyvinget, så vingen sitter et stykke over
+    // CG, se WING_MOUNT_HEIGHT_RATIO-merknaden) delt på vingespennet. Faktoren går mot 0 (ingen indusert
+    // drag) helt ved bakken, og mot 1 (ingen effekt) idet høyden nærmer seg/overstiger ett vingespenn - en
+    // vanlig, enkel empirisk tilnærming (Wieselsberger-lignende form).
+    const wingHeightAboveGround = Math.max(planeState.position.y + CABIN_RADIUS_BUILD * WING_MOUNT_HEIGHT_RATIO * spec.visualScale, 0);
+    const groundEffectRatio = GROUND_EFFECT_HEIGHT_FACTOR * wingHeightAboveGround / spec.wingSpan;
     const groundEffectFactor = (groundEffectRatio * groundEffectRatio) / (1 + groundEffectRatio * groundEffectRatio);
+    // Løft-boost nær bakken (se GROUND_EFFECT_LIFT_BOOST_MAX-merknaden ved konstanten) - størst (1+MAX)
+    // helt ved bakken (groundEffectFactor=0), forsvinner til nøyaktig 1 (ingen effekt) idet
+    // groundEffectFactor->1 (over ca. ett vingespenn høyde). Brukes som en enkel multiplikator på
+    // vingens løft der den beregnes (liftRight/liftLeft og wingTorqueForce), IKKE inni selve
+    // liftCoefficient()-kurven - holder steile-/kambermatematikken der uberørt.
+    const groundEffectLiftFactor = 1 + GROUND_EFFECT_LIFT_BOOST_MAX * (1 - groundEffectFactor);
 
     // Rorenes avbøyning (-1..1) beregnes FØR vinge-/hale-fysikken under, siden skråror (aileron) nå også
     // påvirker vingens egen angrepsvinkel (se rightWing/leftWing) og trenger rollDeflection klar til det.
@@ -1394,14 +2275,10 @@ function stepPhysics(dt) {
 
         rollDeflection = clamp((targetBankDeg - currentBankDeg) / STABILIZED_BANK_AUTHORITY_DEG - planeState.filteredBankRateDeg * STABILIZED_BANK_D_GAIN, -1, 1);
         pitchDeflection = clamp((targetPitchDeg - currentPitchDeg) / STABILIZED_PITCH_AUTHORITY_DEG - planeState.filteredPitchRateDeg * STABILIZED_PITCH_D_GAIN, -1, 1);
-        // Automatisk sideror-koordinering (proporsjonal med KOMMANDERT krengning) fjernet - den var en
-        // åpen løkke uten tilbakekobling på flyets faktiske gir-tilstand, og fungerte mot en gammel, svak,
-        // flat gir-modell. Nå som finnen har en ekte, langt sterkere aerodynamisk respons (egen
-        // retningsstabilitet OG demping, se finTorqueAtYawRate) OG vingene gir ekte adverse yaw fra
-        // skråror (yawTorqueFromDragDiff), fightet den statiske koordineringen mot den nye, realistiske
-        // fysikken i stedet for å hjelpe den - det viste seg som periodisk sideror-oscillering i svinger.
-        // Sideroret i Stabilized er nå rent pinnestyrt (samme som Manual) - selve retningsstabiliteten og
-        // koordineringen kommer naturlig fra aerodynamikken, ikke fra en kunstig autopilot-hjelp.
+        // Ingen automatisk sideror-koordinering her - en tidligere åpen-løkke-versjon (proporsjonal med
+        // kommandert krengning) fightet mot finnens ekte aerodynamiske respons (retningsstabilitet+demping)
+        // og vingenes adverse yaw, som ga periodisk sideror-oscillering i svinger. Sideroret i Stabilized
+        // er derfor rent pinnestyrt (som Manual) - koordineringen kommer naturlig fra aerodynamikken.
         yawDeflection = clamp(computeRate(stick.yaw, rates.rudder) / rates.rudder.maxRate, -1, 1);
 
         // Auto-trim: trim-hjulet "følger etter" sakte og avlaster roret mot null utslag, akkurat som en
@@ -1437,27 +2314,20 @@ function stepPhysics(dt) {
     const rightWingBase = wingLocalAirspeedAoa(localAirVel, rightRot);
     const leftWingBase = wingLocalAirspeedAoa(localAirVel, leftRot);
     // Skråror (aileron) endrer hver vinges EFFEKTIVE angrepsvinkel motsatt av hverandre (nedadgående
-    // klaff = mer AoA, oppadgående = mindre) - se AILERON_MAX_AOA_DEG-merknaden ved konstanten. Dette
-    // legges OVENPÅ den eksisterende rotasjonsbaserte differensialen, så begge kilder til vingedypp/
-    // spinn-tendens (rorutslag OG ren rotasjon) bruker nå samme mekanisme.
-    // VIKTIG (fikset strukturell bug - den EGENTLIGE årsaken til at rull konsekvent føltes "treg" mens
-    // høyderor/sideror var raske, til tross for fire tuning-forsøk): rorutslaget ble tidligere lagt
-    // OVENPÅ vingens egen base-AoA FØR liftCoefficient()'s steilekurve - altså akkurat samme ikke-
-    // lineære kurve som gir tip-stall/spinn-tendens ved ren rotasjon. Ved lav fart (nettopp der rull ble
-    // testet - under/rett etter takeoff-rullingen, hvor vingen uansett trenger høy AoA for å bære
-    // vekten) presset et fullt rorutslag (opptil 11° per vinge) den nedadgående vingen godt inn i
-    // steilingens avtagende/flate område, som kuttet en stor del av differensialløftet nettopp når det
-    // trengtes mest - mens ELEVATOR_MAX_AOA_DEG/RUDDER_MAX_AOA_DEG ALDRI går gjennom noen steilekurve
-    // (se tailTorqueAtPitchRate/finTorqueAtYawRate - rent lineær CL = slope*AoA). Fikset ved å gi
-    // skrårorets bidrag samme behandling som høyderor/sideror: et EGET, tilnærmet lineært CL-tillegg
-    // (clSlope*rorutslag) lagt til ETTER at vingens EGEN base-AoA har gått gjennom steilekurven, ikke
-    // FØR - vingens egen steiling (fra reell AoA/rotasjon) er fortsatt fullt intakt og upåvirket.
+    // klaff = mer AoA, oppadgående = mindre), OVENPÅ den rotasjonsbaserte differensialen - begge kilder
+    // til vingedypp/spinn-tendens (rorutslag OG ren rotasjon) bruker samme mekanisme.
+    // controlAoaDeg holdes ADSKILT fra aoaDeg og legges til som et eget, lineært CL-tillegg (se
+    // liftRight/liftLeft under) i stedet for inni liftCoefficient()'s steilekurve: et fullt rorutslag
+    // (opptil 11°/vinge) presset tidligere den nedadgående vingen inn i steilingens flate område ved
+    // nettopp lav fart/høy AoA (der rull faktisk trengs mest, f.eks. under takeoff-rullingen) og kuttet
+    // mesteparten av differensialløftet - mens høyderor/sideror aldri gikk gjennom noen steilekurve i
+    // det hele tatt. Dette var den reelle årsaken til at rull konsekvent føltes tregt.
     const rightWing = { airspeed: rightWingBase.airspeed, aoaDeg: rightWingBase.aoaDeg, controlAoaDeg: -rollDeflection * AILERON_MAX_AOA_DEG * 0.5 };
     const leftWing = { airspeed: leftWingBase.airspeed, aoaDeg: leftWingBase.aoaDeg, controlAoaDeg: rollDeflection * AILERON_MAX_AOA_DEG * 0.5 };
 
     const halfWingArea = spec.wingArea / 2;
-    const liftRight = 0.5 * AIR_DENSITY * rightWing.airspeed * rightWing.airspeed * halfWingArea * (liftCoefficient(rightWing.aoaDeg, spec) + spec.clSlope * rightWing.controlAoaDeg);
-    const liftLeft = 0.5 * AIR_DENSITY * leftWing.airspeed * leftWing.airspeed * halfWingArea * (liftCoefficient(leftWing.aoaDeg, spec) + spec.clSlope * leftWing.controlAoaDeg);
+    const liftRight = 0.5 * AIR_DENSITY * rightWing.airspeed * rightWing.airspeed * halfWingArea * (liftCoefficient(rightWing.aoaDeg, spec) + spec.clSlope * rightWing.controlAoaDeg) * groundEffectLiftFactor;
+    const liftLeft = 0.5 * AIR_DENSITY * leftWing.airspeed * leftWing.airspeed * halfWingArea * (liftCoefficient(leftWing.aoaDeg, spec) + spec.clSlope * leftWing.controlAoaDeg) * groundEffectLiftFactor;
     const totalLiftMag = liftRight + liftLeft;
 
     // Rull-/gir-koblingen beregnes fra vingenes EGEN lokale luftstrøm-RETNING (ikke bare fart/AoA-
@@ -1481,7 +2351,7 @@ function stepPhysics(dt) {
         // for selve rull-/gir-dreiemoment-beregningen). Drag bruker fortsatt DEN KOMBINERTE vinkelen -
         // ror-utslag skal fortsatt gi ekstra motstand/adverse yaw, det er kun løft-steilingen som ikke
         // skal "se" roret som en del av vingens egen angrepsvinkel.
-        const liftMag = qDynWing * (liftCoefficient(baseAoaDeg, spec) + spec.clSlope * extraAoaDeg);
+        const liftMag = qDynWing * (liftCoefficient(baseAoaDeg, spec) + spec.clSlope * extraAoaDeg) * groundEffectLiftFactor;
         const dragMag = qDynWing * dragCoefficient(wingAoaDeg, spec, groundEffectFactor);
         const invSpeed = 1 / speed;
         return {
@@ -1501,27 +2371,37 @@ function stepPhysics(dt) {
         const lF = wingTorqueForce(lRot, rollDeflection * AILERON_MAX_AOA_DEG * 0.5);
         return { roll: (rF.fy - lF.fy) * halfSpan, yaw: (lF.fz - rF.fz) * halfSpan };
     }
-    // FJERNET (var rollTorqueFromYawRate): dette kunstige ekstra-leddet ("gir induserer rull", et fast
-    // forsterket bidrag proporsjonalt med RÅ yawRate) ble lagt til fordi vinge-modellens EGEN Clr-kobling
-    // (rollWingF0 sin yawRate-avhengighet) den gang var for svak til å merkes. Nå som vinge-modellens
-    // demping er ordentlig fikset (linearisert rundt gjeldende rate, se linearizeDamping), gir den ekte
-    // fysikken denne koblingen selv, riktig skalert. Verre: leddet reagerte på ALL yawRate, uansett
-    // KILDE - inkludert ADVERSE YAW fra egne skråror (en reell, tilsiktet effekt: å rulle høyre skaper
-    // gir venstre). Siden leddet kommanderte rull i "samme retning som yaw", men adverse yaw fra en
-    // HØYRE-rulling peker VENSTRE, ga det en rullmotstand som VOKSTE med skrårorets eget utslag - en
-    // selvforsterkende tilbakekobling som kvalte rull-autoriteten, og som IKKE ble bedre av å øke
-    // ROLL_CONTROL_EFFECTIVENESS eller kutte inertiaRoll (begge gjorde tilbakekoblingen tilsvarende
-    // sterkere). Dette var den reelle årsaken til vedvarende treg rulling til tross for to
-    // tuning-forsøk.
+    // Bevisst INGEN separat "yaw induserer rull"-ledd her utover rollWingF0 sin egen yawRate-avhengighet -
+    // et tidligere forsøk på et slikt ekstra-ledd reagerte på ALL yawRate uansett kilde, inkludert adverse
+    // yaw fra egne skråror, som skapte en selvforsterkende tilbakekobling (mer aileron -> mer adverse yaw
+    // -> mer kunstig rullmotstand) og kvalte rull-autoriteten. rollWingF0 alene gir samme fysiske effekt,
+    // riktig skalert til den faktiske kilden til yaw.
 
     const qDynTotal = 0.5 * AIR_DENSITY * airspeed * airspeed * spec.wingArea;
-    const dragMag = qDynTotal * dragCoefficient(aoaDeg, spec, groundEffectFactor);
-    // Dihedral-effekt: sideslip (IKKE gir-RATE, men selve sideslip-VINKELEN) gir et VEDVARENDE
-    // rullmoment som består så lenge sideslippet varer - ikke bare en forbigående ting under selve
-    // rotasjonen (det er yawTorqueFromDragDiff over). Dette gjør at sideror alene etablerer OG holder en
-    // krengning (til den motvirkes med skråror), og at "kryssede ror" (skråror én vei, sideror andre
-    // veien) kan holde flyet rett fram i en ekte sideslip/forward slip, akkurat som i et ekte fly.
-    const rollTorqueFromDihedral = -DIHEDRAL_EFFECT * sideslipDeg;
+    // Skrogets sidekraft/-drag i sideslip (se FUSELAGE_SIDE_AREA_RATIO/FUSELAGE_SIDE_CD-merknaden) - et
+    // flatplate-ledd proporsjonalt med sin²(sideslip), lagt OVENPÅ vingens/halens egen AoA-baserte drag
+    // (dragCoefficient over ser kun AoA, ikke sideslip). Dette er det som gjør en "forward slip" (kryssede
+    // ror) til en reell, kraftig synkefart-økende manøver i stedet for bare en kosmetisk gir-vinkel - uten
+    // dette bar KUN finnen sidekraften/-draget i sideslip, som ga en for svak/lett slip-effekt.
+    const fuselageSideArea = spec.wingArea * FUSELAGE_SIDE_AREA_RATIO;
+    const sideslipRad = THREE.MathUtils.degToRad(sideslipDeg);
+    const fuselageCrossflowDrag = 0.5 * AIR_DENSITY * airspeed * airspeed * fuselageSideArea * FUSELAGE_SIDE_CD
+        * Math.sin(sideslipRad) * Math.sin(sideslipRad);
+    const dragMag = qDynTotal * dragCoefficient(aoaDeg, spec, groundEffectFactor) + fuselageCrossflowDrag;
+    // Dreiemoment (roll/yaw) = avbøyning * dynamisk trykk * kontrolleffektivitet, dempet av et moment
+    // proporsjonalt med flyets egen vinkelhastighet (aerodynamisk demping). Begge ledd skalerer med V^2 -
+    // svaret blir derfor naturlig trått/"mushy" ved lav fart og fast ved høy fart, uten noen kunstig
+    // svekkingsfaktor. Samme aksekonvensjon-negasjon (forward=-Z) som resten av fysikken/quad-simulatoren.
+    const qDynControl = 0.5 * AIR_DENSITY * airspeed * airspeed;
+    // Dihedral-effekt: sideslip (IKKE gir-RATE, men selve sideslip-VINKELEN) gir et VEDVARENDE rullmoment
+    // som består så lenge sideslippet varer, ikke bare et forbigående napp - det er dette som lar sideror
+    // alene etablere OG holde en krengning, og "kryssede ror" holde flyet rett fram i en sideslip. Skalert
+    // med qDynControl som alle andre aerodynamiske momenter i modellen (konstanten er rekalibrert til å gi
+    // samme effekt som før ved Liten sin marsjfart, ~12 m/s) - uten denne skaleringen forble momentet
+    // fullt til stede selv i stillstand, siden sideslipDeg går mot ±90° ved lav/null fart uansett hvor svak
+    // vinden faktisk er (samme geometriske artefakt som RUDDER_MAX_AOA_DEG-fiksen adresserte), mens
+    // roll-dempingen (som OGSÅ skalerer med V²) nesten forsvant - flyet krenget/veltet i selv svak vind.
+    const rollTorqueFromDihedral = -DIHEDRAL_EFFECT * qDynControl * sideslipDeg;
 
     // Retninger i verdensrom via vektor-projeksjon (ikke lokal-akse trigonometri): løft står alltid
     // vinkelrett på luftfarten, i planet som inneholder kroppens "opp"-akse - robust mot fortegnsfeil.
@@ -1538,11 +2418,22 @@ function stepPhysics(dt) {
     const gravityVec = new THREE.Vector3(0, -spec.mass * GRAVITY, 0);
     const accel = new THREE.Vector3().add(thrustVec).add(liftVec).add(dragVec).add(gravityVec).multiplyScalar(1 / spec.mass);
 
-    // Dreiemoment (roll/yaw) = avbøyning * dynamisk trykk * kontrolleffektivitet, dempet av et moment
-    // proporsjonalt med flyets egen vinkelhastighet (aerodynamisk demping). Begge ledd skalerer med V^2 -
-    // svaret blir derfor naturlig trått/"mushy" ved lav fart og fast ved høy fart, uten noen kunstig
-    // svekkingsfaktor. Samme aksekonvensjon-negasjon (forward=-Z) som resten av fysikken/quad-simulatoren.
-    const qDynControl = 0.5 * AIR_DENSITY * airspeed * airspeed;
+    // Statisk lateral bakkefriksjon (se GROUND_LATERAL_FRICTION_COEFF-merknaden ved konstanten) - motstår
+    // selve SIDEKRAFTEN (f.eks. vind-drag i kryssvind) mens flyet er på bakken, ikke bare farten som
+    // resolveGroundContact sin egen lateralSpeed-demping gjør. Samme "kanseller helt/reduser bare"-
+    // struktur som yaw-motstykket (maxGroundYawTorque under) - kansellerer små/moderate sidekrefter helt
+    // (accel er allerede per masseenhet, så GRAVITY*koeffisient er selve terskelen direkte, uten å måtte
+    // gange/dele med spec.mass).
+    if (planeState.onGround) {
+        const rightWorldGround = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+        const lateralAccel = accel.dot(rightWorldGround);
+        const maxStaticLateralAccel = GROUND_LATERAL_FRICTION_COEFF * GRAVITY;
+        if (Math.abs(lateralAccel) <= maxStaticLateralAccel) {
+            accel.addScaledVector(rightWorldGround, -lateralAccel);
+        } else {
+            accel.addScaledVector(rightWorldGround, -Math.sign(lateralAccel) * maxStaticLateralAccel);
+        }
+    }
 
     // Stigemoment: EKTE vekt-og-balanse-modell i stedet for et flatt kontrolleffektivitet-tall. Vingens
     // egen AC er forenklet plassert rett i CG (bidrar ikke med moment - en vanlig, standard forenkling;
@@ -1564,7 +2455,10 @@ function stepPhysics(dt) {
         // relativ" luft allerede peker) UAVHENGIG av flyets egen fart - se propwashDeltaV over.
         v.z -= propwashDeltaV;
         const speedSq = v.lengthSq();
-        const baseAoa = speedSq > 0.09 ? THREE.MathUtils.radToDeg(Math.atan2(-v.y, -v.z)) : 0;
+        // Nedvask fra vingen (se DOWNWASH_RATIO) - trekkes fra halens EGEN baseAoa FØR ror/trim legges
+        // til, siden nedvasken påvirker den naturlige luftstrøm-vinkelen halen ser, ikke pilotens utslag.
+        const baseAoaFreestream = speedSq > 0.09 ? THREE.MathUtils.radToDeg(Math.atan2(-v.y, -v.z)) : 0;
+        const baseAoa = baseAoaFreestream - DOWNWASH_RATIO * aoaDeg;
         // Høyderor (ELEVATOR_MAX_AOA_DEG) og trim endrer begge halens EFFEKTIVE angrepsvinkel - roret er
         // pilotens direkte utslag; trim gjelder nå i BEGGE modus (i Manual satt av piloten selv, i
         // Stabilized satt av auto-trim-integratoren over).
@@ -1597,18 +2491,12 @@ function stepPhysics(dt) {
         return -finArm * sideForce;
     }
 
-    // VIKTIG (fikset bug - fysisk FEIL retning ved store rater, f.eks. en fullt utviklet spinn, ikke bare
-    // en stabilitets-/støyfiks): den forrige semi-implisitte behandlingen lineariserte ALLTID rundt
-    // rate=0 (F0 = moment NÅR raten er null, k = stigningstall NÆR null). Det er en fin tilnærming for
-    // små svingninger nær null rate, men en DÅRLIG tilnærming langt unna - f.eks. midt i en etablert
-    // spinn, hvor den faktiske raten er stor og modellen er dypt inne i ikke-lineære soner (AoA-klemming,
-    // steilekurvens knekkpunkt). Siden F0 alltid ble hentet ved rate=0 og BARE den lineære k-delen fikk
-    // "se" den faktiske raten (via eksponentiell nedgang), gikk hele det ikke-lineære bidraget FORBI
-    // rate=0 og opp til faktisk rate tapt - modellen kunne dermed oppføre seg kvalitativt galt (ikke bare
-    // unøyaktig) ved store rater. Fikset ved å linearisere RUNDT GJELDENDE RATE i stedet for null (se
-    // linearizeDamping): F0 rekonstrueres slik at eksplisitt-steget + eksponentiell-nedgang-steget
-    // reproduserer NØYAKTIG riktig moment akkurat i dette tidssteget (verifisert med
-    // førsteordens-utvidelse), mens fortsatt å være ubetinget stabil for enhver k*dt/treghet.
+    // Lineariserer rundt GJELDENDE rate (ikke rundt 0) - viktig ved store rater (f.eks. en etablert spinn)
+    // hvor modellen er dypt inne i ikke-lineære soner (AoA-klemming, steilekurvens knekkpunkt): å alltid
+    // linearisere ved rate=0 lot hele det ikke-lineære bidraget mellom 0 og faktisk rate forsvinne, som ga
+    // kvalitativt feil oppførsel (ikke bare unøyaktig) ved store rater. F0 rekonstrueres her slik at
+    // eksplisitt-steg + eksponentiell nedgang reproduserer nøyaktig riktig moment for gjeldende tidssteg,
+    // samtidig som det forblir ubetinget stabilt for enhver k*dt/treghet.
     const RATE_DERIV_EPS = 0.02;
     function linearizeDamping(torqueFn, currentRate) {
         const torqueNow = torqueFn(currentRate);
@@ -1647,13 +2535,10 @@ function stepPhysics(dt) {
         }
     }
     const finDampCoeff = finLin.k;
-    // Total gir-demping = finnens EGEN (Cnr) + vinge-differensialens (over) - begge er reelle,
-    // uavhengige dempende bidrag til SAMME akse og skal legges sammen, ikke velges mellom. Så multiplisert
-    // med YAW_DAMPER_GAIN - regnet ut (finArm²*0.5*rho*V*finArea*finClSlope*(180/π)) mot finnens egen
-    // stivhet (Cnβ) for Liten ved 15 m/s: dempingsforhold ζ ≈ 0.29 (kritisk dempet er ζ=1) - en klart
-    // underdempet "Dutch roll"-lignende modus, som stemmer nøyaktig med "nesa hopper ut, dyttes tilbake,
-    // oscillerer" som ble rapportert. Dette er et EKTE fenomen (mange virkelige fly trenger en faktisk
-    // yaw-damper-boks nettopp av denne grunn) - boost gir ζ ≈ 0.87, komfortabelt dempet uten å bli sløvt.
+    // Total gir-demping = finnens EGEN (Cnr) + vinge-differensialens (over) - to reelle, uavhengige
+    // dempende bidrag til SAMME akse, lagt sammen. YAW_DAMPER_GAIN booster dette: uten den er Liten sitt
+    // dempingsforhold ζ≈0.29 ved 15 m/s (kritisk dempet er ζ=1) - en reell, underdempet "Dutch roll"-
+    // modus (mange ekte fly trenger en faktisk yaw-damper-boks av samme grunn) - boostet til ζ≈0.87.
     const yawDampCoeff = (finDampCoeff + yawWingDampCoeff) * YAW_DAMPER_GAIN;
 
     planeState.angularVelocity.roll += (rollTorqueNoDamp / spec.inertiaRoll) * dt;
@@ -1697,11 +2582,8 @@ let tailstrikeWarningUntil = 0;
 // periodiske GC-pauser/hakking i lange flighter), ved å MUTERE de samme objektene på plass i stedet.
 const _tailStrikeScratch = new THREE.Vector3();
 function checkTailStrike(spec) {
-    // Halepunktet er nå den FAKTISKE halekjegle-tuppen (samme FUSELAGE_LENGTH_BUILD/CABIN_LEN_RATIO/
-    // TAIL_LEN_RATIO/TAIL_TIP_RADIUS_RATIO-konstanter som buildPlane, skalert til verdensrom med
-    // visualScale) - ikke en grov, uavhengig tilnærming som kunne drifte ut av synk med skroget etter
-    // modell-justeringer (se konstantene øverst i filen for historikken - dette ga tidligere et falskt
-    // varsel lenge før halen faktisk var i nærheten av bakken).
+    // Halepunktet er den FAKTISKE halekjegle-tuppen (samme delte konstanter som buildPlane, se merknaden
+    // øverst i filen) - ikke en uavhengig tilnærming som kan drifte ut av synk med skroget.
     const cabinLen = FUSELAGE_LENGTH_BUILD * CABIN_LEN_RATIO;
     const tailLen = FUSELAGE_LENGTH_BUILD * TAIL_LEN_RATIO;
     const tailTipZ = (cabinLen / 2 + tailLen) * spec.visualScale;
@@ -1718,10 +2600,7 @@ function checkTailStrike(spec) {
     }
 }
 
-// Gjenbrukte "scratch"-objekter for resolveGroundContact - se merknaden ved _tailStrikeScratch over
-// (samme begrunnelse: denne kjører hver eneste fysikk-tick mens flyet er på bakken, dvs. under HELE
-// taksing/takeoff-rulling/landing-utrulling - tett nok til at repeterte Vector3/Euler/Quaternion-
-// allokeringer her var en reell, målbar kandidat for periodisk GC-hakking under lengre flighter).
+// Gjenbrukte "scratch"-objekter for resolveGroundContact - samme begrunnelse som _tailStrikeScratch over.
 const _groundContactLocalPts = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
 const _groundContactWorldPts = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
 const _groundContactEuler = new THREE.Euler();
@@ -1748,13 +2627,9 @@ function resolveGroundContact(dt) {
         maxPenetration = Math.max(maxPenetration, -_groundContactWorldPts[i].y);
     }
 
-    // VIKTIG: sjekker mot 0 (faktisk gjennomtrengning), ikke mot -GROUND_CLEARANCE_FW. Det siste var en
-    // reell bug - det behandlet ALT innenfor en 5 cm klaringssone som "på bakken" og trakk flyet ned mot
-    // bakken igjen (se position.y += maxPenetration under) SELV når hjulene allerede var et par cm klar.
-    // I praksis "sugde" dette flyet ned igjen gjentatte ganger under selve avgangen, helt til det klarte
-    // å hoppe HELE 5 cm-sonen i ett eneste fysikk-tidssteg - noe som gjorde en helt normal, gradvis
-    // lettelse (som fungerer fint i luften et par sekunder senere) unaturlig vanskelig under selve
-    // rulling/rotasjon på rullebanen.
+    // Sjekker mot 0 (faktisk gjennomtrengning), ikke mot -GROUND_CLEARANCE_FW - sistnevnte ville behandlet
+    // hele klaringssonen som "på bakken" og trukket flyet ned igjen selv når hjulene allerede var et par
+    // cm klar, som gjorde en helt normal, gradvis lettelse under selve avgangsrullingen unaturlig vanskelig.
     if (maxPenetration <= 0) {
         planeState.onGround = false;
         planeState.hasBeenAirborne = true;
@@ -1772,28 +2647,20 @@ function resolveGroundContact(dt) {
     planeState.position.y += maxPenetration;
     if (planeState.velocity.y < 0) planeState.velocity.y *= 0.15;
 
-    // VIKTIG (fikset bug - kvalte all rull-respons og ga oscillasjoner under takeoff-rulling): denne
-    // slerpet ALLTID mot NØYAKTIG null krengning (4*dt ~3.3% korreksjon PER TICK, som kombinert med
-    // *=0.5 på vinkelhastigheten HVER TICK er en svært aggressiv, kunstig "lås til vater" - den kjørte
-    // UBETINGET hele tiden flyet var på bakken, og fightet dermed AKTIVT ethvert skråror-utslag under
-    // hele takeoff-rullingen. To ting som begge prøver å bestemme krengevinkelen samtidig (denne harde
-    // slerpen MOT nøyaktig 0°, og den aerodynamiske rull-modellen som svarer på pinnen) ga nettopp en
-    // dra-kamp/oscillasjon, i tillegg til å gjøre rull "treg" siden halvparten av vinkelhastigheten ble
-    // visket bort hver eneste tick uansett årsak. Betydelig dempet (0.3*dt i stedet for 4*dt, ingen
-    // direkte vinkelhastighets-halvering lenger) - gir fortsatt en svak tendens mot vater (hindrer at
-    // flyet blir stående og krenge helt urealistisk mens det er parkert), uten å overstyre pilotens
-    // egen skråror-kommando under rulling.
+    // Svak, kontinuerlig slerp mot null krengning mens flyet er på bakken - forhindrer at et parkert fly
+    // blir stående og krenge urealistisk, uten å overstyre pilotens eget skråror-utslag under rulling
+    // (en tidligere, mye sterkere versjon av denne - 4*dt i stedet for 0.3*dt, pluss en direkte halvering
+    // av vinkelhastigheten hver tick - fightet aktivt mot skråror under hele takeoff-rullingen og ga
+    // både treg og oscillerende rull).
     _groundContactEuler.setFromQuaternion(planeState.quaternion, "YXZ");
     _groundContactEuler.set(_groundContactEuler.x, _groundContactEuler.y, 0, "YXZ");
     _groundContactQuat.setFromEuler(_groundContactEuler);
     planeState.quaternion.slerp(_groundContactQuat, Math.min(1, 0.3 * dt));
-    // Hjulene har rotasjonsfriksjon mot underlaget - uten denne demperen ville en gir-rotasjon (yaw)
-    // fortsette for evig i stillstand med motoren av, siden det aerodynamiske dempeleddet i stepPhysics
-    // (som skalerer med farten i andre potens) blir null når flyet står stille.
-    // VIKTIG (fikset bug): dette kjøres i et FAST fysikk-tidssteg (FIXED_DT, 120 ganger/sekund) - en ren
-    // "*= 0.85" per tick tilsvarer 0.85^120 ≈ 3*10^-9 PER SEKUND, som knuser all gir-rotasjon på bakken
-    // nesten momentant (innen 0.1-0.2s), ikke en gradvis oppbremsing. Byttet til eksponentiell,
-    // tidssteg-uavhengig demping (samme prinsipp som rollDampDecay/yawDampDecay i stepPhysics).
+    // Hjulenes rotasjonsfriksjon mot underlaget - uten denne ville en gir-rotasjon fortsette for evig i
+    // stillstand med motoren av, siden det aerodynamiske dempeleddet (som skalerer med fart²) blir null
+    // når flyet står stille. Eksponentiell, tidssteg-uavhengig demping (samme prinsipp som rollDampDecay/
+    // yawDampDecay i stepPhysics) - en ren "*=0.85 per tick" ville tilsvart 0.85^120≈3e-9 PER SEKUND ved
+    // dette faste 120Hz-tidssteget, altså en nesten momentan stopp i stedet for en gradvis oppbremsing.
     planeState.angularVelocity.yaw *= Math.exp(-GROUND_YAW_FRICTION * dt);
     // (Nesehjulets "kan ikke tippe frem"-fysikk er nå del av maxPenetration-punktene over, ikke en egen
     // etterfølgende korreksjon her - se merknaden ved localPoints.)
@@ -2019,6 +2886,29 @@ function updateWindsockVisual(now) {
     });
 }
 
+// Trærne bøyer seg i selve VINDRETNINGEN (ikke bare en generisk, retningsløs oscillasjon), pluss en
+// raskere, fase-forskjøvet "kast"-rist oppå den jevne bøyningen - siden currentWindVector allerede
+// inkluderer gust-tilbudet fra Sim.computeWind, svinger selve bøynings-AMPLITUDEN naturlig opp/ned med
+// kastene i tillegg til rist-leddet. Roterer tre-gruppen rundt sin egen base (y=0, se buildBirch/
+// buildPine) - en liten-vinkel-tilnærming (separate X/Z-rotasjoner) til å tilte toppen mot vindretningen.
+function updateTreeSway(now) {
+    const windSpeed = currentWindVector.length();
+    if (windSpeed < 0.05) {
+        treeHandles.forEach(function (t) { t.group.rotation.set(0, 0, 0); });
+        return;
+    }
+    const t = now / 1000;
+    const windDirX = currentWindVector.x / windSpeed;
+    const windDirZ = currentWindVector.z / windSpeed;
+    const leanAngle = Math.min(0.16, windSpeed * 0.015);
+    treeHandles.forEach(function (tree) {
+        const gustWiggle = 1 + Math.sin(t * tree.freq * 2.3 + tree.phase) * 0.3;
+        const lean = leanAngle * gustWiggle;
+        tree.group.rotation.x = windDirZ * lean;
+        tree.group.rotation.z = -windDirX * lean;
+    });
+}
+
 /* ---------- Hovedløkke ---------- */
 let lastTime = performance.now();
 let accumulator = 0;
@@ -2040,6 +2930,10 @@ function animate(now) {
     updateChaseCamera(frameDt);
     updateVlosCamera();
     updateWindsockVisual(now);
+    updateTreeSway(now);
+    updateWindLeaves(frameDt, now);
+    updateWindSmoke(frameDt);
+    updateClockTowers();
     updateHud();
     updateFpvHud();
     renderer.render(scene, activeCamera);
@@ -2121,18 +3015,18 @@ document.addEventListener("DOMContentLoaded", function () {
     const windGustValue = document.getElementById("windGustValue");
     windEnabledInput.checked = settings.wind.enabled;
     windSpeedInput.value = settings.wind.speed;
-    windSpeedValue.textContent = settings.wind.speed;
+    windSpeedValue.textContent = settings.wind.speed + " m/s";
     windDirectionInput.value = settings.wind.directionDeg;
     windDirectionValue.textContent = settings.wind.directionDeg + "°";
     windGustInput.value = settings.wind.gust;
-    windGustValue.textContent = settings.wind.gust;
+    windGustValue.textContent = Math.round(settings.wind.gust * 100) + "%";
     windEnabledInput.addEventListener("change", function () {
         settings.wind.enabled = windEnabledInput.checked;
         saveSettings();
     });
     windSpeedInput.addEventListener("input", function () {
         settings.wind.speed = parseFloat(windSpeedInput.value);
-        windSpeedValue.textContent = windSpeedInput.value;
+        windSpeedValue.textContent = windSpeedInput.value + " m/s";
         saveSettings();
     });
     windDirectionInput.addEventListener("input", function () {
@@ -2142,7 +3036,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     windGustInput.addEventListener("input", function () {
         settings.wind.gust = parseFloat(windGustInput.value);
-        windGustValue.textContent = windGustInput.value;
+        windGustValue.textContent = Math.round(settings.wind.gust * 100) + "%";
         saveSettings();
     });
 
@@ -2172,7 +3066,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     simCanvas.addEventListener("wheel", function (e) {
         e.preventDefault();
-        chaseZoomDistance = clamp(chaseZoomDistance + e.deltaY * 0.02, 4, 60);
+        chaseZoomDistance = clamp(chaseZoomDistance + e.deltaY * 0.02, CHASE_ZOOM_MIN, CHASE_ZOOM_MAX);
     }, { passive: false });
 
     document.getElementById("inputSourceSelect").addEventListener("change", function (e) {
