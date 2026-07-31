@@ -687,11 +687,89 @@ function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness,
     return geo;
 }
 
+// ---------- Påskeegg på fjelltoppene ----------
+// Små, human-skala overraskelser for den som gidder å fly de 500+ meterne ut dit - synlige/morsomme
+// bare på nært hold, usynlige detaljer på avstand. Ekte meter-skala (ikke skalert med fjellets egen
+// størrelse), akkurat som resten av verden.
+function buildNorwegianFlag() {
+    const group = new THREE.Group();
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x8a8a8a });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 2.2, 6), poleMat);
+    pole.position.y = 1.1;
+    group.add(pole);
+
+    const fw = 0.9, fh = 0.65;
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xba0c2f, side: THREE.DoubleSide });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const blueMat = new THREE.MeshStandardMaterial({ color: 0x00205b, side: THREE.DoubleSide });
+    const flag = new THREE.Group();
+    flag.add(new THREE.Mesh(new THREE.PlaneGeometry(fw, fh), redMat));
+    const crossX = -fw * 0.18; // korset nærmere stangen - norsk flagg-proporsjon (ikke midtstilt)
+    const whiteV = new THREE.Mesh(new THREE.PlaneGeometry(fw * 0.22, fh), whiteMat);
+    whiteV.position.set(crossX, 0, 0.001);
+    flag.add(whiteV);
+    const whiteH = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh * 0.28), whiteMat);
+    whiteH.position.z = 0.001;
+    flag.add(whiteH);
+    const blueV = new THREE.Mesh(new THREE.PlaneGeometry(fw * 0.11, fh), blueMat);
+    blueV.position.set(crossX, 0, 0.002);
+    flag.add(blueV);
+    const blueH = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh * 0.14), blueMat);
+    blueH.position.z = 0.002;
+    flag.add(blueH);
+    flag.position.set(fw / 2, 1.9, 0);
+    group.add(flag);
+    return group;
+}
+
+// Varde - stabel av uregelmessige steiner, norsk tradisjon for å markere en topp.
+function buildSummitCairn() {
+    const group = new THREE.Group();
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x746b60, flatShading: true });
+    [{ y: 0.06, r: 0.32 }, { y: 0.16, r: 0.26 }, { y: 0.25, r: 0.19 }, { y: 0.33, r: 0.12 }].forEach(function (l, i) {
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(l.r, 0), rockMat);
+        rock.position.set(Math.sin(i * 2.1) * 0.04, l.y, Math.cos(i * 2.1) * 0.04);
+        rock.rotation.set(i * 0.7, i * 1.3, i * 0.4);
+        group.add(rock);
+    });
+    return group;
+}
+
+// En liten, godmodig fjelltroll som titter ut over kanten - norsk folklore-referanse.
+function buildMountainTroll() {
+    const group = new THREE.Group();
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0x6b7a5e, flatShading: true, roughness: 1 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x3a2f1f, flatShading: true });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), skinMat);
+    body.scale.set(1, 0.85, 1);
+    body.position.y = 0.5;
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), skinMat);
+    head.position.y = 1.0;
+    group.add(head);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.45, 6), skinMat);
+    nose.rotation.x = Math.PI / 2;
+    nose.position.set(0, 0.96, 0.38);
+    group.add(nose);
+    [-1, 1].forEach(function (side) {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.22, 5), skinMat);
+        ear.position.set(side * 0.32, 1.14, 0);
+        ear.rotation.z = side * 0.5;
+        group.add(ear);
+    });
+    const hairTuft = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.3, 5), hairMat);
+    hairTuft.position.y = 1.35;
+    group.add(hairTuft);
+    return group;
+}
+
 function buildMountainRange() {
     const group = new THREE.Group();
     // Delt for alt (hovedtopp, bi-topper) - fargen kommer utelukkende fra per-vertex-attributtet over,
     // ikke fra materialet, så ett shared material er nok.
     const peakMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
+    // Påskeegg på tre utvalgte topper (indeks i MOUNTAIN_DEFS) - se builderne over.
+    const MOUNTAIN_EASTER_EGGS = { 1: buildNorwegianFlag, 3: buildMountainTroll, 6: buildSummitCairn };
 
     MOUNTAIN_DEFS.forEach(function (m, i) {
         const rad = THREE.MathUtils.degToRad(m.angle);
@@ -742,6 +820,17 @@ function buildMountainRange() {
             subPeak.rotation.y = subDir;
             group.add(subPeak);
         });
+
+        // Påskeegg rett på toppunktet - snudd til å vende mot spillområdet (origo), som om det venter
+        // på en nysgjerrig pilot. Et par tiendedeler over selve apex for å unngå å synke inn i den
+        // (lett) uregelmessige toppflaten (se topDamp i buildGradientPeakGeometry).
+        const eggBuilder = MOUNTAIN_EASTER_EGGS[i];
+        if (eggBuilder) {
+            const egg = eggBuilder();
+            egg.position.set(x, m.height + 0.3, z);
+            egg.rotation.y = rad + Math.PI;
+            group.add(egg);
+        }
     });
     return group;
 }
@@ -777,50 +866,51 @@ const cloudClusters = []; // fylt av buildClouds() - hver er en THREE.Group, fly
 // klynger (se CLOUD_COUNT) sparer det en god del unødvendige shader-programmer/draw calls.
 // Glatt skyggelegging (ikke flatShading, i motsetning til fjellene) - myke, avrundede puffer leser som
 // "fluffy" bomullsklumper, mens flate fasetter ville sett steinete/lavpoly ut for noe som skal virke mykt.
+// transparent+opacity gir en lett, dis-aktig kant i stedet for en helt solid, hard silhuett -
+// depthWrite er fortsatt PÅ som standard (selv med transparent:true), som holder overlappende puffer
+// noenlunde riktig sortert i stedet for å bli fullt gjennomsiktighets-sortert (det ga synlige glitch).
 const CLOUD_SHADE_MATERIALS = [0xff, 0xeb, 0xd7, 0xc3].map(function (shade) {
-    return new THREE.MeshStandardMaterial({ color: (shade << 16) | (shade << 8) | shade, roughness: 0.9 });
+    return new THREE.MeshStandardMaterial({
+        color: (shade << 16) | (shade << 8) | shade, roughness: 0.9,
+        transparent: true, opacity: 0.95
+    });
 });
-// Ekte cumulus har en tydelig FLAT underside (kondensasjonsnivået) og en rundet, kupert overside - en
-// vanlig kule er rund begge veier og leser derfor feil. Drar alle vertekser under en gitt høyde opp til
-// samme flate (i stedet for en skulptert kule), som gir en ekte flat bunn-fasett på selve geometrien.
-function buildFlatBottomedPuffGeometry(radius, widthSegments, heightSegments, flattenFrac) {
-    const geo = new THREE.SphereGeometry(radius, widthSegments, heightSegments);
+// ÉN sammenhengende, myk kule i stedet for flere separate, overlappende sfærer - uansett hvor tett
+// puffer overlapper vil to separate kule-meshes alltid lage en synlig fure der overflatene møtes
+// (det ble tydelig som mange små "furer"/skiller mellom ballene i forrige forsøk). Ekte cumulus har
+// en kontinuerlig, mykt bulkete overflate uten harde skiller - derfor perturberes radiusen på plass,
+// akkurat som fjellenes uregelmessighet (buildGradientPeakGeometry), men med mye LAVERE amplitude
+// (myke bulker, ikke en taggete silhuett) og lav frekvens (noen få brede, myke lober, ikke mange
+// spisse tagger). Flat, dempet bunn (kondensasjonsnivået) er baket inn på samme måte som fjellenes fot.
+function buildCloudBlobGeometry(radius, seed) {
+    const geo = new THREE.SphereGeometry(radius, 14, 10);
     const pos = geo.attributes.position;
-    const flattenY = -radius * flattenFrac;
+    const flattenY = -radius * 0.22;
     for (let i = 0; i < pos.count; i++) {
-        if (pos.getY(i) < flattenY) pos.setY(i, flattenY);
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const angle = Math.atan2(z, x);
+        const heightFrac = clamp((y + radius) / (radius * 2), 0, 1);
+        // Et par brede lober (lav frekvens) pluss ørlite finstruktur (høyere frekvens, lav amplitude) -
+        // roligere nederst (nær den flate bunnen) enn mot toppen, for en kupert, ikke helt jevn topp.
+        const lobes = Math.sin(angle * 3 + seed) * 0.14 + Math.sin(angle * 2 + seed * 2.7) * 0.09;
+        const texture = Math.sin(angle * 9 + seed * 3.1) * 0.035 + Math.sin(y * 2.2 + seed * 5.3) * 0.03;
+        const bump = 1 + (lobes + texture) * (0.4 + heightFrac * 0.6);
+        pos.setX(i, x * bump);
+        pos.setZ(i, z * bump);
+        if (y < flattenY) pos.setY(i, flattenY);
     }
     geo.computeVertexNormals();
     return geo;
 }
 function buildCloudCluster(seed) {
-    // Små klynger med 4-6 mykt skyggelagte, opake puffer - MANGE små fluffy skyer ser bedre ut enn få
-    // store (som fort blir en boksete/klumpete masse når mange av dem er synlige samtidig, se
-    // updateClouds sin dekningsgrad). Opakt for å unngå sorterings-glitch mellom overlappende puffer.
-    // Én liten kjerne-puff pluss noen få rundt/oppå - samme cumulus-oppbygning, bare i miniatyr.
-    const group = new THREE.Group();
-    const puffCount = 4 + (seed % 3);
     const mat = CLOUD_SHADE_MATERIALS[seed % CLOUD_SHADE_MATERIALS.length]; // gråtone-variasjon ("varierte skyer")
-
-    const coreRadius = 3.5 + Math.abs(Math.sin(seed * 1.3)) * 1.3;
-    const core = new THREE.Mesh(new THREE.SphereGeometry(coreRadius, 8, 6), mat);
-    core.scale.y = 0.7;
-    group.add(core);
-
-    for (let i = 0; i < puffCount; i++) {
-        const r = 1.8 + Math.abs(Math.sin(seed * 1.7 + i)) * 2;
-        const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), mat);
-        // Puffene klumper seg tett inntil/oppå kjernen (liten radius fra senter) i stedet for spredt
-        // utover - det er tettheten/overlappet som gir det sammenhengende, fluffy inntrykket.
-        const spread = coreRadius * 0.65;
-        puff.position.set(
-            Math.sin(seed + i * 2.1) * spread,
-            Math.abs(Math.cos(seed * 0.8 + i)) * coreRadius * 0.5, // mest oppover - kupert topp, flat bunn
-            Math.cos(seed + i * 1.6) * spread
-        );
-        puff.scale.y = 0.7;
-        group.add(puff);
-    }
+    const radius = 3.2 + Math.abs(Math.sin(seed * 1.3)) * 1.6;
+    const mesh = new THREE.Mesh(buildCloudBlobGeometry(radius, seed), mat);
+    // Bredere enn høy (typisk cumulus-silhuett), og litt avlang i planet (ikke perfekt sirkulær sett
+    // ovenfra) for et mer organisk, variert utseende mellom klyngene.
+    mesh.scale.set(1 + Math.abs(Math.sin(seed * 2.1)) * 0.4, 0.6, 1 + Math.abs(Math.cos(seed * 1.8)) * 0.35);
+    const group = new THREE.Group();
+    group.add(mesh);
     return group;
 }
 function buildClouds() {
