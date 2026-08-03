@@ -790,16 +790,49 @@ function buildGround() {
 // ~440-580) - god klaring til alt som faktisk kan flys til (racing-løypa når maks ~131 fra origo,
 // "Returner hjem" spawner maks 170 unna). radius er fortsatt ~1.6x høyden for en naturtro, slak
 // silhuett; dist+radius holder fortsatt trygg margin til himmelkulen (radius 800).
+// curvePower styrer stigningsprofilen fra fot til topp (se mountainProfileRadiusFrac) - 1 er den
+// opprinnelige rette skråstreken (kjegle), >1 gir en avrundet/bred topp med brattere nedre flanker,
+// <1 gir en bred/slak fot med en brattere, spissere topp (klassisk alpin silhuett). Blandet bevisst,
+// ikke alle buet - noen få skal fortsatt være rette for variasjon.
 const MOUNTAIN_DEFS = [
-    { angle: 0, dist: 620, height: 69, radius: 110, snow: false },
-    { angle: 45, dist: 560, height: 103, radius: 165, snow: true },
-    { angle: 90, dist: 600, height: 81, radius: 130, snow: false },
-    { angle: 135, dist: 540, height: 116, radius: 185, snow: true },
-    { angle: 180, dist: 610, height: 75, radius: 120, snow: false },
-    { angle: 225, dist: 570, height: 97, radius: 155, snow: true },
-    { angle: 270, dist: 590, height: 88, radius: 140, snow: false },
-    { angle: 315, dist: 550, height: 109, radius: 175, snow: true }
+    { angle: 0, dist: 620, height: 69, radius: 110, snow: false, curvePower: 1 },
+    { angle: 45, dist: 560, height: 103, radius: 165, snow: true, curvePower: 1.7 },
+    { angle: 90, dist: 600, height: 81, radius: 130, snow: false, curvePower: 0.6 },
+    { angle: 135, dist: 540, height: 116, radius: 185, snow: true, curvePower: 0.75 },
+    { angle: 180, dist: 610, height: 75, radius: 120, snow: false, curvePower: 1.4 },
+    { angle: 225, dist: 570, height: 97, radius: 155, snow: true, curvePower: 0.55 },
+    { angle: 270, dist: 590, height: 88, radius: 140, snow: false, curvePower: 1 },
+    { angle: 315, dist: 550, height: 109, radius: 175, snow: true, curvePower: 0.8 }
 ];
+// Flat liste over ALLE fjell-koner (hovedtopper + bi-topper) - bygget ÉN gang og delt mellom
+// geometribyggingen (buildMountainRange) og kollisjonsdeteksjon (mountainHeightAt). Med dette som
+// eneste kilde til sannhet kan ikke kollisjonsflaten komme ut av synk med det som faktisk vises -
+// samme posisjon/radius/høyde/kurve/seed brukes begge steder. topRadiusFrac/seed-formlene matcher
+// nøyaktig det buildMountainRange brukte før denne ble innført.
+const MOUNTAIN_PEAKS = (function () {
+    const peaks = [];
+    MOUNTAIN_DEFS.forEach(function (m, i) {
+        const rad = m.angle * Math.PI / 180;
+        const x = Math.sin(rad) * m.dist, z = Math.cos(rad) * m.dist;
+        const curvePower = m.curvePower || 1;
+        peaks.push({
+            x: x, z: z, radius: m.radius, height: m.height, topRadiusFrac: 0.18, curvePower: curvePower,
+            angle: rad, seed: i * 1.7 + 1, snow: m.snow, isMain: true, mainIndex: i
+        });
+        [{ f: 0.55, off: 0.32, dirOffset: 1.3 }, { f: 0.4, off: -0.38, dirOffset: 3.6 }].forEach(function (sub, si) {
+            const subHeight = m.height * sub.f;
+            const subRadius = m.radius * (0.5 + sub.f * 0.2);
+            const subDir = rad + sub.dirOffset;
+            const subDist = m.radius * sub.off;
+            peaks.push({
+                x: x + Math.sin(subDir) * subDist, z: z + Math.cos(subDir) * subDist,
+                radius: subRadius, height: subHeight, topRadiusFrac: 0.2, curvePower: curvePower,
+                angle: subDir, seed: i * 1.7 + 2 + si * 5.3, snow: false, isMain: false
+            });
+        });
+    });
+    return peaks;
+})();
 // Fargestopp brukt av buildGradientPeakGeometry - se der.
 const MOUNTAIN_GROUND_COLOR = new THREE.Color(0x3a5f3a);   // matcher Sim.buildGroundTexture
 const MOUNTAIN_FOOTHILL_COLOR = new THREE.Color(0x6e7a4d); // oliven - bro mellom bakke og stein
@@ -807,31 +840,49 @@ const MOUNTAIN_ROCK_COLOR = new THREE.Color(0x5b6472);
 const MOUNTAIN_ROCK_LIGHT_COLOR = new THREE.Color(0x7c8794);
 const MOUNTAIN_SNOW_COLOR = new THREE.Color(0xf0f4f8);
 
-// Bygger en CylinderGeometry (med et lite, butt topp-radius i stedet for ConeGeometrys matematisk
-// skarpe spiss - se topRadiusFrac) med (1) uregelmessig, ru silhuett - vinkelavhengig sinus-støy
-// forskyver hver vertekes radius og litt av høyden, styrt av "jaggedness" (0 = helt glatt/konisk, brukt
-// for den slake foten) - og (2) en jevn per-vertex fargeovergang mellom flere høydebaserte fargestopp i
-// stedet for separate meshes med harde fargegrenser (det ga tidligere en synlig skarp overgang der
-// snø-/stein-meshene møttes). Jitteren dempes (ikke fjernes helt) nær toppen, for en avrundet/erodert
-// topp i stedet for enten en skarp spiss eller en unaturlig helt glatt/flat platå-sirkel.
-function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness, topRadiusFrac) {
-    const topRadius = radius * (topRadiusFrac || 0);
-    const geo = new THREE.CylinderGeometry(topRadius, radius, height, 14, 7);
+// Buet (ikke lineær) radius-profil fra fot (heightFrac 0) til topp (heightFrac 1) - se curvePower-
+// kommentaren ved MOUNTAIN_DEFS. curvePower=1 gir nøyaktig samme rette skråstrek som en ren kjegle
+// (1-heightFrac, lineær). Invertert i mountainProfileHeightFrac under, brukt av mountainHeightAt for
+// kollisjon - de to funksjonene MÅ holdes i sync (én er den matematiske inversen av den andre).
+function mountainProfileRadiusFrac(heightFrac, topRadiusFrac, curvePower) {
+    return topRadiusFrac + (1 - topRadiusFrac) * Math.pow(1 - heightFrac, curvePower);
+}
+// Inversen: gitt hvor stor brøkdel av grunnradiusen et punkt ligger unna sentrum (distFrac, 0=sentrum,
+// 1=foten), hvilken høydebrøkdel tilsvarer fjelloverflaten akkurat der. Brukt av mountainHeightAt.
+function mountainProfileHeightFrac(distFrac, topRadiusFrac, curvePower) {
+    if (distFrac <= topRadiusFrac) return 1; // innenfor den flate toppflaten
+    if (distFrac >= 1) return 0;
+    const t = (distFrac - topRadiusFrac) / (1 - topRadiusFrac);
+    return 1 - Math.pow(t, 1 / curvePower);
+}
+
+// Bygger en CylinderGeometry MED ENSARTET RADIUS (selve innsnevringen mot toppen styres heretter per
+// vertex av mountainProfileRadiusFrac over, ikke geometriens egen lineære topp/bunn-interpolasjon - det
+// er det som gjør buede/ikke-lineære profiler mulig) med (1) uregelmessig, ru silhuett - vinkelavhengig
+// sinus-støy forskyver hver vertekes radius og litt av høyden, styrt av "jaggedness" (0 = helt glatt,
+// brukt for den slake foten) - og (2) en jevn per-vertex fargeovergang mellom flere høydebaserte
+// fargestopp i stedet for separate meshes med harde fargegrenser (det ga tidligere en synlig skarp
+// overgang der snø-/stein-meshene møttes). Jitteren dempes (ikke fjernes helt) nær toppen, for en
+// avrundet/erodert topp i stedet for enten en skarp spiss eller en unaturlig helt glatt/flat platå-sirkel.
+function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness, topRadiusFrac, curvePower) {
+    const geo = new THREE.CylinderGeometry(radius, radius, height, 14, 7);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     const tmp = new THREE.Color();
+    const p = curvePower || 1;
     for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
         const heightFrac = clamp((y + height / 2) / height, 0, 1);
         const angle = Math.atan2(z, x);
+        let radialScale = mountainProfileRadiusFrac(heightFrac, topRadiusFrac || 0, p);
         if (jaggedness > 0) {
             const topDamp = 1 - Math.pow(heightFrac, 3) * 0.7; // roligere silhuett mot toppen, ikke null
             const jitter = Math.sin(angle * 5 + seed * 3.1) * 0.18 + Math.sin(angle * 11 + seed * 7.7) * 0.1;
-            const radialScale = 1 + jitter * jaggedness * topDamp;
-            pos.setX(i, x * radialScale);
-            pos.setZ(i, z * radialScale);
+            radialScale *= 1 + jitter * jaggedness * topDamp;
             pos.setY(i, y + Math.sin(angle * 7 + seed * 4.3) * height * 0.03 * jaggedness * topDamp);
         }
+        pos.setX(i, x * radialScale);
+        pos.setZ(i, z * radialScale);
         let c0 = colorStops[0], c1 = colorStops[colorStops.length - 1];
         for (let s = 0; s < colorStops.length - 1; s++) {
             if (heightFrac >= colorStops[s].frac && heightFrac <= colorStops[s + 1].frac) {
@@ -847,6 +898,13 @@ function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness,
     geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
     return geo;
+}
+
+// Nøyaktig samme Y-jitter som senter-vertexen i toppdekket over (angle=0 siden x=z=0 der, heightFrac=1
+// gir topDamp=0.3 fast) - uten denne fikk påskeeggene en fast antatt topp-høyde og svevde over/sank ned
+// i den faktisk ujevne toppflaten (spesielt synlig på de høyeste fjellene, der jitteret er størst).
+function peakApexYOffset(height, seed) {
+    return Math.sin(seed * 4.3) * height * 0.03 * 0.3;
 }
 
 // ---------- Påskeegg på fjelltoppene ----------
@@ -931,15 +989,33 @@ function buildMountainTroll() {
 function buildLoneHiker() {
     const group = new THREE.Group();
     group.add(Sim.buildPersonFigure({ vestColor: 0xd97a2b }));
+    // Sekk med synlige stropper - skiller figuren tydelig fra en helt vanlig folkemengde-person.
     const packMat = new THREE.MeshStandardMaterial({ color: 0x3a4a63 });
     const pack = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.4, 0.16), packMat);
     pack.position.set(0, 1.05, -0.16); // på ryggen - motsatt av ansiktsretningen (+Z)
     group.add(pack);
+    const strapMat = new THREE.MeshStandardMaterial({ color: 0x22293a });
+    [-1, 1].forEach(function (side) {
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.42, 0.03), strapMat);
+        strap.position.set(side * 0.13, 1.05, -0.02);
+        strap.rotation.x = -0.15;
+        group.add(strap);
+    });
+    // Tursekk-stav
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.1, 6), poleMat);
     pole.position.set(0.3, 0.55, 0.15);
     pole.rotation.z = 0.15;
     group.add(pole);
+    // Rødrutete turlue - gjenkjennelig norsk turgåer-silhuett, og gjør hodet lesbart på avstand.
+    const hatMat = new THREE.MeshStandardMaterial({ color: 0xba2c2c });
+    const hat = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), hatMat);
+    hat.position.y = 1.4;
+    group.add(hat);
+    const pompomMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e6 });
+    const pompom = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), pompomMat);
+    pompom.position.y = 1.47;
+    group.add(pompom);
     return group;
 }
 
@@ -951,11 +1027,25 @@ function buildGeocache() {
     rock.scale.set(1.3, 0.55, 1.1);
     rock.position.y = 0.12;
     group.add(rock);
+    // Boksen står åpen med et hevet, hengslet lokk og en gul loggbok-lapp som stikker opp av den - gjør
+    // det tydelig at det faktisk ER en (funnet/åpnet) geocache, ikke bare en tilfeldig grønn kloss.
+    const boxGroup = new THREE.Group();
+    boxGroup.position.set(0.05, 0.28, 0.08);
+    boxGroup.rotation.y = 0.3;
+    group.add(boxGroup);
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x4a5c33 });
-    const box = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.13), boxMat);
-    box.position.set(0.05, 0.3, 0.08);
-    box.rotation.y = 0.3;
-    group.add(box);
+    const boxBase = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.13), boxMat);
+    boxBase.position.y = 0.04;
+    boxGroup.add(boxBase);
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.025, 0.13), boxMat);
+    lid.position.set(0, 0.09, -0.075);
+    lid.rotation.x = -1.1; // vippet åpent bakover på et "hengsel" langs bakkanten
+    boxGroup.add(lid);
+    const paperMat = new THREE.MeshStandardMaterial({ color: 0xe8d879, side: THREE.DoubleSide });
+    const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.07), paperMat);
+    paper.position.set(0, 0.1, 0.01);
+    paper.rotation.x = -0.3;
+    boxGroup.add(paper);
     return group;
 }
 
@@ -967,13 +1057,30 @@ function buildTrailSignpost() {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.8, 6), woodMat);
     post.position.y = 0.9;
     group.add(post);
+    // Rød "T"-merking - Den Norske Turistforenings klassiske stimerking, malt rett på stolpen. Gjør
+    // stolpen umiddelbart lesbar som et TURSKILT og ikke bare en bar påle.
+    const paintMat = new THREE.MeshStandardMaterial({ color: 0xba0c2f });
+    const tVert = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.16, 0.01), paintMat);
+    tVert.position.set(0, 1.68, 0.061);
+    group.add(tVert);
+    const tHoriz = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.032, 0.01), paintMat);
+    tHoriz.position.set(0, 1.75, 0.061);
+    group.add(tHoriz);
+    // Skiltarmer med tilspisset pilspiss (i stedet for en blank planke) - leses tydelig som "retningsskilt".
     const signMat = new THREE.MeshStandardMaterial({ color: 0xd8c9a3 });
+    const tipMat = new THREE.MeshStandardMaterial({ color: 0xd8c9a3, side: THREE.DoubleSide });
     [{ y: 1.5, len: 0.55, rot: 0.35 }, { y: 1.35, len: 0.45, rot: -0.6 }, { y: 1.2, len: 0.5, rot: 2.4 }]
         .forEach(function (s) {
-            const sign = new THREE.Mesh(new THREE.BoxGeometry(s.len, 0.12, 0.02), signMat);
-            sign.position.set(Math.sin(s.rot) * s.len * 0.5, s.y, Math.cos(s.rot) * s.len * 0.5);
-            sign.rotation.y = s.rot;
-            group.add(sign);
+            const signGroup = new THREE.Group();
+            signGroup.position.set(Math.sin(s.rot) * s.len * 0.5, s.y, Math.cos(s.rot) * s.len * 0.5);
+            signGroup.rotation.y = s.rot;
+            group.add(signGroup);
+            const sign = new THREE.Mesh(new THREE.BoxGeometry(s.len * 0.8, 0.12, 0.02), signMat);
+            signGroup.add(sign);
+            const tip = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.14, 3), tipMat);
+            tip.rotation.z = -Math.PI / 2;
+            tip.position.x = s.len * 0.47;
+            signGroup.add(tip);
         });
     return group;
 }
@@ -1007,6 +1114,18 @@ function buildSnowman() {
         button.position.set(0, y, 0.23);
         group.add(button);
     });
+    // Kvist-armer - uten disse leser figuren som tre snøballer, ikke en snømann.
+    const twigMat = new THREE.MeshStandardMaterial({ color: 0x4a3420 });
+    [-1, 1].forEach(function (side) {
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.012, 0.5, 5), twigMat);
+        arm.position.set(side * 0.32, 0.85, 0);
+        arm.rotation.z = side * -0.9;
+        group.add(arm);
+        const twig = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.005, 0.14, 4), twigMat);
+        twig.position.set(side * 0.52, 0.98, 0);
+        twig.rotation.z = side * -1.6;
+        group.add(twig);
+    });
     const scarfMat = new THREE.MeshStandardMaterial({ color: 0xba0c2f });
     const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.035, 6, 12), scarfMat);
     scarf.rotation.x = Math.PI / 2;
@@ -1025,25 +1144,47 @@ function buildSnowman() {
 // Liten, falurød fjellhytte med gavltak - norsk turhytte-referanse for den høyeste toppen.
 function buildMountainCabin() {
     const group = new THREE.Group();
+    // Mørk grunnmur-list rundt foten - forankrer hytta visuelt til bakken i stedet for at
+    // den falurøde veggen bare stopper brått rett over terrenget.
+    const foundationMat = new THREE.MeshStandardMaterial({ color: 0x3a3733, flatShading: true });
+    const foundation = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.14, 1.68), foundationMat);
+    foundation.position.y = 0.07;
+    group.add(foundation);
     const wallMat = new THREE.MeshStandardMaterial({ color: 0xa33a2c });
     const wall = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.6), wallMat);
-    wall.position.y = 0.55;
+    wall.position.y = 0.14 + 0.55;
     group.add(wall);
     const roofMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b });
     const roof = new THREE.Mesh(new THREE.ConeGeometry(1.25, 0.7, 4), roofMat);
     roof.rotation.y = Math.PI / 4;
-    roof.position.y = 1.45;
+    roof.position.y = 0.14 + 1.45;
     group.add(roof);
+    // Mønekam langs takryggen - et enkelt strøk øker leseligheten av "gavltak" betraktelig på nært hold.
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.35), roofMat);
+    ridge.position.y = 0.14 + 1.72;
+    group.add(ridge);
     const trimMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e6, side: THREE.DoubleSide });
     const door = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.6), trimMat);
-    door.position.set(0, 0.35, 0.81);
+    door.position.set(0, 0.14 + 0.35, 0.81);
     group.add(door);
     const winPane = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26), trimMat);
-    winPane.position.set(0.45, 0.65, 0.81);
+    winPane.position.set(0.45, 0.14 + 0.65, 0.81);
     group.add(winPane);
+    // Vindusluker - typisk detalj på norske fjellhytter, og bryter opp den ellers flate falurøde veggen.
+    const shutterMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e6 });
+    [-1, 1].forEach(function (side) {
+        const shutter = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.32, 0.03), shutterMat);
+        shutter.position.set(0.45 + side * 0.16, 0.14 + 0.65, 0.8);
+        group.add(shutter);
+    });
+    // Inngangstrapp - en liten kloss foran døra, så terskelen ikke bare henger i lufta over bakken.
+    const stepMat = new THREE.MeshStandardMaterial({ color: 0x5b5650 });
+    const step = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.24), stepMat);
+    step.position.set(0, 0.06, 0.95);
+    group.add(step);
     const chimneyMat = new THREE.MeshStandardMaterial({ color: 0x6b6b6b });
     const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.4, 0.16), chimneyMat);
-    chimney.position.set(-0.4, 1.65, -0.2);
+    chimney.position.set(-0.4, 0.14 + 1.65, -0.2);
     group.add(chimney);
     return group;
 }
@@ -1065,15 +1206,13 @@ function buildMountainRange() {
         7: buildMountainCabin
     };
 
-    MOUNTAIN_DEFS.forEach(function (m, i) {
-        const rad = THREE.MathUtils.degToRad(m.angle);
-        const x = Math.sin(rad) * m.dist, z = Math.cos(rad) * m.dist;
-
-        // Én sammenhengende geometri fra bakkeplanet (frac 0) helt til toppen (frac 1) - ingen egen
-        // "fot"-mesh lenger. Det fjerner den synlige skjøten/ringen der en separat fot- og topp-mesh
-        // møttes, OG gir en jevn fargeovergang fra selveste bakkefargen (matcher Sim.buildGroundTexture)
-        // via oliven-fjellfot og gråstein til ev. snø, i stedet for et brått fargehopp ved bakken.
-        const peakColorStops = m.snow
+    // Bygget fra MOUNTAIN_PEAKS (samme datasett som mountainHeightAt bruker til kollisjon) - én
+    // sammenhengende geometri fra bakkeplanet (frac 0) helt til toppen (frac 1) per kjegle, ingen egen
+    // "fot"-mesh. Det fjerner den synlige skjøten/ringen der en separat fot- og topp-mesh møttes, OG gir
+    // en jevn fargeovergang fra selveste bakkefargen (matcher Sim.buildGroundTexture) via oliven-
+    // fjellfot og gråstein til ev. snø, i stedet for et brått fargehopp ved bakken.
+    MOUNTAIN_PEAKS.forEach(function (peak) {
+        const colorStops = (peak.isMain && peak.snow)
             ? [
                 { frac: 0, color: MOUNTAIN_GROUND_COLOR },
                 { frac: 0.16, color: MOUNTAIN_FOOTHILL_COLOR },
@@ -1083,50 +1222,49 @@ function buildMountainRange() {
             ]
             : [
                 { frac: 0, color: MOUNTAIN_GROUND_COLOR },
-                { frac: 0.18, color: MOUNTAIN_FOOTHILL_COLOR },
+                { frac: peak.isMain ? 0.18 : 0.2, color: MOUNTAIN_FOOTHILL_COLOR },
                 { frac: 0.5, color: MOUNTAIN_ROCK_COLOR },
                 { frac: 1, color: MOUNTAIN_ROCK_LIGHT_COLOR }
             ];
-        const peak = new THREE.Mesh(buildGradientPeakGeometry(m.radius, m.height, i * 1.7 + 1, peakColorStops, 1, 0.18), peakMat);
-        peak.position.set(x, m.height / 2, z);
-        peak.rotation.y = rad;
-        group.add(peak);
+        const mesh = new THREE.Mesh(
+            buildGradientPeakGeometry(peak.radius, peak.height, peak.seed, colorStops, 1, peak.topRadiusFrac, peak.curvePower),
+            peakMat
+        );
+        mesh.position.set(peak.x, peak.height / 2, peak.z);
+        mesh.rotation.y = peak.angle;
+        group.add(mesh);
 
-        // Et par mindre, forskjøvne bi-topper klumpet inntil hovedtoppen - et enkelt fjell blir til et
-        // massiv med flere rygger i stedet for én ensom, symmetrisk pyramide. Egne, mindre forskyvninger
-        // (subDist) nå som radiene er mye større - ellers ville de stukket unødvendig langt ut fra massivet.
-        [{ f: 0.55, off: 0.32, dirOffset: 1.3 }, { f: 0.4, off: -0.38, dirOffset: 3.6 }].forEach(function (sub, si) {
-            const subHeight = m.height * sub.f;
-            const subRadius = m.radius * (0.5 + sub.f * 0.2);
-            const subDir = rad + sub.dirOffset;
-            const subDist = m.radius * sub.off;
-            const subColorStops = [
-                { frac: 0, color: MOUNTAIN_GROUND_COLOR },
-                { frac: 0.2, color: MOUNTAIN_FOOTHILL_COLOR },
-                { frac: 0.5, color: MOUNTAIN_ROCK_COLOR },
-                { frac: 1, color: MOUNTAIN_ROCK_LIGHT_COLOR }
-            ];
-            const subPeak = new THREE.Mesh(
-                buildGradientPeakGeometry(subRadius, subHeight, i * 1.7 + 2 + si * 5.3, subColorStops, 1, 0.2),
-                peakMat
-            );
-            subPeak.position.set(x + Math.sin(subDir) * subDist, subHeight / 2, z + Math.cos(subDir) * subDist);
-            subPeak.rotation.y = subDir;
-            group.add(subPeak);
-        });
-
-        // Påskeegg rett på toppunktet - snudd til å vende mot spillområdet (origo), som om det venter
-        // på en nysgjerrig pilot. Et par tiendedeler over selve apex for å unngå å synke inn i den
-        // (lett) uregelmessige toppflaten (se topDamp i buildGradientPeakGeometry).
-        const eggBuilder = MOUNTAIN_EASTER_EGGS[i];
+        // Påskeegg rett på toppunktet (kun hovedtopper) - snudd til å vende mot spillområdet (origo),
+        // som om det venter på en nysgjerrig pilot. Y beregnes eksakt via peakApexYOffset (samme seed
+        // som toppdekket over), pluss en liten klaring for å unngå z-fighting mot selve fjelloverflaten.
+        const eggBuilder = peak.isMain && MOUNTAIN_EASTER_EGGS[peak.mainIndex];
         if (eggBuilder) {
             const egg = eggBuilder();
-            egg.position.set(x, m.height + 0.3, z);
-            egg.rotation.y = rad + Math.PI;
+            const apexY = peak.height + peakApexYOffset(peak.height, peak.seed) + 0.04;
+            egg.position.set(peak.x, apexY, peak.z);
+            egg.rotation.y = peak.angle + Math.PI;
             group.add(egg);
         }
     });
     return group;
+}
+
+// Fjellenes kollisjonsflate - gjenbruker EKSAKT samme profil/kurve/jitter-fri tilnærming som geometrien
+// (mountainProfileHeightFrac er inversen av mountainProfileRadiusFrac som selve meshen bygges med), så
+// "bakken" droneen faktisk lander/krasjer på matcher det den ser. Finjitteret fra buildGradientPeakGeometry
+// er utelatt her (samme forenkling som SOLID_COLLIDERS - en glatt tilnærming er mer enn god nok for
+// kollisjon), MEN grunnprofilen (buet stigning + flat toppflate) er identisk. Returnerer høyeste
+// overlappende fjell-kjegle ved (x,z), eller 0 hvis ingen dekker punktet.
+function mountainHeightAt(x, z) {
+    let top = 0;
+    for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
+        const peak = MOUNTAIN_PEAKS[i];
+        const dist = Math.hypot(x - peak.x, z - peak.z);
+        if (dist >= peak.radius) continue;
+        const h = peak.height * mountainProfileHeightFrac(dist / peak.radius, peak.topRadiusFrac, peak.curvePower);
+        if (h > top) top = h;
+    }
+    return top;
 }
 
 // Skogsområde med høyere trær (10-16 m) enn de spredte dekorasjonstrærne i buildWorldObjects (6-8,5 m) -
@@ -1134,20 +1272,11 @@ function buildMountainRange() {
 // stedet for Math.random(), samme determinisme-prinsipp som resten av verdensbyggingen.
 function buildForestArea() {
     const group = new THREE.Group();
-    const centerX = 140, centerZ = 90;
-    const rows = 6, cols = 6, spacing = 11;
-    let i = 0;
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const jitterX = Math.sin(i * 12.9) * 4;
-            const jitterZ = Math.cos(i * 7.3) * 4;
-            const height = 10 + Math.abs(Math.sin(i * 3.7)) * 6;
-            const tree = Sim.buildTree(height);
-            tree.position.set(centerX + (c - cols / 2) * spacing + jitterX, 0, centerZ + (r - rows / 2) * spacing + jitterZ);
-            group.add(tree);
-            i++;
-        }
-    }
+    FOREST_TREES.forEach(function (t) {
+        const tree = Sim.buildTree(t.h);
+        tree.position.set(t.x, 0, t.z);
+        group.add(tree);
+    });
     return group;
 }
 
@@ -1457,19 +1586,52 @@ function isLineBlockedByBuilding(from, to) {
     return !!hit && from.distanceTo(hit) < dist;
 }
 
+// Delt tredata - samme prinsipp som MOUNTAIN_PEAKS: bygget én gang, brukt til BÅDE rendering
+// (buildWorldObjects/buildForestArea) og kollisjon (TREE_COLLIDERS under), så de aldri kan komme ut
+// av synk. Alle godt utenfor øvelsesområdet (se koordinatene) - ingen risiko for å forstyrre eksisterende
+// baner/øvelser.
+const DECORATIVE_TREES = [
+    { x: 45, z: -20, h: 7 }, { x: 55, z: 5, h: 8 }, { x: 40, z: 30, h: 6.5 },
+    { x: -50, z: 20, h: 7.5 }, { x: -20, z: -55, h: 8.5 }, { x: 15, z: -60, h: 6 },
+    { x: 70, z: -40, h: 7.2 }, { x: -60, z: -10, h: 6.8 }
+];
+const FOREST_TREES = (function () {
+    const trees = [];
+    const centerX = 140, centerZ = 90, rows = 6, cols = 6, spacing = 11;
+    let i = 0;
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const jitterX = Math.sin(i * 12.9) * 4;
+            const jitterZ = Math.cos(i * 7.3) * 4;
+            const height = 10 + Math.abs(Math.sin(i * 3.7)) * 6;
+            trees.push({ x: centerX + (c - cols / 2) * spacing + jitterX, z: centerZ + (r - rows / 2) * spacing + jitterZ, h: height });
+            i++;
+        }
+    }
+    return trees;
+})();
+// Trekollidere - boks-tilnærming av kronen (samme radius-formel som Sim.buildTree bruker til selve
+// canopy-geometrien: height*0.28), samme forenklede "topp-flate å lande på"-modell som resten av
+// SOLID_COLLIDERS (bygning/bil) - ingen egen sideveis vegg-fysikk, kun en flat kollisjonshøyde.
+function treeToCollider(t) {
+    const r = t.h * 0.28;
+    return { minX: t.x - r, maxX: t.x + r, minZ: t.z - r, maxZ: t.z + r, topY: t.h };
+}
+const TREE_COLLIDERS = DECORATIVE_TREES.concat(FOREST_TREES).map(treeToCollider);
+
 // Faste objekter droneen kan lande oppå (i stedet for å falle gjennom): topp-flate per boks,
 // oppgitt akse-rettet (bilens rotasjon tilnærmes med en litt større boks for enkelhets skyld).
-const SOLID_COLLIDERS = [
+const SOLID_COLLIDERS = TREE_COLLIDERS.concat([
     {
         minX: BUILDING_POSITION.x - BUILDING_SIZE.width / 2, maxX: BUILDING_POSITION.x + BUILDING_SIZE.width / 2,
         minZ: BUILDING_POSITION.z - BUILDING_SIZE.depth / 2, maxZ: BUILDING_POSITION.z + BUILDING_SIZE.depth / 2,
         topY: BUILDING_SIZE.height
     },
     { minX: 24 - 2.33, maxX: 24 + 2.33, minZ: 14 - 1.58, maxZ: 14 + 1.58, topY: 1.7 } // bilen, se buildWorldObjects
-];
+]);
 
 function solidSurfaceHeightAt(x, z) {
-    let top = 0;
+    let top = mountainHeightAt(x, z); // fjellene er nå del av bakkehøyden - se mountainHeightAt
     SOLID_COLLIDERS.forEach(function (c) {
         if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
             top = Math.max(top, c.topY);
@@ -1752,11 +1914,7 @@ function buildWorldObjects() {
     building.position.set(-35, 0, -35);
     group.add(building);
 
-    [
-        { x: 45, z: -20, h: 7 }, { x: 55, z: 5, h: 8 }, { x: 40, z: 30, h: 6.5 },
-        { x: -50, z: 20, h: 7.5 }, { x: -20, z: -55, h: 8.5 }, { x: 15, z: -60, h: 6 },
-        { x: 70, z: -40, h: 7.2 }, { x: -60, z: -10, h: 6.8 }
-    ].forEach(function (t) {
+    DECORATIVE_TREES.forEach(function (t) {
         const tree = Sim.buildTree(t.h);
         tree.position.set(t.x, 0, t.z);
         group.add(tree);
@@ -2561,16 +2719,24 @@ function resolveGroundContact(dt, wasGrounded) {
     }
 
     if (!tippedPastRecovery && !scraping) {
+        // Demping av vinkelhastigheten MÅ skje uansett støttemønster her - den gjaldt tidligere kun
+        // wellSupported-grenen, så en drone som bare hviler delvis (f.eks. racing-klassen etter en krasj
+        // med ødelagte propeller/ben, balansert på to motstående armunder-punkter) fikk ALDRI dempet
+        // vinkelfarten. applyGravityPivotTorque under LEGGER TIL vinkelfart hver tick (tyngdekraft-momentet
+        // om støttepunktet) men fjerner aldri noe - uten demping her hadde det ingen steder å ta veien, og
+        // droneen vippet fram og tilbake for alltid i stedet for gradvis å miste energi og falle til ro.
+        const dampFactor = wellSupported ? 0.5 : 0.9;
+        droneState.angularVelocity.pitch *= dampFactor;
+        droneState.angularVelocity.roll *= dampFactor;
         if (wellSupported) {
             // Godt støttet, sakte og innenfor gjenopprettbar helning - understellet "retter opp" droneen.
-            droneState.angularVelocity.pitch *= 0.5;
-            droneState.angularVelocity.roll *= 0.5;
             const yawOnly = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ").y;
             const uprightQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yawOnly, 0, "YXZ"));
             droneState.quaternion.slerp(uprightQuat, Math.min(1, LEG_CONTACT_RIGHTING_RATE * dt));
         }
-        // Delvis støtte håndteres av applyGravityPivotTorque over - tyngdekraften velter den rundt
-        // støttepunktet med realistisk styrke, ingen ekstra hjelpe-moment trengs.
+        // Delvis støtte: tyngdekraften vipper den rundt støttepunktet (se applyGravityPivotTorque over) -
+        // dempingen over sørger nå for at svingningen faktisk dør ut, i stedet for en aktiv oppretting
+        // (som ville sett urealistisk ut for en drone som bare hviler på to hjørner, ikke fire ben).
     } else if (scraping && !tippedPastRecovery) {
         // Skraping: understellet dras langs bakken i fart. INGEN oppretting her - snuble-momentet over
         // og friksjonen får virke uimotsagt (kun lett demping), så nesa graver seg ned og den velter
