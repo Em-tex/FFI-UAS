@@ -4337,6 +4337,13 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("keyup", function (e) {
         keys.delete(e.code);
     });
+    // Mister vinduet fokus mens en tast holdes nede (alt-tab, klikk i et annet program, DevTools osv.),
+    // kommer keyup ALDRI - tasten ble sittende "fastlåst" nede i settet for alltid, og droneen fortsatte
+    // å bevege seg på det gamle input etter at man kom tilbake. Tøm alt ved fokustap/skjult fane.
+    window.addEventListener("blur", function () { keys.clear(); });
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden) keys.clear();
+    });
 
     requestAnimationFrame(animate);
 });
