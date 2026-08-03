@@ -723,7 +723,10 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     position: absolute;
     top: 16px;
     right: 16px;
+    left: 16px;
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
     pointer-events: auto;
 }

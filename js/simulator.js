@@ -245,6 +245,9 @@ const HOVER_ALTITUDE_TOLERANCE = 1; // m - egen, strengere høydetoleranse enn d
 const HOVER_CENTER = new THREE.Vector3(0, 0, -5);
 // Landingsplassen (H) ved avgangspunktet - øvelsene avsluttes automatisk ved landing her.
 const LANDING_PAD_RADIUS = 2.4;
+// Droneen må stå i ro på padden sammenhengende i denne varigheten før øvelsen faktisk avsluttes -
+// uten denne følies det brått ut idet bena så vidt rører bakken nær padden.
+const LANDING_CONFIRM_SEC = 1.5;
 // (Løype-øvelsene aktiverer reglene først når første veipunkt er nådd - se updateExercise - så
 // transportetappen fra avgangsplassen og ut til figuren er alltid fri flyging.)
 // Nesa "ut" er en fast retning bort fra VLOS-piloten (0,1.6,5) - siden både piloten og øvelses-
@@ -2876,6 +2879,7 @@ const exerciseState = {
     // informativt HUD-tall, uavhengig av grace/violation-logikken - se updateExercise/updateExerciseHud.
     headingErrorDeg: null,
     landingPhase: false, // alle deløvelser fullført - venter på landing på H-plassen (se completeExercise)
+    landedSinceMs: null, // tidspunktet droneen sist begynte å stå trygt på landingsplassen (se LANDING_CONFIRM_SEC)
     awaitingNext: false, // bestått og landet - fryst i ro (disarmet) til "Neste"/"Lukk" i oppsummeringskortet
     returnPhase: null, // "Returner hjem": null | "countdown" | "awaitThrottle" (se updateExercise)
     returnCountdownEnd: 0,
@@ -3081,6 +3085,7 @@ function resetStageProgress() {
     exerciseState.headingBadSinceMs = null;
     exerciseState.returnRepsCompleted = 0;
     exerciseState.headingErrorDeg = null;
+    exerciseState.landedSinceMs = null;
 }
 
 // Alle deløvelser fullført: fjern veiledningen og gå i landingsfase - selve fullføringen (tid,
@@ -3530,21 +3535,27 @@ function updateExercise(dt, now) {
         const onPad = droneState.grounded && !droneState.crashed && horizSpeed < 0.5 &&
             Math.hypot(droneState.position.x, droneState.position.z) <= LANDING_PAD_RADIUS;
         if (onPad) {
-            const exercise = EXERCISES[exerciseState.exerciseId];
-            const isReturnExercise = exercise.stages[0].type === "return";
-            if (isReturnExercise) exerciseState.returnRepsCompleted++;
-            if (isReturnExercise && exerciseState.returnRepsCompleted < REQUIRED_RETURN_REPS) {
-                // Ikke siste gjennomføring ennå - respawn med ny tilfeldig posisjon/retning og fortsett.
-                // Klokka fortsetter å gå (samme startTime) - totaltiden for alle rundene lagres til slutt.
-                exerciseState.landingPhase = false;
-                spawnForExercise(exercise);
-                exerciseState.warningMessage = "Runde " + exerciseState.returnRepsCompleted + "/" +
-                    REQUIRED_RETURN_REPS + " fullført! Ny posisjon klargjort...";
-                exerciseState.warningUntil = now + 3000;
-                exerciseState.warningIsSuccess = true;
-            } else {
-                completeExercise();
+            if (exerciseState.landedSinceMs === null) exerciseState.landedSinceMs = now;
+            if (now - exerciseState.landedSinceMs >= LANDING_CONFIRM_SEC * 1000) {
+                const exercise = EXERCISES[exerciseState.exerciseId];
+                const isReturnExercise = exercise.stages[0].type === "return";
+                if (isReturnExercise) exerciseState.returnRepsCompleted++;
+                if (isReturnExercise && exerciseState.returnRepsCompleted < REQUIRED_RETURN_REPS) {
+                    // Ikke siste gjennomføring ennå - respawn med ny tilfeldig posisjon/retning og fortsett.
+                    // Klokka fortsetter å gå (samme startTime) - totaltiden for alle rundene lagres til slutt.
+                    exerciseState.landingPhase = false;
+                    exerciseState.landedSinceMs = null;
+                    spawnForExercise(exercise);
+                    exerciseState.warningMessage = "Runde " + exerciseState.returnRepsCompleted + "/" +
+                        REQUIRED_RETURN_REPS + " fullført! Ny posisjon klargjort...";
+                    exerciseState.warningUntil = now + 3000;
+                    exerciseState.warningIsSuccess = true;
+                } else {
+                    completeExercise();
+                }
             }
+        } else {
+            exerciseState.landedSinceMs = null;
         }
         return;
     }
