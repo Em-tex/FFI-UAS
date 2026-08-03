@@ -238,7 +238,8 @@ const HEADING_TOLERANCE_DEG = 28;
 const REQUIRED_CLEAN_LAPS = 3;
 const REQUIRED_RETURN_REPS = 3; // "Returner hjem" må gjennomføres 3 ganger - totaltiden for alle tre lagres
 const HOVER_HOLD_SEC = 10;
-const HOVER_POS_TOLERANCE = 2.5; // m horisontal radius rundt hover-punktet
+const HOVER_POS_TOLERANCE = 1.5; // m horisontal radius rundt hover-punktet - strammere enn løype-figurenes captureRadius
+const HOVER_ALTITUDE_TOLERANCE = 1; // m - egen, strengere høydetoleranse enn de øvrige øvelsenes ALTITUDE_TOLERANCE
 // Hover-øvelsen har sitt eget punkt, nærmere piloten enn løype-figurene (10 m unna i stedet for 11) -
 // i ro på kort hold er det lettere å lese nese-retningen på droneen.
 const HOVER_CENTER = new THREE.Vector3(0, 0, -5);
@@ -426,6 +427,7 @@ const EXERCISES = {
         icon: "fa-crosshairs",
         label: "1. Hover",
         shortDescription: "Hold posisjonen med nesa ut, til sidene og inn - " + HOVER_HOLD_SEC + " s per retning.",
+        startHint: "Hold posisjonen i den gule indikatoren. Pila på bakken viser hvilken retning nesa skal peke.",
         fullDescription: "Hold dronen i ro over det markerte punktet på " + HOVER_ALTITUDE + " m høyde - " +
             "først med nesa bort fra deg, så mot venstre, så mot høyre, og til slutt med nesa mot deg. " +
             "Hver retning må holdes i minst " + HOVER_HOLD_SEC + " sekunder innenfor omtrent samme posisjon " +
@@ -444,6 +446,7 @@ const EXERCISES = {
         icon: "fa-vector-square",
         label: "2. Firkant - nese ut",
         shortDescription: "Fly firkanten med nesa fast bort fra deg - " + REQUIRED_CLEAN_LAPS + " rene runder.",
+        startHint: "Fly firkanten. Følg indikatoren. Nesa skal peke bort fra deg hele tiden.",
         fullDescription: "Fly langs den markerte firkanten med nesa hele tiden fast rettet bort fra deg " +
             "(ren pinnestyring - sidelengs og baklengs inngår). Hold høyden på " + EXERCISE_ALTITUDE + " m. " +
             "Du må fullføre " + REQUIRED_CLEAN_LAPS + " runder uten avvik." + EXERCISE_RULES_TEXT,
@@ -457,6 +460,7 @@ const EXERCISES = {
         icon: "fa-vector-square",
         label: "3. Firkant - nese fremover",
         shortDescription: "Firkanten med nesa i fartsretningen - 2 rene runder.",
+        startHint: "Fly firkanten. Følg indikatoren. Nesa skal peke i fartsretningen hele veien.",
         fullDescription: "Samme firkant, men nå skal nesa peke fremover i fartsretningen hele veien " +
             "(som en bil - yaw i hjørnene). Hold høyden på " + EXERCISE_ALTITUDE + " m. " +
             "2 runder uten avvik kreves - noe færre enn de andre øvelsene, siden nese-styringen her " +
@@ -471,6 +475,7 @@ const EXERCISES = {
         icon: "fa-arrows-up-down",
         label: "4. Høydeforandring",
         shortDescription: "Loddrett opp, skrått ned - sikksakk i vertikalplanet, begge veier.",
+        startHint: "Følg sikksakk-mønsteret loddrett opp og skrått ned. Nesa peker bort fra deg.",
         fullDescription: "Følg det vertikale sikksakk-mønsteret med nesa bort fra deg: loddrett opp, " +
             "skrått ned til siden, loddrett opp igjen og skrått ned tilbake - " + REQUIRED_CLEAN_LAPS +
             " runder. Deretter flys det samme mønsteret motsatt vei (loddrett ned, skrått opp) i " +
@@ -486,6 +491,7 @@ const EXERCISES = {
         icon: "fa-circle-notch",
         label: "5. Sirkel - nese ut",
         shortDescription: "Sirkelen med nesa fast bort fra deg - " + REQUIRED_CLEAN_LAPS + " rene runder.",
+        startHint: "Fly sirkelen. Følg indikatoren. Nesa skal peke bort fra deg hele tiden.",
         fullDescription: "Fly den markerte sirkelen med nesa hele tiden fast rettet bort fra deg. " +
             "Hold høyden på " + EXERCISE_ALTITUDE + " m. " + REQUIRED_CLEAN_LAPS + " runder uten avvik." +
             EXERCISE_RULES_TEXT,
@@ -498,6 +504,7 @@ const EXERCISES = {
         icon: "fa-circle-notch",
         label: "6. Sirkel - nese fremover",
         shortDescription: "Sirkelen med nesa i fartsretningen - " + REQUIRED_CLEAN_LAPS + " rene runder.",
+        startHint: "Fly sirkelen. Følg indikatoren. Nesa skal peke i fartsretningen hele veien.",
         fullDescription: "Samme sirkel, med nesa fremover i fartsretningen - jevn, koordinert yaw " +
             "gjennom hele svingen. Hold høyden på " + EXERCISE_ALTITUDE + " m. " + REQUIRED_CLEAN_LAPS +
             " runder uten avvik." + EXERCISE_RULES_TEXT,
@@ -508,6 +515,7 @@ const EXERCISES = {
         icon: "fa-infinity",
         label: "7. Åttetall - nese ut",
         shortDescription: "Åttetall med nesa fast bort fra deg - " + REQUIRED_CLEAN_LAPS + " rene runder.",
+        startHint: "Fly åttetallet. Følg indikatoren. Nesa skal peke bort fra deg hele tiden.",
         fullDescription: "Fly åttetallet med nesa hele tiden fast rettet bort fra deg - svingene bytter " +
             "retning midtveis, så pinneføringen speiles i hver løkke. Hold høyden på " + EXERCISE_ALTITUDE +
             " m. " + REQUIRED_CLEAN_LAPS + " runder uten avvik." + EXERCISE_RULES_TEXT,
@@ -520,6 +528,7 @@ const EXERCISES = {
         icon: "fa-infinity",
         label: "8. Åttetall - nese fremover",
         shortDescription: "Åttetall med nesa i fartsretningen - 2 rene runder.",
+        startHint: "Fly åttetallet. Følg indikatoren. Nesa skal peke i fartsretningen hele veien.",
         fullDescription: "Åttetallet med nesa fremover i fartsretningen - koordinert yaw som bytter " +
             "svingretning i kryssingen. Hold høyden på " + EXERCISE_ALTITUDE + " m. 2 runder uten avvik." +
             EXERCISE_RULES_TEXT,
@@ -530,6 +539,7 @@ const EXERCISES = {
         icon: "fa-wind",
         label: "9. Åttetall i vind",
         shortDescription: "Åttetall i 3 m/s sidevind, nesa ut - " + REQUIRED_CLEAN_LAPS + " rene runder.",
+        startHint: "Fly åttetallet i sidevind. Korriger jevnlig for avdrift for å holde formen.",
         fullDescription: "Samme åttetall, men nå med 3 m/s vind aktivert automatisk - du må korrigere " +
             "kontinuerlig for avdrift for å holde formen. Flys anbefalt med nesa ut, men nese-retningen " +
             "sjekkes ikke her - fokuset er vindkorreksjon og formen, ikke nesestilling. Hold høyden på " +
@@ -545,6 +555,7 @@ const EXERCISES = {
         icon: "fa-house",
         label: "10. Returner hjem i vind",
         shortDescription: "Ta over en drone langt hjemmefra og fly den trygt hjem - " + REQUIRED_RETURN_REPS + " ganger, 6 m/s vind fra tilfeldig retning.",
+        startHint: "Vent til nedtellingen er ferdig og gassen er ved ca. 50 %. Finn nese- og vindretning, fly trygt hjem og land.",
         fullDescription: "Dronen henger i lufta langt hjemmefra - bare synlig som en prikk - med " +
             "tilfeldig nese-retning og 6 m/s vind fra en ny, tilfeldig retning hver gang. Etter " +
             "nedtellingen overtar du kontrollen, men først når du har lagt gassen rundt 50 % (hover) - " +
@@ -1743,12 +1754,23 @@ function buildDrone(classKey) {
 
     const armLength = DRONE_ARM_LENGTH;
     const armSpan = armLength * Math.SQRT2 * 2;
-    const arm1 = new THREE.Mesh(new THREE.BoxGeometry(armSpan, 0.02, 0.03), armMat);
-    arm1.rotation.y = Math.PI / 4;
-    arm1.castShadow = true;
-    const arm2 = new THREE.Mesh(new THREE.BoxGeometry(armSpan, 0.02, 0.03), armMat);
-    arm2.rotation.y = -Math.PI / 4;
-    arm2.castShadow = true;
+    // Hver arm-bom går fra et fremre til et bakre motorhjørne. Fremre halvdel farges rødlig
+    // (samme som frontmotorene), bakre halvdel mørk grå, slik at nese-retningen er tydelig.
+    function buildArmBoom(rotationY, frontLocalXSign) {
+        const halfLen = armSpan / 2;
+        const armGroup = new THREE.Group();
+        const frontHalf = new THREE.Mesh(new THREE.BoxGeometry(halfLen, 0.02, 0.03), frontArmMat);
+        frontHalf.position.x = frontLocalXSign * halfLen / 2;
+        frontHalf.castShadow = true;
+        const backHalf = new THREE.Mesh(new THREE.BoxGeometry(halfLen, 0.02, 0.03), armMat);
+        backHalf.position.x = -frontLocalXSign * halfLen / 2;
+        backHalf.castShadow = true;
+        armGroup.add(frontHalf, backHalf);
+        armGroup.rotation.y = rotationY;
+        return armGroup;
+    }
+    const arm1 = buildArmBoom(Math.PI / 4, 1);
+    const arm2 = buildArmBoom(-Math.PI / 4, -1);
     group.add(arm1, arm2);
 
     if (!isRacing) {
@@ -2944,6 +2966,32 @@ function stripWaypointY(waypoints) {
 // tynn margin), en statisk pil på bakken som viser den låste nese-retningen for "nese ut"-steg (uten
 // en referanse har piloten ingenting konkret å rette nesa etter fra VLOS), og en pulserende markør på
 // neste veipunkt (oppdatert i updateExerciseGuideVisual).
+// Flat pil på bakken som viser ønsket nese-retning for et hover-steg. Pila bygges liggende og pekende
+// mot lokal -Z (samme "nese ut ved yaw 0"-konvensjon som droneen selv, se currentYaw/angularDiffDeg),
+// og legges i en egen gruppe som roteres om verdens Y-akse med selve yaw-vinkelen - det unngår enhver
+// tvetydighet rundt Euler-rekkefølge (se orientTowardTravel for samme "child peker -Z, parent roterer"-triks).
+function buildGroundArrow(yaw, color) {
+    const shaftW = 0.35, shaftLen = 1.0, headW = 0.9, headLen = 0.8;
+    const shape = new THREE.Shape();
+    shape.moveTo(-shaftW / 2, 0);
+    shape.lineTo(-shaftW / 2, shaftLen);
+    shape.lineTo(-headW / 2, shaftLen);
+    shape.lineTo(0, shaftLen + headLen);
+    shape.lineTo(headW / 2, shaftLen);
+    shape.lineTo(shaftW / 2, shaftLen);
+    shape.lineTo(shaftW / 2, 0);
+    shape.closePath();
+    const mesh = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: false }),
+        new THREE.MeshStandardMaterial({ color: color, transparent: true, opacity: 0.9 })
+    );
+    mesh.rotation.x = -Math.PI / 2; // ligger flatt, pil-tuppen peker mot -Z (yaw 0) før parent-rotasjonen under
+    const group = new THREE.Group();
+    group.add(mesh);
+    group.rotation.y = yaw;
+    return group;
+}
+
 function buildExerciseGuide(stage) {
     const group = new THREE.Group();
     const guideMat = new THREE.MeshStandardMaterial({ color: 0x2ee6a6, transparent: true, opacity: 0.35 });
@@ -2959,6 +3007,9 @@ function buildExerciseGuide(stage) {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(HOVER_CENTER.x, 0.05, HOVER_CENTER.z);
         group.add(ring);
+        const arrow = buildGroundArrow(stage.headingYaw, 0xffee55);
+        arrow.position.set(HOVER_CENTER.x, 0.06, HOVER_CENTER.z);
+        group.add(arrow);
     } else if (stage.type === "killswitch") {
         // "Vente"-fasens "liksom"-øvelse gjenbruker sirkel-runden (se updateKillswitchPatrol) - samme
         // veiledningsløkke som ex5/ex6, så det faktisk ser ut som en ordentlig øvelse å fly. Enkelte steg
@@ -2974,9 +3025,6 @@ function buildExerciseGuide(stage) {
         group.add(buildLoopStruts(stage.waypoints, EXERCISE_ALTITUDE, 0.08, guideMat));
         group.add(buildLoopStruts(stripWaypointY(stage.waypoints), 0.05, 0.06, groundMat));
     }
-
-    // (Ingen retningspil på bakken for låst nese-retning - HUD-feltet "Nese-feil" (se updateExercise/
-    // updateExerciseHud) viser det numeriske avviket direkte og gjorde pila overflødig.)
 
     const markerMat = new THREE.MeshStandardMaterial({ color: 0xffee55, transparent: true, opacity: 0.85 });
     const nextWaypointMarker = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 10), markerMat);
@@ -3550,7 +3598,7 @@ function updateExercise(dt, now) {
     if (stage.type === "hover") {
         const posOk = horizontalCaptureDistance(droneState.position.x - HOVER_CENTER.x,
             droneState.position.z - HOVER_CENTER.z) <= HOVER_POS_TOLERANCE;
-        const altOk = Math.abs(droneState.position.y - HOVER_ALTITUDE) <= ALTITUDE_TOLERANCE;
+        const altOk = Math.abs(droneState.position.y - HOVER_ALTITUDE) <= HOVER_ALTITUDE_TOLERANCE;
         exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, stage.headingYaw));
         const headingOk = exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG;
         if (posOk && altOk && headingOk) {
@@ -3659,11 +3707,14 @@ function updateExerciseHud() {
     if (showBanner) bannerText.textContent = exerciseState.warningMessage;
 
     const hudBar = document.getElementById("exerciseHudBar");
+    const progressBox = document.getElementById("exerciseProgressBox");
     if (!exerciseState.active) {
         hudBar.style.display = "none";
+        progressBox.style.display = "none";
         return;
     }
     hudBar.style.display = "";
+    progressBox.style.display = "";
     // "Returner hjem" har ett fast steg (stageIndex alltid 0) - stegobjektet er gyldig gjennom hele
     // landingsfasen der også, i motsetning til vanlige flerstegs-øvelser (der landingPhase betyr
     // stageIndex har passert siste steg og getExerciseStage() ville returnert undefined). awaitingNext
@@ -3741,6 +3792,10 @@ function spawnForExercise(exercise) {
         exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
         exerciseState.warningUntil = performance.now() + 4000;
         exerciseState.warningIsSuccess = true;
+    } else if (exercise.startHint) {
+        exerciseState.warningMessage = exercise.startHint;
+        exerciseState.warningUntil = performance.now() + 4500;
+        exerciseState.warningIsSuccess = true;
     }
     if (exercise.spawn === "far") {
         const bearing = (Math.random() * 2 - 1) * (Math.PI / 3); // innenfor ±60° av rett frem (-Z)
@@ -3816,11 +3871,11 @@ function startExercise(id) {
     // uten denne rekkefølgen ville den første spawnen i en ny økt sett den GAMLE verdien fra forrige gang.
     exerciseState.stageIndex = 0;
     resetStageProgress();
+    exerciseState.warningUntil = 0; // rydd unna en ev. gjenværende banner fra forrige økt FØR spawnForExercise setter start-hintet
     spawnForExercise(exercise);
 
     exerciseState.active = true;
     exerciseState.exerciseId = id;
-    exerciseState.warningUntil = 0;
     exerciseState.startTime = performance.now();
     rebuildExerciseGuide();
     // Lukk menyen - piloten skal rett i gang, og panelet skygger for sikten mot treningsområdet.
@@ -3961,7 +4016,7 @@ function openDiploma() {
     totalRowEl.appendChild(totalTimeEl);
     timesEl.appendChild(totalRowEl);
     document.getElementById("diplomaDate").textContent =
-        "Dato: " + new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "long", day: "numeric" });
+        "Dato: " + new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "2-digit", day: "2-digit" });
     document.getElementById("diplomaPrintBtn").onclick = function () {
         // Print-CSS-en (body.printing-diploma) skjuler alt annet enn diplom-arket under utskriften -
         // "Lagre som PDF" i nettleserens print-dialog gir PDF-beviset.

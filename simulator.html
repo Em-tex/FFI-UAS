@@ -79,10 +79,6 @@
                 <span id="exerciseHudStage" class="sim-status-value">-</span>
             </div>
             <div class="sim-status-item">
-                <span class="sim-status-label">Fremdrift</span>
-                <span id="exerciseHudLaps" class="sim-status-value">0/3</span>
-            </div>
-            <div class="sim-status-item">
                 <span class="sim-status-label">Avvik</span>
                 <span id="exerciseHudViolations" class="sim-status-value">-</span>
             </div>
@@ -94,6 +90,11 @@
                 <span class="sim-status-label">Tid</span>
                 <span id="exerciseHudTimer" class="sim-status-value">0:00</span>
             </div>
+        </div>
+
+        <div class="sim-progress-box" id="exerciseProgressBox" style="display:none;">
+            <span class="sim-status-label">Fremdrift</span>
+            <span id="exerciseHudLaps" class="sim-status-value">0/3</span>
         </div>
 
         <div class="sim-toolbar no-print">
@@ -305,7 +306,7 @@
                     <p class="sim-diploma-date" id="diplomaDate"></p>
                 </div>
                 <div class="sim-diploma-actions no-print">
-                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaPrintBtn"><i class="fa-solid fa-print"></i> Skriv ut / lagre som PDF</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
                     <button type="button" class="sim-btn sim-btn-primary" id="diplomaCloseBtn">Lukk</button>
                 </div>
             </div>

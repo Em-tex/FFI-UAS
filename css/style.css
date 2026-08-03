@@ -477,6 +477,25 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 .sim-status-value.sim-armed { color: #6fdc8c; }
 .sim-status-value.sim-killed { color: #ff6b6b; }
 
+/* Fremdrift/telleren for gjeldende øvelsessteg (hover-holdetid, runder, killswitch-status ...) -
+   egen liten boks nederst midt på skjermen, i tillegg til (ikke i stedet for) selve HUD-baren,
+   siden dette er tallet man aktivt følger med på mens man flyr og ellers må se bort fra banen for. */
+.sim-progress-box {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: rgba(3, 71, 127, 0.85);
+    border-radius: 8px;
+    padding: 8px 22px;
+    pointer-events: none;
+}
+.sim-progress-box .sim-status-value { font-size: 1.3rem; }
+
 .sim-crash-banner {
     position: absolute;
     top: 50%;
