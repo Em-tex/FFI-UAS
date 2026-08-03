@@ -731,6 +731,14 @@ const inputState = {
 };
 
 const keys = new Set();
+// Alle taster spillet selv lytter på (styring + hurtigtaster) - se keydown-lytteren lenger ned, som
+// preventDefault()-er alle disse for å hindre at nettleseren kaprer kombinasjoner (Ctrl+D, Ctrl+R, ...).
+const GAME_KEY_CODES = new Set([
+    "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE",
+    "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space",
+    "Digit1", "Digit2", "Digit3",
+    "KeyK", "KeyR", "KeyC", "KeyT", "KeyH", "KeyO", "KeyM"
+]);
 
 let renderer, scene, chaseCamera, fpvCamera, vlosCamera, activeCamera;
 let droneGroup, dronePropellers;
@@ -844,7 +852,8 @@ function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness,
 // ---------- Påskeegg på fjelltoppene ----------
 // Små, human-skala overraskelser for den som gidder å fly de 500+ meterne ut dit - synlige/morsomme
 // bare på nært hold, usynlige detaljer på avstand. Ekte meter-skala (ikke skalert med fjellets egen
-// størrelse), akkurat som resten av verden.
+// størrelse), akkurat som resten av verden. Én, distinkt påskeegg per topp - se MOUNTAIN_EASTER_EGGS
+// i buildMountainRange for hvilken builder som hører til hvilken toppindeks.
 function buildNorwegianFlag() {
     const group = new THREE.Group();
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x8a8a8a });
@@ -917,13 +926,144 @@ function buildMountainTroll() {
     return group;
 }
 
+// Ensom turgåer som har nådd toppen - gjenbruker samme figur-bygger som folkemengden/fotgjengerne
+// (buildPersonFigure), som allerede vender mot lokal +Z (samme konvensjon som resten av påskeeggene).
+function buildLoneHiker() {
+    const group = new THREE.Group();
+    group.add(Sim.buildPersonFigure({ vestColor: 0xd97a2b }));
+    const packMat = new THREE.MeshStandardMaterial({ color: 0x3a4a63 });
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.4, 0.16), packMat);
+    pack.position.set(0, 1.05, -0.16); // på ryggen - motsatt av ansiktsretningen (+Z)
+    group.add(pack);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.1, 6), poleMat);
+    pole.position.set(0.3, 0.55, 0.15);
+    pole.rotation.z = 0.15;
+    group.add(pole);
+    return group;
+}
+
+// Geocache - liten "skattekiste" på en stein, referanse til friluftslivs-hobbyen.
+function buildGeocache() {
+    const group = new THREE.Group();
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x6e6a63, flatShading: true });
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0), rockMat);
+    rock.scale.set(1.3, 0.55, 1.1);
+    rock.position.y = 0.12;
+    group.add(rock);
+    const boxMat = new THREE.MeshStandardMaterial({ color: 0x4a5c33 });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.13), boxMat);
+    box.position.set(0.05, 0.3, 0.08);
+    box.rotation.y = 0.3;
+    group.add(box);
+    return group;
+}
+
+// Turskilt med noen retningsarmer - ingen lesbar tekst (samme prinsipp som varden: detaljen leses som
+// "et skilt", ikke bokstaver, på den avstanden dette faktisk sees fra).
+function buildTrailSignpost() {
+    const group = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f });
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.8, 6), woodMat);
+    post.position.y = 0.9;
+    group.add(post);
+    const signMat = new THREE.MeshStandardMaterial({ color: 0xd8c9a3 });
+    [{ y: 1.5, len: 0.55, rot: 0.35 }, { y: 1.35, len: 0.45, rot: -0.6 }, { y: 1.2, len: 0.5, rot: 2.4 }]
+        .forEach(function (s) {
+            const sign = new THREE.Mesh(new THREE.BoxGeometry(s.len, 0.12, 0.02), signMat);
+            sign.position.set(Math.sin(s.rot) * s.len * 0.5, s.y, Math.cos(s.rot) * s.len * 0.5);
+            sign.rotation.y = s.rot;
+            group.add(sign);
+        });
+    return group;
+}
+
+// Snømann med skjerf og hatt - naturlig hjemmehørende på de snødekte toppene.
+function buildSnowman() {
+    const group = new THREE.Group();
+    const snowMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fb });
+    const bottom = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), snowMat);
+    bottom.position.y = 0.34;
+    group.add(bottom);
+    const mid = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), snowMat);
+    mid.position.y = 0.76;
+    group.add(mid);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), snowMat);
+    head.position.y = 1.06;
+    group.add(head);
+    const noseMat = new THREE.MeshStandardMaterial({ color: 0xd9782b });
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.22, 6), noseMat);
+    nose.rotation.x = Math.PI / 2;
+    nose.position.set(0, 1.05, 0.18);
+    group.add(nose);
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x232323 });
+    [0.09, -0.09].forEach(function (dx) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), darkMat);
+        eye.position.set(dx, 1.1, 0.14);
+        group.add(eye);
+    });
+    [0.62, 0.78, 0.92].forEach(function (y) {
+        const button = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), darkMat);
+        button.position.set(0, y, 0.23);
+        group.add(button);
+    });
+    const scarfMat = new THREE.MeshStandardMaterial({ color: 0xba0c2f });
+    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.035, 6, 12), scarfMat);
+    scarf.rotation.x = Math.PI / 2;
+    scarf.position.y = 0.9;
+    group.add(scarf);
+    const hatMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c });
+    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.16, 10), hatMat);
+    hat.position.y = 1.28;
+    group.add(hat);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.02, 10), hatMat);
+    brim.position.y = 1.2;
+    group.add(brim);
+    return group;
+}
+
+// Liten, falurød fjellhytte med gavltak - norsk turhytte-referanse for den høyeste toppen.
+function buildMountainCabin() {
+    const group = new THREE.Group();
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xa33a2c });
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.6), wallMat);
+    wall.position.y = 0.55;
+    group.add(wall);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b });
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(1.25, 0.7, 4), roofMat);
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = 1.45;
+    group.add(roof);
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e6, side: THREE.DoubleSide });
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.6), trimMat);
+    door.position.set(0, 0.35, 0.81);
+    group.add(door);
+    const winPane = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26), trimMat);
+    winPane.position.set(0.45, 0.65, 0.81);
+    group.add(winPane);
+    const chimneyMat = new THREE.MeshStandardMaterial({ color: 0x6b6b6b });
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.4, 0.16), chimneyMat);
+    chimney.position.set(-0.4, 1.65, -0.2);
+    group.add(chimney);
+    return group;
+}
+
 function buildMountainRange() {
     const group = new THREE.Group();
     // Delt for alt (hovedtopp, bi-topper) - fargen kommer utelukkende fra per-vertex-attributtet over,
     // ikke fra materialet, så ett shared material er nok.
     const peakMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 });
-    // Påskeegg på tre utvalgte topper (indeks i MOUNTAIN_DEFS) - se builderne over.
-    const MOUNTAIN_EASTER_EGGS = { 1: buildNorwegianFlag, 3: buildMountainTroll, 6: buildSummitCairn };
+    // Påskeegg på ALLE åtte toppene nå (indeks i MOUNTAIN_DEFS) - se builderne over.
+    const MOUNTAIN_EASTER_EGGS = {
+        0: buildLoneHiker,
+        1: buildNorwegianFlag,
+        2: buildGeocache,
+        3: buildMountainTroll,
+        4: buildTrailSignpost,
+        5: buildSnowman,
+        6: buildSummitCairn,
+        7: buildMountainCabin
+    };
 
     MOUNTAIN_DEFS.forEach(function (m, i) {
         const rad = THREE.MathUtils.degToRad(m.angle);
@@ -4323,7 +4463,11 @@ document.addEventListener("DOMContentLoaded", function () {
         if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
             return;
         }
-        if (["ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space"].indexOf(e.code) !== -1) {
+        // MÅ preventDefault() alle spillets taster (ikke bare Shift/Ctrl/Space) - ellers kan
+        // nettleseren tolke kombinasjonen som sin egen hurtigtast midt i flyging, f.eks.
+        // Ctrl (gass ned) + D (roll høyre) = "Legg til bokmerke", Ctrl+R = last siden på nytt,
+        // Ctrl+W = lukk fanen, Ctrl+T = ny fane osv.
+        if (GAME_KEY_CODES.has(e.code)) {
             e.preventDefault();
         }
         keys.add(e.code);
