@@ -260,6 +260,10 @@ const HEADING_IN = Math.PI;
 // nettopp hjørne-/korreksjons-manøveren i "nese frem" (bremse opp, yawe, rygge/justere, akselerere ut) -
 // hevet til 2.5 fordi selv 1.5 fortsatt utløste avvik under små hastighets-korreksjoner nær et veipunkt.
 const MIN_SPEED_FOR_HEADING_CHECK = 2.5;
+// "Nese frem" avledes fra fartsvektoren, som glipper til korte, forbigående utslag i raske, kontinuerlige
+// svinger (sirkel/åttetall) selv ved korrekt yaw-styring - naturlig sideveis "slip" i banen, ikke en reell
+// feil. Avviket må derfor overstige toleransen sammenhengende i denne varigheten før det telles som avvik.
+const HEADING_FORWARD_SLIP_GRACE_MS = 400;
 
 /* ---------- Øvelser: uforutsette hendelser (ex11) ----------
    Fire uavhengige scenarioer - se egen "Øvelser: killswitch-tilstandsmaskin"-seksjon lenger ned for selve
@@ -2866,6 +2870,7 @@ const exerciseState = {
     violationActive: false, // debounce - teller kun en ny overtredelse på stigende flanke
     engaged: false, // reglene er aktive - settes når første veipunkt nås (løyper) / alltid av for hover
     headingGraceUntil: 0, // nese-sjekken hviler til dette tidspunktet (hjørne-frist, se cornerGraceSec)
+    headingBadSinceMs: null, // tidspunktet nese-frem-avviket sist begynte å overstige toleransen (se HEADING_FORWARD_SLIP_GRACE_MS)
     // Løpende avvik i grader mellom nesa og den sjekkede retningen (mål-yaw i "nese ut"/hover, farts-
     // retning i "nese frem") - null når ikke relevant (for lav fart i nese-frem, landing osv.). Rent
     // informativt HUD-tall, uavhengig av grace/violation-logikken - se updateExercise/updateExerciseHud.
@@ -3073,6 +3078,7 @@ function resetStageProgress() {
     exerciseState.engaged = false;
     exerciseState.hoverHoldSec = 0;
     exerciseState.headingGraceUntil = 0;
+    exerciseState.headingBadSinceMs = null;
     exerciseState.returnRepsCompleted = 0;
     exerciseState.headingErrorDeg = null;
 }
@@ -3651,9 +3657,17 @@ function updateExercise(dt, now) {
             // ellers ville brukt, bare med fartsretningen i stedet for en fast retning.
             const targetYaw = Math.atan2(-droneState.velocity.x, -droneState.velocity.z);
             exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, targetYaw));
-            if (now >= exerciseState.headingGraceUntil) headingViolation = exerciseState.headingErrorDeg > HEADING_TOLERANCE_DEG;
+            const overTolerance = exerciseState.headingErrorDeg > HEADING_TOLERANCE_DEG;
+            if (overTolerance) {
+                if (exerciseState.headingBadSinceMs === null) exerciseState.headingBadSinceMs = now;
+                headingViolation = now >= exerciseState.headingGraceUntil &&
+                    (now - exerciseState.headingBadSinceMs) >= HEADING_FORWARD_SLIP_GRACE_MS;
+            } else {
+                exerciseState.headingBadSinceMs = null;
+            }
         } else {
             exerciseState.headingErrorDeg = null; // for lav fart til at fartsretningen er meningsfull
+            exerciseState.headingBadSinceMs = null;
         }
     }
     const altitudeViolation = !is3d && Math.abs(droneState.position.y - EXERCISE_ALTITUDE) > ALTITUDE_TOLERANCE;
