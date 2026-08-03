@@ -726,9 +726,12 @@
     //   person.traverse(o => o.layers.set(1)); chaseCamera.layers.enable(1); fpvCamera.layers.enable(1);
     function buildPersonFigure(opts) {
         const holdingController = !!(opts && opts.holdingController);
+        // vestColor: lar kalleren variere klesfargen (f.eks. en folkemengde med ulike farger i stedet
+        // for uniform hi-vis-vest) - default uendret fra originalen (VLOS-observatørens oransje vest).
+        const vestColor = (opts && opts.vestColor) || 0xff7a1a;
         const group = new THREE.Group();
         const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0b088 });
-        const vestMat = new THREE.MeshStandardMaterial({ color: 0xff7a1a });
+        const vestMat = new THREE.MeshStandardMaterial({ color: vestColor });
         const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2a3a4a });
         const shoeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
 

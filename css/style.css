@@ -538,13 +538,16 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 
 /* Øvelses-beskrivelse i detaljvisningen: vanlig (ikke kursiv) brødtekst med luftig linjehøyde -
-   .sim-panel-hint er kursiv og beregnet på korte hint, ikke avsnitt. */
+   .sim-panel-hint er kursiv og beregnet på korte hint, ikke avsnitt. white-space:pre-line lar
+   fullDescription-tekstene (js/simulator.js) bryte i avsnitt via \n\n i stedet for å alltid rendres
+   som én sammenhengende tekstblokk - selve elementet settes fortsatt trygt via textContent, ikke innerHTML. */
 .sim-exercise-desc {
     font-style: normal;
     font-size: 0.85rem;
     line-height: 1.55;
     color: #333;
     margin: 8px 0 12px;
+    white-space: pre-line;
 }
 .sim-exercise-detail-title {
     display: flex;
@@ -599,18 +602,36 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     padding: 16px;
     border-radius: 8px;
     /* A4 (210 x 297 mm) - forhåndsvisningen på skjerm skal ha samme form/proporsjoner som papiret man
-       faktisk får ut av "Skriv ut / lagre som PDF" (se @page-regelen i @media print under). */
-    width: 210mm;
-    min-height: 297mm;
-    max-width: 92vw;
-    max-height: 92vh;
+       faktisk får ut av "Skriv ut / lagre som PDF" (se @page-regelen i @media print under). Bredden er
+       det minste av full A4-bredde, 80% av vindusbredden og "80% av vindushøyden regnet om til A4-bredde"
+       - det siste leddet er det som faktisk hindrer overflyt på korte/lave vinduer: med en fast
+       min-height:297mm alene "vinner" den alltid over max-height (CSS-spec), og arket stakk utenfor
+       skjermen på vanlige laptop-skjermer. aspect-ratio lar høyden følge automatisk fra den valgte
+       bredden i stedet, så hele arket alltid skaleres proporsjonalt ned til å faktisk få plass.
+       80 (ned fra 92) gir synlig luft over/under/rundt arket i stedet for at det nesten fyller vinduet. */
+    width: min(210mm, 80vw, calc(80vh * 210 / 297));
+    aspect-ratio: 210 / 297;
+    max-height: 80vh;
     overflow-y: auto;
+    /* flex-direction:column er nødvendig her - .sim-diploma har TO barn (.sim-diploma-border OG
+       .sim-diploma-actions, se HTML), ikke bare rammen. Uten column endte de side ved side (rad er
+       default) og .sim-diploma-actions ble strukket til rammens fulle høyde av align-items:stretch,
+       som igjen strukket knappene inni den loddrett - det var "knappene ble strukket ut"-bugen. */
+    display: flex;
+    flex-direction: column;
 }
 .sim-diploma-border {
     border: 6px double var(--ffi-blue);
     padding: 28px 24px;
     text-align: center;
     color: #222;
+    /* Strekker rammen til full A4-høyde i stedet for at den bare pakker seg tett rundt innholdet (som
+       etterlot mye tomt hvitt under en kort ramme øverst på et langt ark) - innholdet sentreres så
+       loddrett inni den nå høyere rammen. */
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .sim-diploma-icons { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 10px; }
 .sim-diploma-quad { width: 2.6rem; height: 2.6rem; color: var(--ffi-blue); }
@@ -623,6 +644,11 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     border-bottom: 2px solid #999;
     font-size: 1.35rem;
     text-align: center;
+    /* margin:auto sentrerer selve boksen (80% bredde) i sidekant-retningen - .sim-diploma-border ble
+       flex column for å strekke rammen i høyden (se der), og et flex-element med en eksplisitt bredde
+       (ikke auto) strekkes IKKE av align-items:stretch og havner da til venstre uten dette, selv om
+       text-align:center fortsatt sentrerer TEKSTEN inni feltet. */
+    margin: 0 auto;
     width: 80%;
     font-family: inherit;
     padding: 4px;
@@ -645,6 +671,9 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     border-bottom: 1px solid #eee;
 }
 .sim-diploma-time-row span:last-child { font-variant-numeric: tabular-nums; color: var(--ffi-blue); font-weight: 600; }
+/* Totaltid-raden nederst i tabellen - tykkere skillelinje over og fet skrift skiller den fra de vanlige
+   øvelsesradene den summerer (se openDiploma). */
+.sim-diploma-time-total { border-top: 2px solid var(--ffi-blue); border-bottom: none; margin-top: 4px; padding-top: 6px; font-weight: 700; }
 .sim-diploma-date { font-size: 0.85rem; color: #555; margin: 0; }
 .sim-diploma-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
 
@@ -662,7 +691,10 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     }
     /* min-height:0 - skjermforhåndsvisningens 297mm er ment for HELE arket; @page-margin over har
        allerede tatt sin del, så å beholde det målet her ville dyttet innholdet over på et tomt ark 2. */
-    body.printing-diploma .sim-diploma { box-shadow: none; max-width: none; width: 100%; max-height: none; min-height: 0; }
+    body.printing-diploma .sim-diploma {
+        box-shadow: none; max-width: none; width: 100%; max-height: none; min-height: 0;
+        aspect-ratio: auto; overflow: visible;
+    }
     body.printing-diploma .sim-diploma-actions { display: none; }
     body.printing-diploma .sim-diploma-name { border-bottom-color: transparent; }
     body.printing-diploma .sim-diploma-name::placeholder { color: transparent; }

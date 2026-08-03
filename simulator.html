@@ -27,7 +27,7 @@
         </div>
         <div class="sim-crash-banner" id="injuryBanner">
             <i class="fa-solid fa-user-injured sim-injury-icon"></i>
-            <span class="sim-crash-title">AU AU! DU HAR SKADET DEG SELV!</span>
+            <span class="sim-crash-title" id="injuryBannerTitle">AU AU! DU HAR SKADET DEG SELV!</span>
             <span class="sim-crash-hint">Legevakt: 116 117 &middot; Ambulanse: 113</span>
             <span class="sim-crash-hint">R for å restarte</span>
         </div>
@@ -90,7 +90,7 @@
                 <span class="sim-status-label">Nese-feil</span>
                 <span id="exerciseHudHeadingError" class="sim-status-value">-</span>
             </div>
-            <div class="sim-status-item">
+            <div class="sim-status-item" id="exerciseHudTimerItem">
                 <span class="sim-status-label">Tid</span>
                 <span id="exerciseHudTimer" class="sim-status-value">0:00</span>
             </div>
@@ -233,14 +233,14 @@
                 <li><strong>Propellskade</strong><span>Propeller som treffer bakke, vegg eller port skades og mister trekkraft - hardt treff ødelegger helt, lette berøringer akkumulerer. R reparerer</span></li>
                 <li><strong>Veltet drone</strong><span>Ligger den på siden/opp ned kan den ikke rulles opp med pinnene - velter den helt rundt regnes det som krasj (R for reset)</span></li>
                 <li><strong>Skraping</strong><span>Å dra understellet langs bakken i fart er ustabilt - bena hekter, nesa graver seg ned og den velter til slutt</span></li>
-                <li><strong>Piloten</strong><span>Ikke fly i deg selv (figuren ved avgangsplassen) - det gir personskade, ikke bare krasj</span></li>
+                <li><strong>Piloten/folkemengden</strong><span>Ikke fly i deg selv eller inn i folkemengden ved bilen - begge gir personskade, ikke bare krasj</span></li>
                 <li><strong>Realistisk modus</strong><span>Batteri/link i Drone og kamera-panelet; link svekkes med avstand og bak bygget</span></li>
                 <li><strong>Airmode</strong><span>I Drone og kamera-panelet - beholder rull/pitch/yaw-autoritet nær 0 %/100 % gass</span></li>
                 <li><strong>Vind</strong><span>Aktiver i Vær-panelet - stabil vind + kast, vis retning/styrke på vindpølsen</span></li>
                 <li><strong>Fjell/skog/skyer</strong><span>Bakgrunnslandskap uten kollisjon - skyene driver med styrke/retning fra Vær-panelet, der skydekke også justeres</span></li>
                 <li><strong>Racing-bane</strong><span>Stor, slynget løype med porter og en låve du flyr gjennom</span></li>
                 <li><strong>Landingsplasser</strong><span>"H"-merket ved avgangspunktet og på bygningstaket</span></li>
-                <li><strong>M</strong><span>Øvelser - ni treningsøvelser med veiledningslinjer, fra hover og firkant til åttetall i vind</span></li>
+                <li><strong>M</strong><span>Øvelser - elleve treningsøvelser, fra hover og firkant til åttetall i vind og uforutsette hendelser</span></li>
             </ul>
         </div>
 
@@ -295,12 +295,12 @@
                         </svg>
                         <i class="fa-solid fa-award sim-diploma-medal"></i>
                     </div>
-                    <h2>DIPLOM</h2>
+                    <h2>BEKREFTELSE</h2>
                     <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter stikkeferdigheter</p>
-                    <p class="sim-diploma-line">tildeles</p>
+                    <p class="sim-diploma-line">Dette bekrefter at</p>
                     <input type="text" id="diplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
-                    <p class="sim-diploma-text">for å ha bestått alle ti treningsøvelsene i
-                        quadkopter-simulatoren, gjennomført i stabilisert modus (ingen GPS-assistanse).</p>
+                    <p class="sim-diploma-text">har gjennomført simulatortrening og bestått alle elleve
+                        øvelsene i quadkopter-simulatoren, i stabilisert modus (ingen GPS-assistanse).</p>
                     <div class="sim-diploma-times" id="diplomaTimes"></div>
                     <p class="sim-diploma-date" id="diplomaDate"></p>
                 </div>

@@ -260,6 +260,105 @@ const HEADING_IN = Math.PI;
 // hevet til 2.5 fordi selv 1.5 fortsatt utløste avvik under små hastighets-korreksjoner nær et veipunkt.
 const MIN_SPEED_FOR_HEADING_CHECK = 2.5;
 
+/* ---------- Øvelser: uforutsette hendelser (ex11) ----------
+   Fire uavhengige scenarioer - se egen "Øvelser: killswitch-tilstandsmaskin"-seksjon lenger ned for selve
+   kjørelogikken. Kjernepoenget: riktig respons er IKKE alltid killswitch. "crowd" og "traffic" er ekte
+   styringstap (dronen kan ikke reddes ved å styre unna) der kutt er eneste riktige svar. "heli" og
+   "pedestrians" er derimot situasjoner der DRONEN fortsatt er fullt kontrollerbar - der er riktig respons
+   å vike unna og/eller lande, akkurat som i en reell nærsituasjon med bemannet luftfart eller mennesker i
+   flygeområdet; å kutte motorene der (og falle rett ned, ukontrollert) er feil respons.
+   Verken hvilket scenario som kommer eller hva slags respons det krever varsles på forhånd - INGEN
+   melding vises når faren/situasjonen inntreffer (kun EasyReport-lignende tilbakemelding i etterkant ved
+   feil respons, se KILLSWITCH_MESSAGES) - brukeren må selv oppdage og vurdere situasjonen, akkurat som i
+   en reell uforutsett hendelse.
+   "crowd" og "traffic" er kinematisk styrt via en falsk, "spøkelses"-pinneinput som mates inn i den
+   ORDINÆRE fysikken (se applyKillswitchInputOverride, kalt fra updateInput) - dronen ser dermed ut til
+   faktisk å motta (helt gale) pinneutslag og kan ikke korrigeres av spillerens egen input, i stedet for å
+   teleportere langs en fast bane. "heli" og "pedestrians" lar brukeren beholde full kontroll - kun selve
+   faremomentet (helikopteret/fotgjengerne) er scriptet.
+*/
+const KILLSWITCH_TRIGGER_MIN_SEC = 4; // tilfeldig ventetid før noe inntreffer, MENS "liksom"-runden flys
+const KILLSWITCH_TRIGGER_MAX_SEC = 9;
+const KILLSWITCH_FAIL_PAUSE_MS = 2800; // hvor lenge feilmeldingen står før et nytt forsøk klargjøres
+// Etter et vellykket kutt: la fysikken (fritt fall) spille seg ut og vise HVOR droneen faktisk lander/
+// krasjer, i stedet for å hoppe rett til neste scenario midt i fallet.
+const KILLSWITCH_SUCCESS_WATCH_SEC = 4;
+// Kutt SENERE enn denne andelen av rømningsvarigheten (men fortsatt før selve deadline) teller ikke
+// lenger som en trygg/tidsnok respons - uten denne kunne man kutte i aller siste liten, praktisk talt
+// allerede inni faresonen, og fortsatt få det godkjent (se updateKillswitchStage).
+const KILLSWITCH_SAFE_CUTOFF_FRACTION = 0.75;
+// Vises i noen sekunder når en "vente"-fase starter (øvelsesstart, nytt steg, eller nytt forsøk etter
+// feil) - forteller hva brukeren skal gjøre AKKURAT NÅ (fly den vanlige runden), uten å røpe noe om at
+// noe kommer til å skje. Se spawnForExercise/advanceExerciseStage/updateKillswitchStage.
+const KILLSWITCH_PATROL_HINT = "Følg ringen med nesa fremover.";
+
+// Scenario 1: dronen mister styringen og "flyr av seg selv" mot folkemengden ved bilen (CROWD_CENTER).
+const CROWD_RUNAWAY_DURATION_SEC = 3.2;
+const CROWD_TARGET_ALTITUDE = 1.4; // ca. hodehøyde i mengden
+
+// Scenario 2: et helikopter kommer plutselig lavt gjennom området mens brukeren beholder full kontroll -
+// riktig respons er å øke horisontal avstand til flygebanen (vike unna) eller lande, IKKE killswitch
+// (se updateHeliDangerPhase). HELI_SAFE_HORIZ_DISTANCE er bevisst horisontal, ikke 3D-avstand - å bare
+// stå stille og stole på høydeforskjellen til helikopteret skal ikke telle som en gyldig unnamanøver -
+// derfor må HELI_ALTITUDE ligge nær høyden "liksom"-runden FAKTISK flys i for akkurat dette steget
+// (ks-heli.patrolAltitude, høyere enn standard EXERCISE_ALTITUDE=1m - se buildExerciseGuide/
+// updateExerciseGuideVisual), ellers er det aldri reell nærhet i utgangspunktet uansett hva spilleren
+// gjør. Realistisk løst ved å heve "liksom"-runden opp mot en troverdig helikopterhøyde, IKKE ved å
+// dra helikopteret urealistisk lavt ned mot bakkenivå. Verdien er en avveining: for høyt (var 15) og
+// VLOS-kameraet (som følger dronen, se updateVlosCamera) må vippe så bratt oppover for å holde den
+// nære, høytflyvende droneen i bildet at et fjernt, lavere innkommende helikopter havner utenfor
+// synsfeltet - for lavt og det er ingen reell høydeoverlapp i det hele tatt (opprinnelig feil). 6 m
+// holder kameravinkelen nær horisontal (fortsatt synlig langt unna) samtidig som det er tydelig hevet
+// over standardhøyden.
+const HELI_ALTITUDE = 6;
+const HELI_FLIGHT_HALF_LENGTH = 75;
+const HELI_FLIGHT_DURATION_SEC = 5.5;
+const HELI_SAFE_HORIZ_DISTANCE = 10;
+
+// Scenario 3: dronen stikker av oppover mot høyden der et fly krysser (AIRWAY_ALTITUDE, godt over
+// TRAFFIC_DANGER_ALTITUDE - selve terskelen rømningen stoppes ved dersom motorene ikke kuttes i tide).
+const TRAFFIC_DANGER_ALTITUDE = 70;
+const TRAFFIC_CLIMB_DURATION_SEC = 3.4;
+const AIRWAY_ALTITUDE = 95;
+const AIRPLANE_FLIGHT_HALF_LENGTH = 100;
+const AIRPLANE_FLIGHT_DURATION_SEC = 6;
+
+// Scenario 4: noen kommer gående rett mot flygeområdet mens brukeren beholder full kontroll - riktig
+// respons er (som helikopteret) å vike unna og/eller lande, IKKE killswitch. Rolig gangfart (realistisk,
+// ikke noe tidspress). Avgjøres FØRST når fotgjengerne faktisk er ferdige med å gå forbi (samme prinsipp
+// som helikopteret) - IKKE fortløpende, for de starter allerede utenfor sikkerhetsavstanden og en
+// fortløpende sjekk ville da bestått med det samme, før noe reelt har skjedd (se updatePedestrianDangerPhase).
+// Kommer inn langs Z (dypt i feltet -> mot senteret), samme retning/prinsipp som helikopteret - ikke fra
+// siden, som var usynlig helt til de plutselig sto rett ved siden av dronen.
+const PEDESTRIAN_WALK_START_OFFSET = 28; // m - utenfor det typiske kamerabildet
+const PEDESTRIAN_WALK_END_OFFSET = 6;    // m - fortsetter et stykke forbi senteret
+const PEDESTRIAN_WALK_DURATION_SEC = 12;
+const PEDESTRIAN_SAFE_DISTANCE = 10; // m, horisontal - samme resonnement som HELI_SAFE_HORIZ_DISTANCE
+const PEDESTRIAN_SAFE_MAX_SPEED = 2; // m/s - "i kontrollert sveveflukt", ikke bare i ferd med å styrte forbi
+
+// Ingen av meldingene under vises mens noe FAKTISK skjer (se seksjons-kommentaren over) - kun i etterkant,
+// som forklaring når et forsøk mislykkes.
+const KILLSWITCH_MESSAGES = {
+    crowd: {
+        fail: "For sent - dronen traff folkemengden. Nytt forsøk om et øyeblikk...", // aldri kuttet i tide (droneen NÅDDE faktisk frem)
+        failLate: "Du kuttet motorene for sent til at det regnes som en trygg respons. Nytt forsøk om et øyeblikk..." // kuttet, men for nær innpå til å telle - se KILLSWITCH_SAFE_CUTOFF_FRACTION
+    },
+    heli: {
+        failKilled: "Feil respons - dronen var fullt kontrollerbar. Et innflyvende helikopter unngås ved " +
+            "å vike unna eller lande, ikke ved å kutte motorene. Nytt forsøk om et øyeblikk...",
+        failTooClose: "For nær helikopteret! Vik tydelig unna eller land tidligere neste gang. Nytt forsøk om et øyeblikk..."
+    },
+    traffic: {
+        fail: "For sent - konflikt med lufttrafikken. Nytt forsøk om et øyeblikk...",
+        failLate: "Du kuttet motorene for sent til at det regnes som en trygg respons. Nytt forsøk om et øyeblikk..."
+    },
+    pedestrians: {
+        failKilled: "Feil respons - dronen var fullt kontrollerbar. Fotgjengere i området unngås ved å " +
+            "vike unna eller lande, ikke ved å kutte motorene. Nytt forsøk om et øyeblikk...",
+        failTooClose: "For nære fotgjengerne! Vik tydelig unna eller land tidligere neste gang. Nytt forsøk om et øyeblikk..."
+    }
+};
+
 function buildSquareWaypoints(center, halfSide) {
     return [
         { x: center.x - halfSide, z: center.z - halfSide },
@@ -302,10 +401,23 @@ const CIRCLE_WAYPOINTS = buildCircleWaypoints(EXERCISE_CENTER, CIRCLE_RADIUS, CI
 const EIGHT_WAYPOINTS = buildFigureEightWaypoints(EXERCISE_CENTER, EIGHT_HALF_WIDTH, EIGHT_DEPTH, EIGHT_SEGMENTS);
 const ZIGZAG_WAYPOINTS = buildVerticalZigzagWaypoints(EXERCISE_CENTER, ZIGZAG_HALF_WIDTH, ZIGZAG_LOW_Y, ZIGZAG_HIGH_Y);
 const ZIGZAG_WAYPOINTS_REVERSED = ZIGZAG_WAYPOINTS.slice().reverse();
+// "Vente"-fasen i killswitch-øvelsen (ex11) gjenbruker sirkel-runden (samme CIRCLE_WAYPOINTS som ex5/
+// ex6) som en "liksom"-øvelse å faktisk fly mens man venter på at noe skal skje - kjent fra tidligere
+// øvelser, nese-frem-stil (se KILLSWITCH_PATROL_CAPTURE_RADIUS). Rent kosmetisk/uten avviksregler (se
+// updateKillswitchPatrol) - looper bare videre uansett hvor lenge ventetiden varer.
+const KILLSWITCH_PATROL_CAPTURE_RADIUS = 1.3; // samme som ex5/ex6 (se captureRadius-kommentaren der)
+// ks-heli flyr sin "liksom"-runde et godt stykke lenger unna avgangsplassen enn standard-sirkelen (ikke
+// bare høyere, se HELI_ALTITUDE) - med den flydd rett ved avgangsplassen måtte VLOS-kameraet (som følger
+// dronen, se updateVlosCamera) fortsatt vinkle unødvendig bratt oppover selv ved moderat høyde, siden
+// vertikal og horisontal avstand til dronen da var i samme størrelsesorden. Lenger unna gir en flatere,
+// mer horisontal kameravinkel ved samme høyde - viktig for at det innkommende helikopteret (se
+// spawnHelicopterFlight, som bruker samme senter) faktisk skal være synlig idet det nærmer seg.
+const HELI_PATROL_CENTER = new THREE.Vector3(EXERCISE_CENTER.x, 0, EXERCISE_CENTER.z - 20);
+const HELI_PATROL_WAYPOINTS = buildCircleWaypoints(HELI_PATROL_CENTER, CIRCLE_RADIUS, CIRCLE_SEGMENTS);
 
 // Felles beskrivelsestekst-suffiks: reglene er like for alle øvelsene.
-const EXERCISE_RULES_TEXT = " Første avvik gir bare en advarsel; skjer det igjen nullstilles steget " +
-    "og dronen settes tilbake på avgangsplassen (klokka går videre). Droneklassen settes automatisk " +
+const EXERCISE_RULES_TEXT = "\n\nFørste avvik gir bare en advarsel; skjer det igjen nullstilles steget " +
+    "og dronen settes tilbake på avgangsplassen (klokka går videre).\n\nDroneklassen settes automatisk " +
     "til Middels, og du flyr fra VLOS-posisjonen. R restarter hele øvelsen med nullstilt klokke.";
 
 const EXERCISES = {
@@ -318,7 +430,7 @@ const EXERCISES = {
             "først med nesa bort fra deg, så mot venstre, så mot høyre, og til slutt med nesa mot deg. " +
             "Hver retning må holdes i minst " + HOVER_HOLD_SEC + " sekunder innenfor omtrent samme posisjon " +
             "og høyde - driver du ut av området eller mister retningen, nullstilles tiden for gjeldende " +
-            "retning. Pila på bakken viser retningen nesa skal peke. Droneklassen settes automatisk til " +
+            "retning.\n\nPila på bakken viser retningen nesa skal peke.\n\nDroneklassen settes automatisk til " +
             "Middels, og du flyr fra VLOS-posisjonen. R restarter hele øvelsen med nullstilt klokke.",
         stages: [
             { id: "hover-out", label: "Hover - nese ut", type: "hover", headingYaw: LOCKED_HEADING, holdSec: HOVER_HOLD_SEC },
@@ -436,19 +548,41 @@ const EXERCISES = {
         fullDescription: "Dronen henger i lufta langt hjemmefra - bare synlig som en prikk - med " +
             "tilfeldig nese-retning og 6 m/s vind fra en ny, tilfeldig retning hver gang. Etter " +
             "nedtellingen overtar du kontrollen, men først når du har lagt gassen rundt 50 % (hover) - " +
-            "akkurat som en ekte overtakelse. Finn ut hvilken vei nesa peker og hvor vinden kommer fra, " +
+            "akkurat som en ekte overtakelse.\n\nFinn ut hvilken vei nesa peker og hvor vinden kommer fra, " +
             "fly dronen trygt hjem og land på landingsplassen (H). Du må gjennomføre dette " +
             REQUIRED_RETURN_REPS + " ganger (ny tilfeldig posisjon, nese-retning og vindretning hver " +
             "gang) for å bestå - totaltiden for alle " + REQUIRED_RETURN_REPS + " forsøkene lagres i " +
-            "menyen. R gir nytt forsøk fra runde 1 med nullstilt klokke.",
+            "menyen.\n\nR gir nytt forsøk fra runde 1 med nullstilt klokke.",
         wind: { speed: 6, directionDeg: 0, gust: 0.3 },
         randomizeWindDirection: true, // ny tilfeldig retning ved hver spawn (start/runde/R) - se spawnForExercise
         randomizeCloudCoverage: true, // tilfeldig skydekke per runde, men minst én av de tre garantert 100% - se spawnForExercise
         spawn: "far", // spesialspawn: høyt og langt unna med tilfeldig yaw (se spawnForExercise)
         stages: [{ id: "return-home", label: "Returner hjem", type: "return" }]
+    },
+    ex11: {
+        id: "ex11",
+        icon: "fa-triangle-exclamation",
+        label: "11. Uforutsette hendelser",
+        shortDescription: "Fly noen øvelser - underveis kan det skje noe uforutsett. 4 scenarier må bestås.",
+        fullDescription: "Du skal fly noen øvelser - underveis kan det skje noe uforutsett. Riktig " +
+            "reaksjon kan være å fly unna, lande, eller stoppe motorene i lufta. Det er 4 scenarier som " +
+            "må bestås, ett om gangen.\n\nHusk å sette killswitchen på fjernkontrollen din i " +
+            "Fjernkontroll-kalibrering (Innstillinger) - tastatur og skjermknappen virker ikke i denne " +
+            "øvelsen, det er den ekte bryteren som skal trenes.",
+        requiresGamepadKill: true,
+        skipLanding: true, // hver deløvelse ender med motorene kuttet, landet eller trygt unna - ingen vits i å kreve landing på H
+        noTiming: true, // handler om å reagere RIKTIG, ikke raskt - ingen stoppeklokke/bestetid her
+        stages: [
+            { id: "ks-crowd", label: "Rømning mot folkemengden", type: "killswitch", variant: "crowd", runawaySec: CROWD_RUNAWAY_DURATION_SEC },
+            // patrolAltitude: "liksom"-runden flys mye høyere enn vanlig for akkurat dette steget - se
+            // HELI_ALTITUDE-kommentaren (må overlappe reell helikopterhøyde for at nærhet skal bety noe).
+            { id: "ks-heli", label: "Helikopter i lav innflyging", type: "killswitch", variant: "heli", patrolAltitude: HELI_ALTITUDE, patrolWaypoints: HELI_PATROL_WAYPOINTS },
+            { id: "ks-traffic", label: "Rømning mot lufttrafikk", type: "killswitch", variant: "traffic", runawaySec: TRAFFIC_CLIMB_DURATION_SEC },
+            { id: "ks-pedestrians", label: "Fotgjengere nærmer seg", type: "killswitch", variant: "pedestrians" }
+        ]
     }
 };
-const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "ex10"];
+const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "ex10", "ex11"];
 
 // Kun sluttresultat (bestått + beste tid) lagres - all fremdrift underveis (steg/runde/tid/varsler)
 // lever kun i minnet og forsvinner ved sideinnlasting, se exerciseState lenger ned.
@@ -510,7 +644,8 @@ const droneState = {
     batteryPercent: 100,
     grounded: false, // i bakkekontakt denne fysikk-ticken - vind skal ikke drifte den mens den står
     crashed: false, // hard landing (se CRASH_SINK_RATE) - killswitch slår automatisk inn, varsel i HUD
-    injured: false // droneen har truffet VLOS-piloten - eget varsel (legevakt/ambulanse), R for restart
+    injured: false, // droneen har truffet en person (VLOS-pilot eller forbipasserende) - eget varsel (legevakt/ambulanse), R for restart
+    injuredTarget: null // "pilot" | "bystander" - styrer kun bannerteksten, se updateHud
 };
 
 let linkQuality = 1;
@@ -581,6 +716,7 @@ const keys = new Set();
 
 let renderer, scene, chaseCamera, fpvCamera, vlosCamera, activeCamera;
 let droneGroup, dronePropellers;
+let heliHandle, airplaneHandle, pedestrianHandle; // se buildHelicopter/buildAirplane/buildPedestrianGroup - kun brukt av ex11
 const CAMERA_MODES = ["chase", "fpv", "vlos"];
 const CAMERA_MODE_LABELS = { chase: "Chase", fpv: "FPV", vlos: "VLOS" };
 let cameraModeIndex = 0;
@@ -1001,6 +1137,149 @@ function buildCar() {
     return group;
 }
 
+// Folkemengde ved bilen - brukt som "publikum"-faresonen i killswitch-øvelsen (ex11). Gjenbruker
+// Sim.buildPersonFigure (samme figur som VLOS-observatøren) med ulike klesfarger for variasjon i
+// stedet for en egen modell - jitteret er deterministisk (sin/cos av indeksen), samme prinsipp som
+// resten av verdensbyggingen (skog, fjell).
+const CROWD_SHIRT_COLORS = [0x3f6fb0, 0xb0473f, 0x4fae6a, 0xd0a83a, 0x7a4fae, 0xd0703a, 0x3aa8c0];
+const CROWD_CENTER = new THREE.Vector3(15.5, 0, 9.5); // foran bilen (24,0,14), sett fra avgangsplassen - se buildWorldObjects
+// Delt kilde for BÅDE det visuelle jitteret (buildCrowd) og kollisjonssjekken (updateBystanderCollision) -
+// slik at "hvor personene faktisk står" og "hvor de kan bli truffet" aldri kan komme ut av synk.
+const CROWD_MEMBER_OFFSETS = CROWD_SHIRT_COLORS.map(function (_, i) {
+    return { x: Math.sin(i * 12.9) * 1.7, z: Math.cos(i * 7.3) * 1.7 };
+});
+function buildCrowd() {
+    const group = new THREE.Group();
+    CROWD_SHIRT_COLORS.forEach(function (color, i) {
+        const person = Sim.buildPersonFigure({ vestColor: color });
+        const off = CROWD_MEMBER_OFFSETS[i];
+        person.position.set(off.x, 0, off.z);
+        person.rotation.y = (Math.sin(i * 5.1) * 0.5 + 0.5) * Math.PI * 2;
+        group.add(person);
+    });
+    return group;
+}
+
+// Retter et objekt slik at dets lokale -Z-akse (samme "forover er -Z"-konvensjon som droneen selv og
+// buildPlane i fixed-wing-simulatoren) peker langs reisevektoren from->to. Brukt til å snu helikopteret
+// og flyet langs sin egen bane, samme idé som buildStrutBetween sin setFromUnitVectors-teknikk.
+function orientTowardTravel(object3d, from, to) {
+    const dir = new THREE.Vector3().subVectors(to, from).normalize();
+    if (dir.lengthSq() < 1e-8) return;
+    object3d.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
+}
+
+// Enkelt prosedural helikopter - kun brukt som lavtflyvende luftfarts-farescenario i killswitch-øvelsen
+// (ex11), ikke en flybar enhet. Skala/detaljnivå er tilpasset å leses tydelig fra bakken på ~15 m høyde,
+// ikke et nærbilde-objekt. rotor/tailRotor-håndtakene brukes til å spinne rotorene i updateKillswitchVisuals.
+function buildHelicopter() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcc4422 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0x223040, transparent: true, opacity: 0.75 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+
+    const fuselage = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), bodyMat);
+    fuselage.scale.set(1, 0.75, 1.7);
+    group.add(fuselage);
+
+    const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), glassMat);
+    canopy.scale.set(1, 0.8, 1.1);
+    canopy.position.set(0, 0.15, -0.9); // nese/cockpit fremover, lokal -Z
+    group.add(canopy);
+
+    const tailBoom = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.32, 3.4, 8), bodyMat);
+    tailBoom.rotation.x = Math.PI / 2;
+    tailBoom.position.set(0, 0.15, 2.6); // hale bakover, lokal +Z
+    group.add(tailBoom);
+
+    const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.7), bodyMat);
+    tailFin.position.set(0, 0.75, 4.1);
+    group.add(tailFin);
+    // Halerotor - flat, halvgjennomsiktig skive i stedet for animerte blad (for langt unna til at
+    // enkeltblad ville vært synlige uansett - antyder bevegelsesuskarphet uten animasjonskostnad).
+    const tailRotorDisc = new THREE.Mesh(new THREE.CircleGeometry(0.5, 12), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.35 }));
+    tailRotorDisc.rotation.y = Math.PI / 2;
+    tailRotorDisc.position.set(0.1, 0.75, 4.15);
+    group.add(tailRotorDisc);
+
+    [-0.75, 0.75].forEach(function (side) {
+        const skid = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 3.4, 6), darkMat);
+        skid.rotation.x = Math.PI / 2;
+        skid.position.set(side, -0.75, 0);
+        group.add(skid);
+    });
+
+    const rotorHub = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.15, 8), darkMat);
+    rotorHub.position.set(0, 0.85, -0.2);
+    group.add(rotorHub);
+    const mainRotor = new THREE.Group();
+    mainRotor.position.copy(rotorHub.position);
+    [0, Math.PI / 2].forEach(function (a) {
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.03, 0.18), darkMat);
+        blade.rotation.y = a;
+        mainRotor.add(blade);
+    });
+    group.add(mainRotor);
+
+    group.traverse(function (obj) { if (obj.isMesh) obj.castShadow = true; });
+    group.visible = false;
+    return { group: group, rotor: mainRotor };
+}
+
+// Enkelt prosedural fly (liten rutefly-/transportsilhuett) - samme "kun leselig som fjern silhuett"-
+// ambisjon som buildHelicopter, brukt som lufttrafikk-farescenario høyt oppe i ex11.
+function buildAirplane() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe8e8ec });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0x2255aa });
+
+    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.35, 8, 10), bodyMat);
+    fuselage.rotation.x = Math.PI / 2;
+    group.add(fuselage);
+
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.2, 10), bodyMat);
+    nose.rotation.x = Math.PI / 2;
+    nose.position.z = -4.6; // nese fremover, lokal -Z
+    group.add(nose);
+
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(11, 0.15, 1.6), accentMat);
+    wing.position.set(0, -0.1, -0.3);
+    group.add(wing);
+
+    const tailWing = new THREE.Mesh(new THREE.BoxGeometry(4, 0.12, 1), accentMat);
+    tailWing.position.set(0, 0.3, 3.7);
+    group.add(tailWing);
+
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.4, 1.4), accentMat);
+    fin.position.set(0, 0.9, 3.9);
+    group.add(fin);
+
+    group.traverse(function (obj) { if (obj.isMesh) obj.castShadow = true; });
+    group.visible = false;
+    return group;
+}
+
+// Et par fotgjengere som går rett mot flygeområdet - scenario 4 i killswitch-øvelsen (ex11). Gjenbruker
+// Sim.buildPersonFigure (samme figur som folkemengden/VLOS-observatøren), to farger for litt variasjon.
+function buildPedestrianGroup() {
+    const group = new THREE.Group();
+    [-1, 1].forEach(function (side) {
+        const person = Sim.buildPersonFigure({ vestColor: side < 0 ? 0x3f6fb0 : 0xb0473f });
+        person.position.x = side * 0.9;
+        group.add(person);
+    });
+    group.visible = false;
+    return group;
+}
+
+// Samme idé som orientTowardTravel, men for Sim.buildPersonFigure - den er bygget med front mot LOKAL
+// +Z (se kommentaren ved figurens VLOS-bruk i initScene: "figuren bygges med tærne mot +Z"), motsatt av
+// kjøretøy-konvensjonen (-Z) orientTowardTravel selv bruker. Snur derfor et halvt ekstra hjørne.
+function orientPersonGroupTowardTravel(object3d, from, to) {
+    orientTowardTravel(object3d, from, to);
+    object3d.rotateY(Math.PI);
+}
+
 // buildLandingPad: se Sim.buildLandingPad i simulator-common.js.
 
 // Verdenskonstanter for bygget - gjenbrukt av linje-i-sikt-sjekken for Realistisk modus (lenger ned).
@@ -1028,7 +1307,7 @@ const SOLID_COLLIDERS = [
         minZ: BUILDING_POSITION.z - BUILDING_SIZE.depth / 2, maxZ: BUILDING_POSITION.z + BUILDING_SIZE.depth / 2,
         topY: BUILDING_SIZE.height
     },
-    { minX: 10 - 2.33, maxX: 10 + 2.33, minZ: 7 - 1.58, maxZ: 7 + 1.58, topY: 1.7 }
+    { minX: 24 - 2.33, maxX: 24 + 2.33, minZ: 14 - 1.58, maxZ: 14 + 1.58, topY: 1.7 } // bilen, se buildWorldObjects
 ];
 
 function solidSurfaceHeightAt(x, z) {
@@ -1299,9 +1578,17 @@ function buildWorldObjects() {
     group.add(spawnPad); // ved avgangsplassen (0,0,0)
 
     const car = buildCar();
-    car.position.set(10, 0, 7);
+    // Flyttet lenger unna langs samme retning som folkemengden (CROWD_CENTER), i stedet for å stå
+    // nærmere kameraet/avgangsplassen enn den - da havnet bilen omtrent i siktlinjen og skjulte
+    // folkemengden bak seg. Nå står bilen bak mengden sett fra avgangsplassen: folkemengden er alltid
+    // det nærmeste/synlige elementet, bilen bare et landemerke lenger bak.
+    car.position.set(24, 0, 14);
     car.rotation.y = THREE.MathUtils.degToRad(20);
     group.add(car);
+
+    const crowd = buildCrowd();
+    crowd.position.copy(CROWD_CENTER);
+    group.add(crowd);
 
     const building = buildBuilding();
     building.position.set(-35, 0, -35);
@@ -1555,6 +1842,15 @@ function initScene() {
     chaseCamera.layers.enable(1);
     fpvCamera.layers.enable(1);
 
+    // Helikopter/fly for killswitch-øvelsen (ex11) - bygget én gang og gjenbrukt, skjult (visible=false)
+    // helt til en fare-sekvens faktisk starter (se spawnHelicopterFlight/spawnAirplaneFlight).
+    heliHandle = buildHelicopter();
+    scene.add(heliHandle.group);
+    airplaneHandle = buildAirplane();
+    scene.add(airplaneHandle);
+    pedestrianHandle = buildPedestrianGroup();
+    scene.add(pedestrianHandle);
+
     activeCamera = chaseCamera;
     resizeRenderer();
 }
@@ -1608,7 +1904,7 @@ const readThrottleAxis = Sim.readThrottleAxis;
 // Se Sim.createButtonBindingManager i simulator-common.js for læringsflyten (bryter kan komme
 // som HID-knapp eller som en akse - fungerer med enhver sender i USB-joystick-modus).
 const BUTTON_ACTIONS = {
-    kill: toggleKill,
+    kill: function () { toggleKill("gamepad"); },
     modeAcro: function () { droneState.flightMode = "acro"; },
     modeStabilized: function () { droneState.flightMode = "stabilized"; },
     modeAltHold: function () { droneState.flightMode = "althold"; }
@@ -1625,6 +1921,7 @@ function updateInput(dt) {
     if (dropChance > 0 && Math.random() < dropChance) {
         // Simulerer tapt kontrollpakke pga svak/tapt link - pinnene beholder forrige verdi.
         updateGamepadAxesReadout(gp);
+        applyKillswitchInputOverride();
         return;
     }
 
@@ -1635,6 +1932,7 @@ function updateInput(dt) {
         inputState.stick.yaw = readStickAxis(gp, gamepadMap.yaw);
         inputState.stick.throttle = readThrottleAxis(gp, gamepadMap.throttle);
         updateGamepadAxesReadout(gp);
+        applyKillswitchInputOverride();
         return;
     }
     inputState.source = "keyboard";
@@ -1650,6 +1948,10 @@ function updateInput(dt) {
     if (keys.has("ControlLeft") || keys.has("ControlRight")) throttle -= THROTTLE_RATE * dt;
     inputState.stick.throttle = clamp(throttle, 0, 1);
     updateGamepadAxesReadout(null);
+    // Kontrolltap (ex11, crowd/traffic): overstyrer stick-verdiene satt over med en falsk kommando mot
+    // faresonen HVIS en slik rømning faktisk pågår akkurat nå - se applyKillswitchInputOverride. Må stå
+    // sist i updateInput (etter ekte tastatur/gamepad-lesing over) for faktisk å nå frem til fysikken.
+    applyKillswitchInputOverride();
 }
 
 // Batteri + linkkvalitet (avstand fra avgangsplassen + siktlinje mot bygget). Kun aktivt i Realistisk modus.
@@ -1867,6 +2169,7 @@ function stepPhysics(dt) {
 
     updatePropStrikes(dt, impactVelocity);
     updatePilotCollision();
+    updateBystanderCollision();
 }
 
 function droneHasLandingLegs(classKey) {
@@ -2212,7 +2515,39 @@ function updatePilotCollision() {
     const dz = droneState.position.z - PILOT_POSITION.z;
     if (Math.hypot(dx, dz) > PILOT_HIT_RADIUS + reach) return;
     droneState.injured = true;
+    droneState.injuredTarget = "pilot";
     droneState.armed = false;
+}
+
+// Samme personskade-mekanikk som updatePilotCollision, men for folkemengden ved bilen (alltid i verden,
+// se buildWorldObjects) og fotgjengerne i "Uforutsette hendelser" (ex11, kun til stede mens de faktisk
+// går - se pedestrianHandle). injuredTarget styrer kun BANNERTEKSTEN (se updateHud) - selve konsekvensen
+// (disarm + varsel + R for restart) er identisk med å treffe VLOS-piloten.
+function updateBystanderCollision() {
+    if (droneState.injured) return;
+    const spec = currentDroneSpec();
+    const reach = (DRONE_ARM_LENGTH + bladeLengthForClass(droneState.droneClass) / 2) * spec.visualScale;
+    if (droneState.position.y > PILOT_HEIGHT + reach) return;
+    for (let i = 0; i < CROWD_MEMBER_OFFSETS.length; i++) {
+        const off = CROWD_MEMBER_OFFSETS[i];
+        const dx = droneState.position.x - (CROWD_CENTER.x + off.x);
+        const dz = droneState.position.z - (CROWD_CENTER.z + off.z);
+        if (Math.hypot(dx, dz) <= PILOT_HIT_RADIUS + reach) {
+            droneState.injured = true;
+            droneState.injuredTarget = "bystander";
+            droneState.armed = false;
+            return;
+        }
+    }
+    if (pedestrianHandle && pedestrianHandle.visible) {
+        const dx = droneState.position.x - pedestrianHandle.position.x;
+        const dz = droneState.position.z - pedestrianHandle.position.z;
+        if (Math.hypot(dx, dz) <= PILOT_HIT_RADIUS + reach) {
+            droneState.injured = true;
+            droneState.injuredTarget = "bystander";
+            droneState.armed = false;
+        }
+    }
 }
 
 function resetDrone() {
@@ -2229,6 +2564,7 @@ function resetDrone() {
     inputState.stick.throttle = 0;
     droneState.batteryPercent = 100;
     droneState.injured = false;
+    droneState.injuredTarget = null;
     groundContactBlend = 0;
     repairAllProps(); // reset er også "propellbytte"
     // Sett direkte i ro på avgangsplassen (samme utregning som settleDroneOnGround) - tidligere ble
@@ -2238,10 +2574,43 @@ function resetDrone() {
     settleDroneOnGround();
 }
 
-function toggleKill() {
+// source: "keyboard" | "button" (skjermknappen) | "gamepad" - brukt til å håndheve requiresGamepadKill
+// (ex11): den øvelsen skal trene bruken av den FYSISKE bryteren på senderen, så tastatur/skjermknapp
+// blokkeres bevisst mens den er aktiv (se BUTTON_ACTIONS.kill/keydown/armToggleBtn for kallerne).
+function toggleKill(source) {
     if (droneState.crashed || droneState.injured) return; // må resettes (R) etter krasj/personskade
     if (exerciseState.awaitingNext) return; // fryst etter bestått øvelse - se completeExercise
+    if (exerciseState.active && source !== "gamepad") {
+        const exercise = EXERCISES[exerciseState.exerciseId];
+        if (exercise && exercise.requiresGamepadKill) {
+            exerciseState.warningMessage = "Bruk den fysiske kill-knappen på fjernkontrollen for denne øvelsen.";
+            exerciseState.warningUntil = performance.now() + 2000;
+            exerciseState.warningIsSuccess = false;
+            return;
+        }
+    }
     droneState.armed = !droneState.armed;
+}
+
+function isGamepadKillBound() {
+    return getActiveGamepad() != null && gamepadMap.buttons.kill !== null;
+}
+
+// Kort statustekst for gjeldende killswitch-fase - delt mellom øvelsesdetaljvisningen (showExerciseDetail)
+// og HUD-linjen (updateExerciseHud).
+function killswitchStatusText() {
+    // Bevisst nøytral, uansett fase (se seksjonskommentaren over EXERCISES.ex11) - "danger" nevnes ikke
+    // med ord her heller, det skal oppdages i selve 3D-scenen, ikke leses av HUD-en.
+    if (exerciseState.ksPhase === "pending-respawn") return "Klargjør nytt forsøk...";
+    if (exerciseState.ksPhase === "resolved") return "Følger konsekvensen...";
+    return "Flyr...";
+}
+
+// Stegnavnet ("Rømning mot folkemengden" osv.) ville spoilet hvilket scenario som kommer/pågår - vises
+// derfor kun som et nøytralt løpenummer i HUD/menyen (stage.label brukes fortsatt internt til logikk/
+// feilmeldinger, bare ikke vist frem før/mens det skjer).
+function killswitchDisplayLabel() {
+    return "Scenario " + (exerciseState.stageIndex + 1);
 }
 
 function toggleCamera() {
@@ -2281,13 +2650,21 @@ const hudBattery = document.getElementById("hudBattery");
 const hudLink = document.getElementById("hudLink");
 const crashBanner = document.getElementById("crashBanner");
 const injuryBanner = document.getElementById("injuryBanner");
+const injuryBannerTitle = document.getElementById("injuryBannerTitle");
+const INJURY_TITLES = {
+    pilot: "AU AU! DU HAR SKADET DEG SELV!",
+    bystander: "DU HAR SKADET EN PERSON I PUBLIKUM!"
+};
 
 function updateHud() {
     hudMode.textContent = MODE_LABELS[droneState.flightMode];
     hudArmed.textContent = droneState.injured ? "Skadet" : (droneState.crashed ? "Krasjet" : (droneState.armed ? "Armed" : "Killed"));
     hudArmed.className = "sim-status-value " + ((droneState.armed && !droneState.crashed && !droneState.injured) ? "sim-armed" : "sim-killed");
     // Personskade-varselet vinner over det vanlige krasj-varselet (droneen kan godt hard-lande ETTER
-    // at den har truffet piloten - da er det fortsatt personskaden som er poenget).
+    // at den har truffet noen - da er det fortsatt personskaden som er poenget). Tittelen varierer med
+    // HVEM som ble truffet (se updatePilotCollision/updateBystanderCollision) - å treffe en forbipasserende
+    // er ikke "du har skadet deg selv".
+    if (droneState.injured) injuryBannerTitle.textContent = INJURY_TITLES[droneState.injuredTarget] || INJURY_TITLES.pilot;
     injuryBanner.classList.toggle("show", droneState.injured);
     crashBanner.classList.toggle("show", droneState.crashed && !droneState.injured);
     hudInput.textContent = inputState.source === "gamepad" ? "Gamepad" : "Tastatur";
@@ -2487,7 +2864,28 @@ const exerciseState = {
     savedCameraModeIndex: 0,
     savedWind: null, // vind-innstillingene slik de var før en vind-øvelse tvang sine egne (ex9)
     savedClouds: null, // sky-innstillingene slik de var før en øvelse tvang sitt eget skydekke (ex10)
-    returnFullCloudRep: 0 // "Returner hjem": hvilken runde (0-basert) som garantert får 100% skydekke
+    returnFullCloudRep: 0, // "Returner hjem": hvilken runde (0-basert) som garantert får 100% skydekke
+
+    // Killswitch-scenarioene (ex11) - se "Øvelser: killswitch-tilstandsmaskin" lenger ned.
+    ksPhase: null, // null | "wait" | "danger" | "resolved" | "pending-respawn" - se killswitch-tilstandsmaskinen
+    ksEngaged: false, // "wait": har nådd "liksom"-runden minst én gang - se updateKillswitchPatrol
+    ksTriggerAt: 0, // "wait": 0 (ikke rullet) eller tidspunkt hendelsen inntreffer. "danger": tidspunkt den INNTRAFF (start for baneutregning)
+    ksDeadlineAt: 0, // "danger" (crowd/traffic): absolutt siste tidspunkt motorene må kuttes innen
+    ksSafeCutoffAt: 0, // "danger" (crowd/traffic): kutt ETTER dette teller ikke lenger som tidsnok - se KILLSWITCH_SAFE_CUTOFF_FRACTION
+    ksRespawnAt: 0, // "pending-respawn"/"resolved": tidspunkt et nytt forsøk/neste steg klargjøres
+    ksRunawayFrom: new THREE.Vector3(),
+    ksRunawayTo: new THREE.Vector3(),
+    ksHeliFrom: new THREE.Vector3(),
+    ksHeliTo: new THREE.Vector3(),
+    ksHeliStartTime: 0,
+    ksAirplaneFrom: new THREE.Vector3(),
+    ksAirplaneTo: new THREE.Vector3(),
+    ksAirplaneStartTime: 0,
+    ksPedestrianFrom: new THREE.Vector3(),
+    ksPedestrianTo: new THREE.Vector3(),
+    ksPedestrianStartTime: 0,
+    ksPatrolIndex: 0, // "vente"-fasens "liksom"-runde (gjenbruker CIRCLE_WAYPOINTS) - rent kosmetisk
+    ksSavedFlightMode: null // flightMode midlertidig tvunget til Stabilized under crowd/traffic-rømning
 };
 let exerciseGuideHandle = null;
 
@@ -2561,6 +2959,15 @@ function buildExerciseGuide(stage) {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(HOVER_CENTER.x, 0.05, HOVER_CENTER.z);
         group.add(ring);
+    } else if (stage.type === "killswitch") {
+        // "Vente"-fasens "liksom"-øvelse gjenbruker sirkel-runden (se updateKillswitchPatrol) - samme
+        // veiledningsløkke som ex5/ex6, så det faktisk ser ut som en ordentlig øvelse å fly. Enkelte steg
+        // (ks-heli) flyr denne mye høyere OG lenger unna enn standard - se patrolAltitude/patrolWaypoints
+        // og HELI_ALTITUDE/HELI_PATROL_CENTER-kommentarene.
+        const patrolAlt = stage.patrolAltitude || EXERCISE_ALTITUDE;
+        const patrolWp = stage.patrolWaypoints || CIRCLE_WAYPOINTS;
+        group.add(buildLoopStruts(patrolWp, patrolAlt, 0.08, guideMat));
+        group.add(buildLoopStruts(stripWaypointY(patrolWp), 0.05, 0.06, groundMat));
     } else if (stage.type !== "return") {
         // "Returner hjem" har ingen løype/veiledning - hele poenget er å finne hjem selv; markøren
         // (under) pulserer over H-plassen som mål.
@@ -2587,6 +2994,17 @@ function rebuildExerciseGuide() {
 function updateExerciseGuideVisual(now) {
     if (!exerciseState.active || !exerciseGuideHandle) return;
     const stage = getExerciseStage();
+    if (stage.type === "killswitch") {
+        // Markøren vises/animeres UAVHENGIG av ksPhase (aldri skjult/vist basert på fase) - å slå den av
+        // akkurat idet noe inntreffer var selv et tydelig "nå skjer det"-signal (markøren forsvant et
+        // øyeblikk før hendelsen ble synlig), stikk i strid med at brukeren skal oppdage alt selv. Den
+        // fryser ganske enkelt på siste patruljepunkt når updateKillswitchPatrol slutter å oppdatere
+        // ksPatrolIndex (utenfor "wait") - det gir ikke bort noe i seg selv.
+        const wp = (stage.patrolWaypoints || CIRCLE_WAYPOINTS)[exerciseState.ksPatrolIndex];
+        exerciseGuideHandle.nextWaypointMarker.position.set(wp.x, stage.patrolAltitude || EXERCISE_ALTITUDE, wp.z);
+        exerciseGuideHandle.nextWaypointMarker.scale.setScalar(0.85 + Math.sin(now / 200) * 0.15);
+        return;
+    }
     if (stage.type === "hover") {
         exerciseGuideHandle.nextWaypointMarker.position.set(HOVER_CENTER.x, HOVER_ALTITUDE, HOVER_CENTER.z);
     } else if (stage.type === "return") {
@@ -2636,12 +3054,14 @@ function allExercisesPassed() {
 // Kalles ved landing på H-plassen i landingsfasen: stopp klokka, lagre bestått/bestetid (synlig i
 // øvelsesmenyen), og vis oppsummeringskortet med tid, ros og valg om å gå videre til neste øvelse.
 function completeExercise() {
-    const elapsedSec = (performance.now() - exerciseState.startTime) / 1000;
     const exerciseId = exerciseState.exerciseId;
+    const noTiming = !!EXERCISES[exerciseId].noTiming;
+    const elapsedSec = (performance.now() - exerciseState.startTime) / 1000;
     const progress = exerciseProgress[exerciseId];
     const wasAllPassedBefore = allExercisesPassed();
-    const isNewBest = progress.bestTimeSec === null || elapsedSec < progress.bestTimeSec;
-    const isNearBest = !isNewBest && elapsedSec < progress.bestTimeSec * 1.2;
+    // "Uforutsette hendelser" (ex11) handler om riktig respons, ikke fart - ingen bestetid å slå der.
+    const isNewBest = !noTiming && (progress.bestTimeSec === null || elapsedSec < progress.bestTimeSec);
+    const isNearBest = !noTiming && !isNewBest && elapsedSec < progress.bestTimeSec * 1.2;
     progress.passed = true;
     if (isNewBest) progress.bestTimeSec = elapsedSec;
     saveExerciseProgress();
@@ -2665,17 +3085,20 @@ function showExerciseSummary(exerciseId, elapsedSec, isNewBest, isNearBest, just
     const nextBtn = document.getElementById("exerciseNextBtn");
     const closeBtn = document.getElementById("exerciseSummaryCloseBtn");
 
+    const noTiming = !!EXERCISES[exerciseId].noTiming;
     title.textContent = justCompletedAll ? "Gratulerer - alle øvelser bestått!"
         : (isNewBest ? "Gratulerer - ny bestetid!" : (isNearBest ? "Bra jobba!" : "Øvelse fullført"));
-    let line = EXERCISES[exerciseId].label + " bestått på " + formatExerciseTime(elapsedSec) + ".";
-    if (!isNewBest) line += " Beste tid: " + formatExerciseTime(exerciseProgress[exerciseId].bestTimeSec) + ".";
-    if (justCompletedAll) line += " Du har nå fullført samtlige øvelser - diplomet ditt venter!";
+    let line = noTiming
+        ? EXERCISES[exerciseId].label + " bestått."
+        : EXERCISES[exerciseId].label + " bestått på " + formatExerciseTime(elapsedSec) + ".";
+    if (!noTiming && !isNewBest) line += " Beste tid: " + formatExerciseTime(exerciseProgress[exerciseId].bestTimeSec) + ".";
+    if (justCompletedAll) line += " Du har nå fullført samtlige øvelser - bekreftelsen din venter!";
     text.textContent = line;
 
     if (justCompletedAll) {
         // Ferdig med alt - "Neste" gir ikke lenger mening som hovedvalg, lede rett til diplomet i stedet.
         nextBtn.style.display = "none";
-        closeBtn.textContent = "Se diplomet";
+        closeBtn.textContent = "Se bekreftelsen";
         closeBtn.onclick = function () {
             summary.style.display = "none";
             stopExercise();
@@ -2709,14 +3132,334 @@ function advanceExerciseStage() {
     resetStageProgress();
     const exercise = EXERCISES[exerciseState.exerciseId];
     if (exerciseState.stageIndex >= exercise.stages.length) {
+        // Killswitch-scenarioene (ex11) ender alle med motorene kuttet - ingen vits i å kreve at
+        // brukeren flyr (den nå disarmede) droneen hjem til H-plassen, i motsetning til de andre
+        // øvelsene. Fullfør rett ut i stedet for å gå via enterLandingPhase().
+        if (exercise.skipLanding) { completeExercise(); return; }
         enterLandingPhase();
         return;
     }
-    // Popup i 5 sekunder: kvitter for fullført deløvelse og forteller hva som er neste oppgave.
-    exerciseState.warningMessage = "Fullført! Neste: " + exercise.stages[exerciseState.stageIndex].label;
+    const nextStage = exercise.stages[exerciseState.stageIndex];
+    // Popup i 5 sekunder: kvitter for fullført deløvelse og forteller hva som er neste oppgave. Bruker
+    // et nøytralt løpenummer for killswitch-steg (stage.label ville spoilet neste scenario).
+    exerciseState.warningMessage = "Fullført! Neste: " +
+        (nextStage.type === "killswitch" ? killswitchDisplayLabel() : nextStage.label) +
+        (nextStage.type === "killswitch" ? " - " + KILLSWITCH_PATROL_HINT : "");
     exerciseState.warningUntil = performance.now() + 5000;
     exerciseState.warningIsSuccess = true;
     rebuildExerciseGuide();
+    if (nextStage.type === "killswitch") spawnKillswitchStage(nextStage);
+}
+
+/* ---------- Øvelser: killswitch-tilstandsmaskin (ex11) ----------
+   Hvert steg går gjennom exerciseState.ksPhase: "wait" (tilfeldig ventetid mens patruljeruten flys,
+   se updateKillswitchPatrol) -> "danger" (noe har inntruffet) -> enten "resolved" (riktig respons -
+   kort pause så konsekvensen (fritt fall/landing) rekker å vises, se KILLSWITCH_SUCCESS_WATCH_SEC, før
+   advanceExerciseStage) eller "pending-respawn" (feil respons/for sent - kort feilmelding, så et helt
+   nytt forsøk på SAMME steg via spawnKillswitchStage).
+   "crowd"/"traffic": ekte styringstap. Posisjonen er kinematisk scriptet (samme frys-teknikk som
+   "Returner hjem"), MEN spillerens stick-input overstyres i tillegg med en falsk "spøkelses"-input inn i
+   den ORDINÆRE fysikk-loopen (se applyKillswitchInputOverride, kalt fra updateInput) - dronen tipper/
+   akselererer synlig som om den faktisk (feil-)styres, og spillerens egen pinne har null effekt. Kun
+   kill (armed=false) stopper det.
+   "heli"/"pedestrians": dronen er IKKE scriptet - brukeren beholder full kontroll og skal selv vike
+   unna/lande. Kutt av motorene her er feil respons (se updateHeliDangerPhase/updatePedestrianDangerPhase).
+*/
+function spawnKillswitchStage(stage) {
+    // Vanlig bakkespawn (som alle andre øvelser) - resetDrone() setter den armert og i ro på
+    // avgangsplassen. Spilleren tar av selv, akkurat som ellers - ingen airborne-teleportering her.
+    resetDrone();
+    exerciseState.ksPhase = "wait";
+    exerciseState.ksPatrolIndex = 0;
+    exerciseState.ksSavedFlightMode = null;
+    // Rulles IKKE inn her - ventetiden starter først når runden faktisk er nådd (ksEngaged, se
+    // updateKillswitchPatrol/updateKillswitchStage). Uten dette kunne en hendelse utløses mens
+    // spilleren fortsatt sto på bakken/nettopp hadde lettet, lenge før de var i nærheten av runden.
+    exerciseState.ksEngaged = false;
+    exerciseState.ksTriggerAt = 0;
+    if (heliHandle) heliHandle.group.visible = false;
+    if (airplaneHandle) airplaneHandle.visible = false;
+    if (pedestrianHandle) pedestrianHandle.visible = false;
+}
+
+function respawnKillswitchAttempt(now, message) {
+    exerciseState.ksPhase = "pending-respawn";
+    exerciseState.warningMessage = message;
+    exerciseState.warningUntil = now + KILLSWITCH_FAIL_PAUSE_MS;
+    exerciseState.warningIsSuccess = false;
+    exerciseState.ksRespawnAt = now + KILLSWITCH_FAIL_PAUSE_MS;
+}
+
+function restoreKillswitchFlightMode() {
+    if (exerciseState.ksSavedFlightMode) {
+        droneState.flightMode = exerciseState.ksSavedFlightMode;
+        exerciseState.ksSavedFlightMode = null;
+    }
+}
+
+// "Vente"-fasen: gjenbruker sirkel-runden (CIRCLE_WAYPOINTS, samme som ex5/ex6) som en "liksom"-øvelse
+// å faktisk fly mens man venter - rent kosmetisk (ingen avvik/runder telles), looper i det uendelige.
+// Første fangst setter ksEngaged (se updateKillswitchStage) - ventetiden til selve hendelsen starter
+// ikke å telle før spilleren faktisk har nådd runden. Krever både at droneen er i lufta OG i riktig
+// høyde (ikke bare horisontal avstand) - spawnpunktet (avgangsplassen, 0,0,0) ligger i seg selv bare
+// ~1 m unna sirkelens nærmeste punkt horisontalt, så uten høydekravet kunne "nådd runden" trigges mens
+// droneen fortsatt sto stille på bakken (eller rett etter lettoff, lenge før den nådde f.eks. den høye
+// ks-heli-ringen på 15 m).
+function updateKillswitchPatrol(stage) {
+    if (droneState.grounded) return;
+    const targetAlt = stage.patrolAltitude || EXERCISE_ALTITUDE;
+    if (Math.abs(droneState.position.y - targetAlt) > 3) return;
+    const patrolWp = stage.patrolWaypoints || CIRCLE_WAYPOINTS;
+    const wp = patrolWp[exerciseState.ksPatrolIndex];
+    const dx = droneState.position.x - wp.x, dz = droneState.position.z - wp.z;
+    if (Math.hypot(dx, dz) < KILLSWITCH_PATROL_CAPTURE_RADIUS) {
+        exerciseState.ksEngaged = true;
+        exerciseState.ksPatrolIndex = (exerciseState.ksPatrolIndex + 1) % patrolWp.length;
+    }
+}
+
+function spawnHelicopterFlight() {
+    // Alltid FRA dypt i feltet (samme retning kameraet peker, se konstant-kommentaren) og INN mot
+    // piloten - ikke tilfeldig retning som før (som halve gangene lot den dukke opp rett ved siden av
+    // spilleren i stedet for synlig langt unna). Litt sidevariasjon (X) for at det ikke skal se
+    // identisk ut hver gang.
+    // Sentrert på HELI_PATROL_CENTER (samme senter som ringen spilleren faktisk flyr, se
+    // HELI_PATROL_WAYPOINTS) - ikke EXERCISE_CENTER, ellers ville innflygingen passert et helt annet
+    // sted enn der spilleren praktisk talt befinner seg.
+    const x = HELI_PATROL_CENTER.x + (Math.random() * 2 - 1) * 8;
+    exerciseState.ksHeliFrom.set(x, HELI_ALTITUDE, HELI_PATROL_CENTER.z - HELI_FLIGHT_HALF_LENGTH);
+    exerciseState.ksHeliTo.set(x, HELI_ALTITUDE, HELI_PATROL_CENTER.z + 15);
+    exerciseState.ksHeliStartTime = performance.now();
+    heliHandle.group.position.copy(exerciseState.ksHeliFrom);
+    orientTowardTravel(heliHandle.group, exerciseState.ksHeliFrom, exerciseState.ksHeliTo);
+    heliHandle.group.visible = true;
+}
+
+function spawnAirplaneFlight() {
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    // Litt forskjøvet i Z fra EXERCISE_CENTER (ikke rett over) - leser tydeligere som "krysser i
+    // området" enn som rett over selve øvingsfeltet.
+    const z = EXERCISE_CENTER.z - 20;
+    exerciseState.ksAirplaneFrom.set(-dir * AIRPLANE_FLIGHT_HALF_LENGTH, AIRWAY_ALTITUDE, z);
+    exerciseState.ksAirplaneTo.set(dir * AIRPLANE_FLIGHT_HALF_LENGTH, AIRWAY_ALTITUDE, z);
+    exerciseState.ksAirplaneStartTime = performance.now();
+    airplaneHandle.position.copy(exerciseState.ksAirplaneFrom);
+    orientTowardTravel(airplaneHandle, exerciseState.ksAirplaneFrom, exerciseState.ksAirplaneTo);
+    airplaneHandle.visible = true;
+}
+
+function spawnPedestrianWalk() {
+    // Samme prinsipp som helikopteret (spawnHelicopterFlight) - inn langs Z, fra dypt i feltet (samme
+    // retning kameraet peker) i stedet for sidelengs fra utsiden av bildet.
+    const x = EXERCISE_CENTER.x + (Math.random() * 2 - 1) * 4;
+    exerciseState.ksPedestrianFrom.set(x, 0, EXERCISE_CENTER.z - PEDESTRIAN_WALK_START_OFFSET);
+    exerciseState.ksPedestrianTo.set(x, 0, EXERCISE_CENTER.z + PEDESTRIAN_WALK_END_OFFSET);
+    exerciseState.ksPedestrianStartTime = performance.now();
+    pedestrianHandle.position.copy(exerciseState.ksPedestrianFrom);
+    orientPersonGroupTowardTravel(pedestrianHandle, exerciseState.ksPedestrianFrom, exerciseState.ksPedestrianTo);
+    pedestrianHandle.visible = true;
+}
+
+// Vellykket respons på heli/pedestrians (vike unna/lande) - samme "vent litt før neste steg"-pause som
+// crowd/traffic sin post-kill-visning (KILLSWITCH_SUCCESS_WATCH_SEC), slik at brukeren rekker å se
+// utfallet (helikopteret som passerer trygt, fotgjengerne som går forbi) før neste hendelse starter.
+function markKillswitchStageResolved(now) {
+    exerciseState.ksPhase = "resolved";
+    exerciseState.ksRespawnAt = now + KILLSWITCH_SUCCESS_WATCH_SEC * 1000;
+}
+
+// Utløser selve hendelsen - bevisst HELT STILLE (ingen banner/melding, se seksjonskommentaren over
+// EXERCISES.ex11): brukeren skal oppdage og vurdere situasjonen selv, ikke bli varslet om den.
+function startKillswitchDanger(stage, now) {
+    exerciseState.ksPhase = "danger";
+    exerciseState.ksTriggerAt = now;
+
+    if (stage.variant === "crowd" || stage.variant === "traffic") {
+        exerciseState.ksSavedFlightMode = droneState.flightMode;
+        // Tvinger Stabilized under selve rømningen - se applyKillswitchInputOverride: en falsk stick-
+        // input tolket som RATE (Acro) ville gitt en kontinuerlig rotasjon/tumling i stedet for en
+        // troverdig, avgrenset "lener seg mot faren"-vinkel.
+        droneState.flightMode = "stabilized";
+        exerciseState.ksRunawayFrom.copy(droneState.position);
+        if (stage.variant === "crowd") {
+            exerciseState.ksRunawayTo.set(CROWD_CENTER.x, CROWD_TARGET_ALTITUDE, CROWD_CENTER.z);
+        } else {
+            exerciseState.ksRunawayTo.set(droneState.position.x, TRAFFIC_DANGER_ALTITUDE, droneState.position.z);
+            spawnAirplaneFlight();
+        }
+        exerciseState.ksDeadlineAt = now + stage.runawaySec * 1000;
+        // Kutt ETTER dette (men fortsatt før selve deadline) regnes IKKE lenger som en tidsnok respons -
+        // uten margin var "kutt i aller siste liten, praktisk talt inni faresonen" fortsatt bestått, se
+        // KILLSWITCH_SAFE_CUTOFF_FRACTION.
+        exerciseState.ksSafeCutoffAt = now + stage.runawaySec * 1000 * KILLSWITCH_SAFE_CUTOFF_FRACTION;
+    } else if (stage.variant === "heli") {
+        spawnHelicopterFlight();
+    } else {
+        spawnPedestrianWalk();
+    }
+}
+
+// Kontrolltap (crowd/traffic): spillerens EKTE pinne overstyres fullstendig med en falsk kommando mot
+// faresonen, matet inn i den ORDINÆRE fysikken (stepPhysics leser inputState.stick) - dronen ser dermed
+// ut til faktisk å motta (helt gale) pinneutslag i stedet for å bare gli/teleportere. MÅ kalles etter
+// den ekte tastatur/gamepad-lesingen i updateInput (ellers blir denne overskrevet FØR fysikken bruker
+// den) - selve posisjonen/timingen styres likevel deterministisk av updateKillswitchStage rett under,
+// dette er kun det VISUELLE (tilt/bank) laget oppå.
+function applyKillswitchInputOverride() {
+    if (!exerciseState.active || exerciseState.ksPhase !== "danger") return;
+    const stage = getExerciseStage();
+    if (!stage || stage.type !== "killswitch" || (stage.variant !== "crowd" && stage.variant !== "traffic")) return;
+    if (!droneState.armed) return; // nettopp kuttet - ikke fortsett å mate falsk input inn i et fritt fall
+    const toTarget = new THREE.Vector3().subVectors(exerciseState.ksRunawayTo, droneState.position);
+    const localTarget = toTarget.lengthSq() > 1e-6
+        ? toTarget.normalize().applyQuaternion(droneState.quaternion.clone().invert())
+        : new THREE.Vector3(0, 0, -1);
+    inputState.stick.pitch = clamp(-localTarget.z * 3, -1, 1); // lokal -Z er forover (se stepPhysics)
+    inputState.stick.roll = clamp(localTarget.x * 3, -1, 1);
+    inputState.stick.yaw = 0;
+    inputState.stick.throttle = 0.85;
+}
+
+// Riktig respons her er å vike unna/lande, IKKE kill - se seksjonskommentaren over EXERCISES.ex11.
+// HELI_SAFE_HORIZ_DISTANCE er horisontal med vilje (se konstant-kommentaren) - kun å stå stille og
+// stole på høydeforskjellen skal ikke telle som en unnamanøver.
+function updateHeliDangerPhase(now) {
+    if (!droneState.armed) {
+        respawnKillswitchAttempt(now, KILLSWITCH_MESSAGES.heli.failKilled);
+        return;
+    }
+    if (heliHandle.group.visible) {
+        if (!droneState.grounded) {
+            const horizDist = Math.hypot(
+                droneState.position.x - heliHandle.group.position.x,
+                droneState.position.z - heliHandle.group.position.z
+            );
+            if (horizDist < HELI_SAFE_HORIZ_DISTANCE) {
+                respawnKillswitchAttempt(now, KILLSWITCH_MESSAGES.heli.failTooClose);
+            }
+        }
+        return; // helikopteret flyr fortsatt - vent og se om avstanden holder seg trygg
+    }
+    markKillswitchStageResolved(now); // ferdig overflydd uten at avstanden noen gang ble kritisk - bestått
+}
+
+// Samme respons-logikk som helikopteret (vike unna/lande, ikke kill) OG samme "vent til det er ferdig"-
+// prinsipp: fotgjengerne starter allerede utenfor PEDESTRIAN_SAFE_DISTANCE (se konstant-kommentaren), så
+// avgjørelsen tas først når de faktisk er ferdige med å gå forbi (pedestrianHandle.visible blir false),
+// basert på hvor droneen befant seg DA - ikke fortløpende fra første bilde.
+function updatePedestrianDangerPhase(now) {
+    if (!droneState.armed) {
+        respawnKillswitchAttempt(now, KILLSWITCH_MESSAGES.pedestrians.failKilled);
+        return;
+    }
+    if (pedestrianHandle.visible) return; // fortsatt på vei - ingen avgjørelse ennå
+    const horizDist = Math.hypot(
+        droneState.position.x - exerciseState.ksPedestrianTo.x,
+        droneState.position.z - exerciseState.ksPedestrianTo.z
+    );
+    const controlled = droneState.grounded || droneState.velocity.length() < PEDESTRIAN_SAFE_MAX_SPEED;
+    if (horizDist >= PEDESTRIAN_SAFE_DISTANCE && controlled) {
+        markKillswitchStageResolved(now);
+    } else {
+        respawnKillswitchAttempt(now, KILLSWITCH_MESSAGES.pedestrians.failTooClose);
+    }
+}
+
+function updateKillswitchStage(stage, dt, now) {
+    if (exerciseState.ksPhase === "wait") {
+        if (!droneState.armed) {
+            // Motorene kuttet (eller krasjet) før noe faktisk inntraff - ikke en del av drillen ennå,
+            // bare klargjør et nytt forsøk i stedet for å telle det som noe reelt.
+            respawnKillswitchAttempt(now, droneState.crashed
+                ? "Du krasjet før noe inntraff. Klargjør nytt forsøk..."
+                : "Motorene ble kuttet uten grunn. Klargjør nytt forsøk...");
+            return;
+        }
+        updateKillswitchPatrol(stage);
+        // Ventetiden starter ikke å telle før runden faktisk er nådd - se ksEngaged-kommentaren i
+        // spawnKillswitchStage/updateKillswitchPatrol.
+        if (!exerciseState.ksEngaged) return;
+        if (exerciseState.ksTriggerAt === 0) {
+            exerciseState.ksTriggerAt = now +
+                (KILLSWITCH_TRIGGER_MIN_SEC + Math.random() * (KILLSWITCH_TRIGGER_MAX_SEC - KILLSWITCH_TRIGGER_MIN_SEC)) * 1000;
+            return;
+        }
+        if (now >= exerciseState.ksTriggerAt) startKillswitchDanger(stage, now);
+        return;
+    }
+    if (exerciseState.ksPhase === "danger") {
+        if (stage.variant === "heli") { updateHeliDangerPhase(now); return; }
+        if (stage.variant === "pedestrians") { updatePedestrianDangerPhase(now); return; }
+        // crowd/traffic: se applyKillswitchInputOverride (kalt fra updateInput) for det visuelle
+        // "kontrolltapet" - posisjonen under er den deterministiske, alltid-reagerbare fasiten.
+        if (!droneState.armed) {
+            restoreKillswitchFlightMode();
+            // Kuttet for sent (etter ksSafeCutoffAt, men fortsatt før selve deadline) er IKKE en
+            // vellykket respons - se KILLSWITCH_SAFE_CUTOFF_FRACTION.
+            if (now < exerciseState.ksSafeCutoffAt) {
+                markKillswitchStageResolved(now);
+            } else {
+                // Kuttet, men for sent til å telle som trygt - IKKE samme melding som "aldri kuttet i
+                // tide" (droneen har her ikke nødvendigvis faktisk nådd frem, bare reagert for seint).
+                respawnKillswitchAttempt(now, KILLSWITCH_MESSAGES[stage.variant].failLate);
+            }
+            return;
+        }
+        const t = clamp((now - exerciseState.ksTriggerAt) / (stage.runawaySec * 1000), 0, 1);
+        const oldPos = droneState.position.clone();
+        droneState.position.lerpVectors(exerciseState.ksRunawayFrom, exerciseState.ksRunawayTo, t * t); // t² - akselererende, som et reelt kontrolltap
+        // Fartsvektoren settes ut fra selve forflytningen (i stedet for å nullstilles) - gir realistisk
+        // bevart moment inn i det frie fallet i det øyeblikket motorene kuttes, i stedet for at den
+        // stopper brått og deretter faller fra stillstand.
+        if (dt > 1e-4) droneState.velocity.copy(droneState.position).sub(oldPos).divideScalar(dt);
+        if (now >= exerciseState.ksDeadlineAt) {
+            restoreKillswitchFlightMode();
+            droneState.armed = false;
+            respawnKillswitchAttempt(now, KILLSWITCH_MESSAGES[stage.variant].fail);
+        }
+        return;
+    }
+    if (exerciseState.ksPhase === "resolved" && now >= exerciseState.ksRespawnAt) {
+        advanceExerciseStage();
+        return;
+    }
+    if (exerciseState.ksPhase === "pending-respawn" && now >= exerciseState.ksRespawnAt) {
+        spawnKillswitchStage(stage);
+        exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
+        exerciseState.warningUntil = now + 4000;
+        exerciseState.warningIsSuccess = true;
+    }
+}
+
+// Helikopter/fly/fotgjenger-animasjon (posisjon + rotorspinn) - egen, alltid-kjørende oppdatering
+// (uavhengig av exerciseState.active) slik at en påbegynt bevegelse fullføres visuelt selv om steget
+// allerede er avgjort (bestått/feilet) eller øvelsen avbrytes midt i - se kallet i animate().
+function updateKillswitchVisuals(now, dt) {
+    if (heliHandle.group.visible) {
+        const t = (now - exerciseState.ksHeliStartTime) / (HELI_FLIGHT_DURATION_SEC * 1000);
+        if (t >= 1) {
+            heliHandle.group.visible = false;
+        } else {
+            heliHandle.group.position.lerpVectors(exerciseState.ksHeliFrom, exerciseState.ksHeliTo, t);
+        }
+        heliHandle.rotor.rotation.y += dt * 45;
+    }
+    if (airplaneHandle.visible) {
+        const t = (now - exerciseState.ksAirplaneStartTime) / (AIRPLANE_FLIGHT_DURATION_SEC * 1000);
+        if (t >= 1) {
+            airplaneHandle.visible = false;
+        } else {
+            airplaneHandle.position.lerpVectors(exerciseState.ksAirplaneFrom, exerciseState.ksAirplaneTo, t);
+        }
+    }
+    if (pedestrianHandle.visible) {
+        const t = (now - exerciseState.ksPedestrianStartTime) / (PEDESTRIAN_WALK_DURATION_SEC * 1000);
+        if (t >= 1) {
+            pedestrianHandle.visible = false;
+        } else {
+            pedestrianHandle.position.lerpVectors(exerciseState.ksPedestrianFrom, exerciseState.ksPedestrianTo, t);
+        }
+    }
 }
 
 // Kalles rett etter den faste fysikk-løkka i animate() (se lenger ned) - droneState.position/
@@ -2753,6 +3496,12 @@ function updateExercise(dt, now) {
     }
 
     const stage = getExerciseStage();
+
+    if (stage.type === "killswitch") {
+        exerciseState.headingErrorDeg = null; // ingen nese-krav i killswitch-scenarioene
+        updateKillswitchStage(stage, dt, now);
+        return;
+    }
 
     // "Returner hjem": droneen holdes fastfrosset i lufta gjennom nedtelling + gass-matching, og
     // slippes først når piloten har lagt gassen rundt hover - deretter er det ren landingsfase.
@@ -2922,8 +3671,11 @@ function updateExerciseHud() {
     const isReturnExercise = EXERCISES[exerciseState.exerciseId].stages[0].type === "return";
     const stage = (exerciseState.awaitingNext || (exerciseState.landingPhase && !isReturnExercise))
         ? null : getExerciseStage();
-    document.getElementById("exerciseHudStage").textContent =
-        stage ? stage.label : (exerciseState.awaitingNext ? "Fullført!" : "Landing");
+    // Killswitch-stegnavnet (stage.label) ville spoilet hvilket scenario som kommer/pågår - vises som
+    // et nøytralt løpenummer i stedet, se killswitchDisplayLabel.
+    document.getElementById("exerciseHudStage").textContent = stage
+        ? (stage.type === "killswitch" ? killswitchDisplayLabel() : stage.label)
+        : (exerciseState.awaitingNext ? "Fullført!" : "Landing");
     // Merk runden som "teller ikke" så snart et avvik har skjedd i den - synlig konsekvens med en gang.
     const lapSuffix = (stage && exerciseState.lapHasViolation) ? " (runden teller ikke)" : "";
     const returnSuffix = exerciseState.landingPhase ? " - land på H" : "";
@@ -2933,12 +3685,14 @@ function updateExerciseHud() {
             ? exerciseState.hoverHoldSec.toFixed(1) + "/" + stage.holdSec + " s"
             : (stage.type === "return"
                 ? exerciseState.returnRepsCompleted + "/" + REQUIRED_RETURN_REPS + returnSuffix
-                : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
+                : stage.type === "killswitch"
+                    ? killswitchStatusText()
+                    : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
 
     // Avviks-status: tydelig, vedvarende indikator på hvor nær steget er å bli nullstilt - banneret
     // alene forsvinner etter noen sekunder og etterlot ingen synlig "du har brukt opp advarselen".
     const violationsEl = document.getElementById("exerciseHudViolations");
-    if (!stage || stage.type === "hover" || stage.type === "return") {
+    if (!stage || stage.type === "hover" || stage.type === "return" || stage.type === "killswitch") {
         violationsEl.textContent = "-";
         violationsEl.className = "sim-status-value";
     } else if (exerciseState.attemptViolationCount === 0) {
@@ -2961,10 +3715,17 @@ function updateExerciseHud() {
             (exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG ? "sim-armed" : "sim-killed");
     }
 
-    const elapsed = (performance.now() - exerciseState.startTime) / 1000;
-    const mm = Math.floor(elapsed / 60);
-    const ss = Math.floor(elapsed % 60);
-    document.getElementById("exerciseHudTimer").textContent = mm + ":" + (ss < 10 ? "0" : "") + ss;
+    // "Uforutsette hendelser" (ex11) handler om riktig respons, ikke fart - se noTiming/completeExercise.
+    const timerItem = document.getElementById("exerciseHudTimerItem");
+    if (EXERCISES[exerciseState.exerciseId].noTiming) {
+        timerItem.style.display = "none";
+    } else {
+        timerItem.style.display = "";
+        const elapsed = (performance.now() - exerciseState.startTime) / 1000;
+        const mm = Math.floor(elapsed / 60);
+        const ss = Math.floor(elapsed % 60);
+        document.getElementById("exerciseHudTimer").textContent = mm + ":" + (ss < 10 ? "0" : "") + ss;
+    }
 }
 
 // Plasserer droneen for (om)start av en øvelse: vanlige øvelser starter på avgangsplassen (via
@@ -2972,6 +3733,15 @@ function updateExerciseHud() {
 function spawnForExercise(exercise) {
     resetDrone();
     exerciseState.returnPhase = null;
+    // Killswitch-øvelsen (ex11): egen spawn/tilstand for steg 0 - se spawnKillswitchStage. Kalles kun
+    // herfra ved førstegangsstart og fullt R-restart (begge nullstiller stageIndex til 0 først), så
+    // exercise.stages[0] er alltid riktig steg å klargjøre.
+    if (exercise.stages[0].type === "killswitch") {
+        spawnKillswitchStage(exercise.stages[0]);
+        exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
+        exerciseState.warningUntil = performance.now() + 4000;
+        exerciseState.warningIsSuccess = true;
+    }
     if (exercise.spawn === "far") {
         const bearing = (Math.random() * 2 - 1) * (Math.PI / 3); // innenfor ±60° av rett frem (-Z)
         const dist = 130 + Math.random() * 40;
@@ -3002,9 +3772,12 @@ function spawnForExercise(exercise) {
 }
 
 function startExercise(id) {
-    stopExercise();
     const exercise = EXERCISES[id];
     if (!exercise) return;
+    // Gaten håndheves også her (ikke bare i UI-en, se showExerciseDetail) - avviser før stopExercise()
+    // slik at et eventuelt PÅGÅENDE forsøk på en annen øvelse ikke avbrytes for et forsøk som uansett blir avvist.
+    if (exercise.requiresGamepadKill && !isGamepadKillBound()) return;
+    stopExercise();
     exerciseState.savedDroneClass = droneState.droneClass;
     exerciseState.savedCameraModeIndex = cameraModeIndex;
     setDroneClassEphemeral("mid");
@@ -3114,6 +3887,24 @@ function handleResetRequest() {
 function renderExerciseList() {
     const container = document.getElementById("exerciseListItems");
     container.innerHTML = "";
+
+    // Alle øvelser bestått: diplom-rad ØVERST (mest fremtredende plassen - se etterspurt om å flytte
+    // den opp fra bunnen) - klikk for å fylle ut navn og skrive ut/lagre som PDF. (Diplomet dukker i
+    // tillegg automatisk opp første gang dette blir sant, se completeExercise.)
+    if (allExercisesPassed()) {
+        const diplomaRow = document.createElement("button");
+        diplomaRow.type = "button";
+        diplomaRow.className = "sim-exercise-row sim-exercise-row-diploma";
+        diplomaRow.innerHTML =
+            '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
+            '<span class="sim-exercise-row-main">' +
+            '<span class="sim-exercise-row-title">Bekreftelse</span>' +
+            '<span class="sim-exercise-row-desc">Alle øvelser bestått! Fyll ut navnet ditt og skriv ut bekreftelsen.</span>' +
+            "</span>";
+        diplomaRow.addEventListener("click", openDiploma);
+        container.appendChild(diplomaRow);
+    }
+
     EXERCISE_ORDER.forEach(function (id) {
         const exercise = EXERCISES[id];
         const progress = exerciseProgress[id] || { passed: false, bestTimeSec: null };
@@ -3127,27 +3918,12 @@ function renderExerciseList() {
             '<span class="sim-exercise-row-desc">' + exercise.shortDescription + "</span>" +
             "</span>" +
             (progress.passed
-                ? '<span class="sim-exercise-check"><i class="fa-solid fa-circle-check"></i> ' + formatExerciseTime(progress.bestTimeSec) + "</span>"
+                ? '<span class="sim-exercise-check"><i class="fa-solid fa-circle-check"></i>' +
+                    (exercise.noTiming ? "" : " " + formatExerciseTime(progress.bestTimeSec)) + "</span>"
                 : "");
         row.addEventListener("click", function () { showExerciseDetail(id); });
         container.appendChild(row);
     });
-
-    // Alle øvelser bestått: diplom-rad nederst - klikk for å fylle ut navn og skrive ut/lagre som PDF.
-    // (Diplomet dukker i tillegg automatisk opp første gang dette blir sant, se completeExercise.)
-    if (allExercisesPassed()) {
-        const diplomaRow = document.createElement("button");
-        diplomaRow.type = "button";
-        diplomaRow.className = "sim-exercise-row sim-exercise-row-diploma";
-        diplomaRow.innerHTML =
-            '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
-            '<span class="sim-exercise-row-main">' +
-            '<span class="sim-exercise-row-title">Diplom</span>' +
-            '<span class="sim-exercise-row-desc">Alle øvelser bestått! Fyll ut navnet ditt og skriv ut beviset.</span>' +
-            "</span>";
-        diplomaRow.addEventListener("click", openDiploma);
-        container.appendChild(diplomaRow);
-    }
 }
 
 function openDiploma() {
@@ -3156,17 +3932,34 @@ function openDiploma() {
     // mange ganger man vil for å forbedre tidene, diplomet viser alltid de gjeldende bestetidene.
     const timesEl = document.getElementById("diplomaTimes");
     timesEl.innerHTML = "";
+    let totalTimedSec = 0;
     EXERCISE_ORDER.forEach(function (id) {
         const rowEl = document.createElement("div");
         rowEl.className = "sim-diploma-time-row";
         const nameEl = document.createElement("span");
         nameEl.textContent = EXERCISES[id].label;
         const timeEl = document.createElement("span");
-        timeEl.textContent = formatExerciseTime(exerciseProgress[id].bestTimeSec);
+        // "Uforutsette hendelser" (ex11) har ingen stoppeklokke (se noTiming) - bare bestått/ikke,
+        // og telles heller ikke med i totaltiden nederst.
+        if (EXERCISES[id].noTiming) {
+            timeEl.textContent = "Bestått";
+        } else {
+            timeEl.textContent = formatExerciseTime(exerciseProgress[id].bestTimeSec);
+            totalTimedSec += exerciseProgress[id].bestTimeSec || 0;
+        }
         rowEl.appendChild(nameEl);
         rowEl.appendChild(timeEl);
         timesEl.appendChild(rowEl);
     });
+    const totalRowEl = document.createElement("div");
+    totalRowEl.className = "sim-diploma-time-row sim-diploma-time-total";
+    const totalNameEl = document.createElement("span");
+    totalNameEl.textContent = "Total tid";
+    const totalTimeEl = document.createElement("span");
+    totalTimeEl.textContent = formatExerciseTime(totalTimedSec);
+    totalRowEl.appendChild(totalNameEl);
+    totalRowEl.appendChild(totalTimeEl);
+    timesEl.appendChild(totalRowEl);
     document.getElementById("diplomaDate").textContent =
         "Dato: " + new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "long", day: "numeric" });
     document.getElementById("diplomaPrintBtn").onclick = function () {
@@ -3197,6 +3990,8 @@ function showExerciseDetail(id) {
     const progressEl = document.getElementById("exerciseDetailProgress");
     const startBtn = document.getElementById("exerciseStartBtn");
     const cancelBtn = document.getElementById("exerciseCancelBtn");
+    progressEl.classList.remove("sim-exercise-gate-warning");
+    startBtn.disabled = false;
     if (exerciseState.active && exerciseState.exerciseId === id) {
         progressEl.style.display = "";
         const isReturnExercise = exercise.stages[0].type === "return";
@@ -3211,17 +4006,31 @@ function showExerciseDetail(id) {
                 REQUIRED_RETURN_REPS + (exerciseState.landingPhase ? " - land på H" : "");
         } else {
             const stage = getExerciseStage();
-            progressEl.textContent = "Pågår: " + stage.label + (stage.type === "hover"
-                ? " - " + exerciseState.hoverHoldSec.toFixed(0) + "/" + stage.holdSec + " s"
-                : " - runde " + exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS));
+            const stageLabel = stage.type === "killswitch" ? killswitchDisplayLabel() : stage.label;
+            progressEl.textContent = "Pågår: " + stageLabel + (stage.type === "killswitch"
+                ? " - " + killswitchStatusText()
+                : stage.type === "hover"
+                    ? " - " + exerciseState.hoverHoldSec.toFixed(0) + "/" + stage.holdSec + " s"
+                    : " - runde " + exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS));
         }
         startBtn.style.display = "none";
         cancelBtn.style.display = "";
     } else {
         const progress = exerciseProgress[id] || { passed: false, bestTimeSec: null };
-        progressEl.style.display = progress.passed ? "" : "none";
-        if (progress.passed) progressEl.textContent = "Bestått - beste tid: " + formatExerciseTime(progress.bestTimeSec);
+        const gateBlocked = exercise.requiresGamepadKill && !isGamepadKillBound();
+        if (gateBlocked) {
+            progressEl.style.display = "";
+            progressEl.classList.add("sim-exercise-gate-warning");
+            progressEl.textContent = "Krever at Kill/Arm-knappen er bundet til en fysisk fjernkontroll i " +
+                "Fjernkontroll-kalibrering (Innstillinger) - tastatur og skjermknappen virker ikke i denne øvelsen.";
+        } else if (progress.passed) {
+            progressEl.style.display = "";
+            progressEl.textContent = exercise.noTiming ? "Bestått" : "Bestått - beste tid: " + formatExerciseTime(progress.bestTimeSec);
+        } else {
+            progressEl.style.display = "none";
+        }
         startBtn.style.display = "";
+        startBtn.disabled = gateBlocked;
         cancelBtn.style.display = "none";
     }
     startBtn.onclick = function () { startExercise(id); };
@@ -3246,6 +4055,7 @@ function animate(now) {
         accumulator -= FIXED_DT;
     }
     updateExercise(frameDt, now);
+    updateKillswitchVisuals(now, frameDt);
 
     updateDroneVisual(frameDt);
     updateChaseCamera(frameDt);
@@ -3270,7 +4080,7 @@ document.addEventListener("DOMContentLoaded", function () {
     renderExerciseList();
 
     document.getElementById("resetBtn").addEventListener("click", handleResetRequest);
-    document.getElementById("armToggleBtn").addEventListener("click", toggleKill);
+    document.getElementById("armToggleBtn").addEventListener("click", function () { toggleKill("button"); });
 
     const settingsMenuEl = document.getElementById("settingsMenu");
     Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl,
@@ -3442,7 +4252,7 @@ document.addEventListener("DOMContentLoaded", function () {
             case "Digit1": droneState.flightMode = "stabilized"; break;
             case "Digit2": droneState.flightMode = "althold"; break;
             case "Digit3": droneState.flightMode = "acro"; break;
-            case "KeyK": toggleKill(); break;
+            case "KeyK": toggleKill("keyboard"); break;
             case "KeyR": handleResetRequest(); break;
             case "KeyC": toggleCamera(); break;
             case "KeyT": togglePanel(document.getElementById("ratesPanel")); break;
