@@ -2095,6 +2095,35 @@ const GATE_WAYPOINTS = [
 ];
 const BARN_DIMENSIONS = { width: 8, height: 7, depth: 10, windowW: 3.2, windowH: 3.2, sillY: 1.8 };
 
+// Låvens SOLIDE vegger (alt unntatt selve vindusåpningen) som ekte kroppsblokkerende SOLID_COLLIDERS -
+// før dette fantes bare PROP_HAZARDS-boksene for låven (se GATE_PLACEMENTS/PROP_HAZARDS-løkken lenger
+// ned), som kun skader PROPELLENE, ikke kroppen (med vilje for de tynne gate-rammene, se
+// ALL_PROP_HAZARDS-kommentaren - en drone skal kunne klippe en propell mot en tynn stolpe uten at hele
+// kroppen stopper). For en låve med ordentlige, tykke vegger er det feil oppførsel - selve KROPPEN skal
+// ikke fly rett gjennom veggene, bare gjennom vindusåpningen. Samme paneloppdeling (vegg minus
+// vindusåpning = seks separate panelbokser + tak) som PROP_HAZARDS-versjonen, men registrert som ekte
+// orienterte SOLID_COLLIDERS-bokser (se orientedBoxLocalXZ/-WorldFromLocal) i stedet.
+function addBarnWallColliders(placement) {
+    const b = BARN_DIMENSIONS, t = 0.15; // halv veggtykkelse (0.3/2), samme som PROP_HAZARDS-versjonen
+    const hw = b.width / 2, hd = b.depth / 2;
+    const panels = [
+        { cx: -hw, cz: 0, halfW: t, halfD: hd, minY: 0, topY: b.height },  // venstre vegg (full lengde)
+        { cx: hw, cz: 0, halfW: t, halfD: hd, minY: 0, topY: b.height },   // høyre vegg (full lengde)
+        { cx: 0, cz: 0, halfW: hw + 0.3, halfD: hd + 0.3, minY: b.height, topY: b.height + 0.3 } // tak
+    ];
+    [-hd, hd].forEach(function (zPos) {
+        const winTopY = b.sillY + b.windowH, panelW = (b.width - b.windowW) / 2;
+        panels.push({ cx: 0, cz: zPos, halfW: hw, halfD: t, minY: 0, topY: b.sillY });               // under vinduet
+        panels.push({ cx: 0, cz: zPos, halfW: hw, halfD: t, minY: winTopY, topY: b.height });         // over vinduet
+        panels.push({ cx: -hw + panelW / 2, cz: zPos, halfW: panelW / 2, halfD: t, minY: b.sillY, topY: winTopY }); // venstre side av vinduet
+        panels.push({ cx: hw - panelW / 2, cz: zPos, halfW: panelW / 2, halfD: t, minY: b.sillY, topY: winTopY });  // høyre side av vinduet
+    });
+    panels.forEach(function (p) {
+        const w = orientedBoxWorldFromLocal(p.cx, p.cz, { cx: placement.x, cz: placement.z, yaw: placement.yaw });
+        SOLID_COLLIDERS.push({ cx: w.x, cz: w.z, halfW: p.halfW, halfD: p.halfD, yaw: placement.yaw, minY: p.minY, topY: p.topY });
+    });
+}
+
 // Posisjon + retning per baneelement, delt kilde for både den visuelle byggingen (buildGateCourse) og
 // propell-treff-boksene (PROP_HAZARDS) - slik at kollisjonsgeometrien alltid stemmer med det man ser.
 // Retningen peker mot neste veipunkt, slik at man flyr gjennom (port eller låvevindu) langs løypa.
@@ -2119,6 +2148,7 @@ function buildGateCourse() {
         obstacle.position.set(placement.x, 0, placement.z);
         obstacle.rotation.y = placement.yaw;
         group.add(obstacle);
+        if (wp.type === "barn") addBarnWallColliders(placement);
     });
     return group;
 }
@@ -2684,6 +2714,7 @@ function buildGateCourse2() {
         obstacle.position.set(placement.x, placement.y, placement.z);
         obstacle.rotation.y = placement.yaw;
         group.add(obstacle);
+        if (wp.type === "barn") addBarnWallColliders(placement);
     });
 
     const townHall = buildTownHall(TOWNHALL_WIDTH, TOWNHALL_HEIGHT, TOWNHALL_DEPTH);
@@ -5438,7 +5469,11 @@ const RACE_GATE_CENTERS_2 = GATE_PLACEMENTS_2.map(function (placement) {
     };
 });
 const RACE_START_PLACEMENT = GATE_PLACEMENTS_2[0]; // start/mål-porten, se GATE_WAYPOINTS_2
-const RACE_SPAWN_BACK_DIST = 10; // meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner
+// meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner. Økt fra 10 - ga for kort strekk
+// til å faktisk komme opp i fart før man krysser start (og dermed før klokken starter) for en "flying
+// start". Sjekket klaring mot forrige gate i løypa (den siste før man runder tilbake til start, se
+// GATE_WAYPOINTS_2 sitt nest siste element) på denne avstanden - fortsatt god margin (~11 m) dit.
+const RACE_SPAWN_BACK_DIST = 15;
 const RACE_SPAWN_POINT = new THREE.Vector3(
     RACE_START_PLACEMENT.x - Math.sin(RACE_START_PLACEMENT.yaw) * RACE_SPAWN_BACK_DIST,
     0,
