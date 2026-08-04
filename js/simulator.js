@@ -1750,15 +1750,34 @@ const FOREST_TREES = (function () {
     }
     return trees;
 })();
-// Trekollidere - boks-tilnærming av kronen (height*0.28 - romslig nok til å dekke den bredeste kronen
-// hos begge treslagene i Sim.buildBirch/buildPine, se simulator-common.js), samme forenklede "topp-flate
-// å lande på"-modell som resten av SOLID_COLLIDERS (bygning/bil) - ingen egen sideveis vegg-fysikk, kun
-// en flat kollisjonshøyde.
-function treeToCollider(t) {
-    const r = t.h * 0.28;
-    return { minX: t.x - r, maxX: t.x + r, minZ: t.z - r, maxZ: t.z + r, topY: t.h };
+// Trekollidere - TRE bokser per tre (stamme + to kroneband) i stedet for én flat søyle fra bakken opp
+// til toppen (som ga en merkbart FOR BRED kollider nede ved stammen uansett hvor smal radiusen ble satt,
+// siden samme bredde da gjaldt helt fra bakken og opp). Se minY - støttet av
+// solidSurfaceHeightAt/pushOutOfSolidWalls/resolveGroundContact, se orientedBoxLocalXZ-kommentaren for
+// samme type utvidelse tidligere.
+// trunkR er satt til den faktiske maks. stammeradiusen (0.15, se CylinderGeometry i
+// Sim.buildBirch/buildPine), ingen ekstra sikkerhetsmargin oppå (all margin der ble opplevd som "usynlig
+// kollisjon"). Selve krona er IKKE en jevn søyle heller - den er bygget av runde/koniske klynger (se
+// buildBirch/buildPine) som er SMALEST akkurat der de starter (bunnen av en kule/kjegle) og videst et
+// stykke lenger opp, ikke fullbredde med det samme. Ett rett hopp fra stamme til full kronebredde ga
+// akkurat DEN feilen andre veien - "kollisjon i løse lufta under krona", altså full bredde et stykke FØR
+// selve løvverket faktisk er der. To kroneband (et smalere overgangsband, så det fulle) er en grovere,
+// men mye bedre tilnærming til den avrundede formen enn ett enkelt hopp.
+function treeToColliders(t) {
+    const trunkTopY = t.h * 0.48;
+    const canopyTaperTopY = trunkTopY + (t.h - trunkTopY) * 0.35;
+    const trunkR = 0.15;
+    const canopyR = t.h * 0.22;
+    const taperR = canopyR * 0.5;
+    return [
+        { minX: t.x - trunkR, maxX: t.x + trunkR, minZ: t.z - trunkR, maxZ: t.z + trunkR, minY: 0, topY: trunkTopY },
+        { minX: t.x - taperR, maxX: t.x + taperR, minZ: t.z - taperR, maxZ: t.z + taperR, minY: trunkTopY, topY: canopyTaperTopY },
+        { minX: t.x - canopyR, maxX: t.x + canopyR, minZ: t.z - canopyR, maxZ: t.z + canopyR, minY: canopyTaperTopY, topY: t.h }
+    ];
 }
-const TREE_COLLIDERS = DECORATIVE_TREES.concat(FOREST_TREES).map(treeToCollider);
+const TREE_COLLIDERS = DECORATIVE_TREES.concat(FOREST_TREES).reduce(function (acc, t) {
+    return acc.concat(treeToColliders(t));
+}, []);
 
 // Faste objekter droneen kan lande oppå (i stedet for å falle gjennom): topp-flate per boks,
 // oppgitt akse-rettet (bilens rotasjon tilnærmes med en litt større boks for enkelhets skyld).
@@ -1805,6 +1824,27 @@ function solidSurfaceHeightAt(x, z) {
     });
     return top;
 }
+// Er (x,y,z) fysisk INNI en solid kollider - IKKE bare "under toppen et sted i søylen", slik
+// solidSurfaceHeightAt over ignorerer med vilje (den svarer "hva ville jeg landet på om jeg falt her fra
+// himmelen", uavhengig av hvor jeg faktisk befinner meg akkurat nå). Denne respekterer minY (se
+// treeToColliders) - brukt av propPointHitsObstacle for propellskade: uten minY-sjekk her ville en
+// trekrone som starter langt over bakken (bredere enn stammen, se treeToColliders) telt som "solid" helt
+// ned til bakken for EN PROPELL som passerer i lav høyde langt fra selve stammen, siden
+// solidSurfaceHeightAt bare bryr seg om XZ-fotavtrykket, ikke hvor høyt akkurat DENNE bestemte boksen
+// faktisk starter. Det var den egentlige årsaken til "propellene ødelegges lenge før stammen".
+function pointInsideAnySolidCollider(x, y, z) {
+    for (let i = 0; i < SOLID_COLLIDERS.length; i++) {
+        const c = SOLID_COLLIDERS[i];
+        if (y < (c.minY || 0) || y > c.topY) continue;
+        if (c.yaw !== undefined) {
+            const p = orientedBoxLocalXZ(x, z, c);
+            if (Math.abs(p.lx) <= c.halfW && Math.abs(p.lz) <= c.halfD) return true;
+        } else if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // solidSurfaceHeightAt() gir kun en topp-flate å lande på ovenfra - uten en egen sidevegg-sjekk vil
 // droneen fly rett gjennom veggen/kanten på et objekt når den nærmer seg fra siden i stedet for ovenfra
@@ -1819,7 +1859,7 @@ function pushOutOfSolidWalls(point, velocity) {
         if (c.yaw !== undefined) {
             const loc = orientedBoxLocalXZ(point.x, point.z, c);
             if (Math.abs(loc.lx) > c.halfW || Math.abs(loc.lz) > c.halfD) return;
-            if (point.y >= c.topY - GROUND_CLEARANCE) return;
+            if (point.y < (c.minY || 0) || point.y >= c.topY - GROUND_CLEARANCE) return;
             embedded = true;
             const distMinX = loc.lx + c.halfW, distMaxX = c.halfW - loc.lx;
             const distMinZ = loc.lz + c.halfD, distMaxZ = c.halfD - loc.lz;
@@ -1847,7 +1887,12 @@ function pushOutOfSolidWalls(point, velocity) {
             return;
         }
         if (point.x < c.minX || point.x > c.maxX || point.z < c.minZ || point.z > c.maxZ) return;
-        if (point.y >= c.topY - GROUND_CLEARANCE) return;
+        // minY (satt for trekollidere - se treeToColliders) - en boks som starter over bakken (kronen)
+        // skal IKKE regnes som "innfelt i" så snart droneen er et sted langt under den (nær bakken/
+        // stammen); uten denne nedre grensen ville krone-boksen (som er bredere enn stamme-boksen)
+        // fortsatt trigget helt ned til bakken, og gjeninnført akkurat problemet stamme-/krone-delingen
+        // over skulle løse.
+        if (point.y < (c.minY || 0) || point.y >= c.topY - GROUND_CLEARANCE) return;
         embedded = true;
         const distMinX = point.x - c.minX;
         const distMaxX = c.maxX - point.x;
@@ -2540,7 +2585,7 @@ function buildRiver(points, widths, pondRadius) {
     return group;
 }
 // Bygger OG registrerer et racingbane-2-tre i ett kall - både det visuelle treet (med vind-svaiing, se
-// treeSwayManager) og en kollider (se treeToCollider, delt med DECORATIVE_TREES/FOREST_TREES). De
+// treeSwayManager) og kolliderne (se treeToColliders, delt med DECORATIVE_TREES/FOREST_TREES). De
 // statiske listene TREE_COLLIDERS bygges fra er ferdig regnet ut ved MODUL-lasting, lenge før course-2s
 // trær i det hele tatt eksisterer (de bygges her, ved scene-oppbygging via buildGateCourse2) - uten
 // dette hjelpefunksjon-kallet ville ALLE course-2-trærne vært usynlige for kollisjonssystemet, og
@@ -2550,7 +2595,8 @@ function addCourse2Tree(group, x, z, height) {
     const tree = Sim.buildRandomTree(height);
     tree.position.set(x, 0, z);
     group.add(treeSwayManager.addSwayingTree(tree));
-    SOLID_COLLIDERS.push(treeToCollider({ x: x, z: z, h: height }));
+    // treeToColliders returnerer to bokser (stamme + krone, se kommentaren der) - begge må registreres.
+    Array.prototype.push.apply(SOLID_COLLIDERS, treeToColliders({ x: x, z: z, h: height }));
 }
 // Langs banen (se GATE_COURSE_2_CENTER) - rent landskapselement for variasjon, ligger klart utenfor
 // selve portrekka. Starter som en liten bekk oppe ved foten av fjellet nord for banen (se
@@ -3610,6 +3656,7 @@ function resolveGroundContact(dt, wasGrounded) {
             if (c.yaw !== undefined) {
                 const loc = orientedBoxLocalXZ(f.x, f.z, c);
                 if (Math.abs(loc.lx) > c.halfW || Math.abs(loc.lz) > c.halfD) return;
+                if (f.y < (c.minY || 0)) return; // under boksens nedre grense - se minY-kommentaren under
                 if (f.y >= c.topY - GROUND_CLEARANCE) {
                     colliderTop = Math.max(colliderTop, c.topY);
                     return;
@@ -3630,6 +3677,11 @@ function resolveGroundContact(dt, wasGrounded) {
                 return;
             }
             if (f.x < c.minX || f.x > c.maxX || f.z < c.minZ || f.z > c.maxZ) return;
+            // minY (satt for trekollidere - se treeToColliders): en krone-boks som starter høyt over
+            // bakken skal ikke gjelde i det hele tatt nede ved stamme-/bakkenivå - uten denne sjekken
+            // ville den bredere krone-boksen likevel trigget helt ned til bakken, og gjeninnført akkurat
+            // "for bred kollisjon ved stammen"-problemet den smalere stamme-boksen skulle løse.
+            if (f.y < (c.minY || 0)) return;
             if (f.y >= c.topY - GROUND_CLEARANCE) {
                 colliderTop = Math.max(colliderTop, c.topY);
                 return;
@@ -3756,9 +3808,14 @@ function resolveGroundContact(dt, wasGrounded) {
 
 /* ---------- Propellskade: treffdeteksjon og visuell oppdatering (se konstant-blokken øverst) ---------- */
 function propPointHitsObstacle(p, nearbyHazards) {
-    // Solide objekter (bakke, tak, vegger, bil): et punkt innenfor fotavtrykket under topp-flaten er
-    // "inne i" objektet - én og samme test dekker både vegg-treff fra siden og bakke-/tak-treff.
-    if (p.y <= solidSurfaceHeightAt(p.x, p.z) + PROP_GROUND_STRIKE_EPS) return true;
+    // Bakken/fjellene: alltid solid ved sin egen beregnede høyde, uavhengig av minY-konseptet under
+    // (terreng har ingen "starter høyt oppe"-kollidere).
+    if (p.y <= mountainHeightAt(p.x, p.z) + PROP_GROUND_STRIKE_EPS) return true;
+    // Andre solide objekter (tak, vegger, bil, trestammer/-kroner): pointInsideAnySolidCollider
+    // respekterer minY (se kommentaren der) - IKKE solidSurfaceHeightAt, som bevisst ignorerer minY (den
+    // svarer "hva ville jeg landet på herfra", ikke "er jeg fysisk inni noe akkurat nå") og dermed ville
+    // latt en trekrone telle som solid helt ned til bakken for en propell langt fra selve stammen.
+    if (pointInsideAnySolidCollider(p.x, p.y, p.z)) return true;
     for (let i = 0; i < nearbyHazards.length; i++) {
         const hz = nearbyHazards[i];
         const dx = p.x - hz.x, dz = p.z - hz.z;
@@ -4251,10 +4308,14 @@ function horizontalCaptureDistance(dx, dz) {
 function getExerciseStage() {
     return EXERCISES[exerciseState.exerciseId].stages[exerciseState.stageIndex];
 }
-function formatExerciseTime(sec) {
+// decimals: antall desimaler på sekund-delen (default 1 - tideler, som før, brukt av de fleste
+// øvelsene). Racingbanens tider bruker 2 (hundredeler) i stedet - der er jevne tider (samme tidel)
+// ganske sannsynlig med mange forsøk, og en ledertavle trenger en reell tiebreaker.
+function formatExerciseTime(sec, decimals) {
     if (sec === null || sec === undefined) return "-";
+    const d = decimals || 1;
     const mm = Math.floor(sec / 60);
-    const ss = (sec % 60).toFixed(1);
+    const ss = (sec % 60).toFixed(d);
     return mm + ":" + (Number(ss) < 10 ? "0" : "") + ss;
 }
 
@@ -4834,7 +4895,7 @@ function updateExerciseHud() {
         // står på "0:00" til klokken faktisk starter idet start/mål-porten krysses første gang.
         exerciseHudTimerItemEl.style.display = "";
         const elapsedSec = exerciseState.engaged ? (performance.now() - exerciseState.raceStartTime) / 1000 : 0;
-        exerciseHudTimerEl.textContent = formatExerciseTime(elapsedSec);
+        exerciseHudTimerEl.textContent = formatExerciseTime(elapsedSec, 2);
     } else {
         exerciseHudTimerItemEl.style.display = "";
         const elapsed = (performance.now() - exerciseState.startTime) / 1000;
@@ -5407,7 +5468,7 @@ function updateRacingStage(stage, dt, now) {
             // Runde fullført - alle porter truffet i rekkefølge for å komme hit igjen.
             const elapsedSec = (now - exerciseState.raceStartTime) / 1000;
             addRacingLapResult(elapsedSec);
-            exerciseState.warningMessage = "Runde fullført: " + formatExerciseTime(elapsedSec) + "!";
+            exerciseState.warningMessage = "Runde fullført: " + formatExerciseTime(elapsedSec, 2) + "!";
             exerciseState.warningUntil = now + 3500;
             exerciseState.warningIsSuccess = true;
             exerciseState.raceStartTime = now; // ny runde starter umiddelbart - løpende tidsforsøk
@@ -5486,7 +5547,7 @@ function renderRacingLeaderboard() {
         name.textContent = entry.name;
         const time = document.createElement("span");
         time.className = "sim-racing-lb-time";
-        time.textContent = formatExerciseTime(entry.timeSec);
+        time.textContent = formatExerciseTime(entry.timeSec, 2);
         // Endre-knapp for en allerede lagret tid (ikke feltet øverst - det setter kun navnet på
         // FREMTIDIGE runder) - for å rette et feilskrevet navn i etterkant, se renameRacingLeaderboardEntry.
         const editBtn = document.createElement("button");
@@ -5511,7 +5572,7 @@ function renameRacingLeaderboardEntry(i) {
     const entry = racingLeaderboard.entries[i];
     if (!entry) return;
     const ok = window.confirm(
-        "Endre navnet på denne tiden (" + formatExerciseTime(entry.timeSec) + ", satt av \"" + entry.name +
+        "Endre navnet på denne tiden (" + formatExerciseTime(entry.timeSec, 2) + ", satt av \"" + entry.name +
         "\")?\n\nBruk dette kun til å rette DITT EGET feilskrevne navn - ikke for å jukse til deg æren for andres runder!"
     );
     if (!ok) return;
@@ -5546,7 +5607,7 @@ function renderExerciseList(category) {
                 '<span class="sim-exercise-row-desc">' + exercise.shortDescription + "</span>" +
                 "</span>" +
                 (bestSec !== null
-                    ? '<span class="sim-exercise-check"><i class="fa-solid fa-trophy"></i> ' + formatExerciseTime(bestSec) + "</span>"
+                    ? '<span class="sim-exercise-check"><i class="fa-solid fa-trophy"></i> ' + formatExerciseTime(bestSec, 2) + "</span>"
                     : "");
             row.addEventListener("click", function () { showExerciseDetail(id); });
             container.appendChild(row);
@@ -5707,7 +5768,7 @@ function showExerciseDetail(id) {
         } else if (exercise.stages[0].type === "racing") {
             const bestSec = racingBestTimeSec();
             progressEl.style.display = bestSec !== null ? "" : "none";
-            if (bestSec !== null) progressEl.textContent = "Beste rundetid: " + formatExerciseTime(bestSec);
+            if (bestSec !== null) progressEl.textContent = "Beste rundetid: " + formatExerciseTime(bestSec, 2);
         } else if (progress.passed) {
             progressEl.style.display = "";
             progressEl.textContent = exercise.noTiming ? "Bestått" : "Bestått - beste tid: " + formatExerciseTime(progress.bestTimeSec);
