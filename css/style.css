@@ -530,7 +530,10 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 
 .sim-warning-banner {
     position: absolute;
-    top: 34%;
+    top: 62%; /* senket fra 34% - stod midt i synsfeltet der man ser gates/horisont mens man flyr,
+    spesielt merkbart for "Runde fullført"-meldingen på racingbanen (samme banner, se
+    sim-banner-success) siden den dukker opp akkurat idet man trenger å se banen best (rett etter
+    start/mål, videre inn i neste runde) */
     left: 50%;
     transform: translate(-50%, -50%);
     display: none;

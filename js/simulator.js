@@ -1772,12 +1772,18 @@ const FOREST_TREES = (function () {
 // et tre som ble trukket i den høye enden - ufarlig (man kan så vidt fly gjennom aller ytterste tuppen),
 // stikk motsatt av å krasje i tomme luft over et kortere tre.
 function treeToColliders(t) {
-    const h = t.h * 0.9;
+    // Ekstra margin lagt til her (0.9->0.85 på høyden, 0.22->0.19 på kroneradiusen) - høydematten alene
+    // (t.h*0.9, den matematisk garanterte laveste mulige faktiske høyden fra Sim.buildRandomTrees egen
+    // ±10%-randomisering) burde i teorien være vanntett mot "kollisjon over selve treet", men ble
+    // fortsatt rapportert. Strammer inn ytterligere et hakk på begge akser i stedet for å anta at
+    // matematikken var feil - koster litt mer "kan så vidt fly gjennom ytterste kant", tjener mindre
+    // "usynlig vegg" i bytte.
+    const h = t.h * 0.85;
     const trunkTopY = h * 0.48;
     const canopyTaperTopY = trunkTopY + (h - trunkTopY) * 0.35;
     const trunkR = 0.15;
-    const canopyR = h * 0.22;
-    const taperR = canopyR * 0.5;
+    const canopyR = h * 0.19;
+    const taperR = canopyR * 0.4;
     return [
         { minX: t.x - trunkR, maxX: t.x + trunkR, minZ: t.z - trunkR, maxZ: t.z + trunkR, minY: 0, topY: trunkTopY },
         { minX: t.x - taperR, maxX: t.x + taperR, minZ: t.z - taperR, maxZ: t.z + taperR, minY: trunkTopY, topY: canopyTaperTopY },
