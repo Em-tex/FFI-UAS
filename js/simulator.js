@@ -5419,7 +5419,13 @@ function updateRacingStage(stage, dt, now) {
 /* ---------- Racingbanens ledertavle - lagres lokalt i nettleseren (samme Sim.loadJSON/saveJSON-mønster
    som exerciseProgress/settings), helt separat fra det vanlige øvelses-fremgangssystemet siden dette
    er et åpent tidsforsøk (så mange runder man vil), ikke en engangs bestått/ikke-bestått-sjekk. ---------- */
-const RACING_LEADERBOARD_KEY = "ffi-uas:racing-leaderboard-v1";
+// Bumpet til v2 (fra v1) idet racingbanen ble bygget om - de gamle v1-tidene ble målt på en helt annen
+// bane (kortere, andre porter) og er ikke lenger sammenlignbare. En ny nøkkel gir automatisk en tom
+// ledertavle ved denne oppdateringen (Sim.loadJSON returnerer DEFAULT_RACING_LEADERBOARD for en nøkkel
+// som aldri er lagret før), uten noen egen migrerings-/versjonssjekk-logikk - de gamle v1-tidene blir
+// liggende urørt (og ubrukt) i nettleserens localStorage, rett og slett aldri lest igjen. Fremtidige
+// baneendringer som gjør gamle tider usammenlignbare kan bumpe denne på nytt samme måte.
+const RACING_LEADERBOARD_KEY = "ffi-uas:racing-leaderboard-v2";
 const RACING_LEADERBOARD_MAX_ENTRIES = 20;
 const DEFAULT_RACING_LEADERBOARD = { playerName: "Pilot", entries: [] };
 function loadRacingLeaderboard() {
@@ -5429,6 +5435,21 @@ function saveRacingLeaderboard() {
     Sim.saveJSON(RACING_LEADERBOARD_KEY, racingLeaderboard);
 }
 const racingLeaderboard = loadRacingLeaderboard();
+
+// Manuell nullstilling av HELE ledertavlen (navnet i feltet øverst beholdes - kun tidene fjernes) - egen
+// "er du sikker"-bekreftelse siden dette er permanent og rammer ALLE tider, ikke bare én. Samme mønster
+// som renameRacingLeaderboardEntry.
+function resetRacingLeaderboard() {
+    if (racingLeaderboard.entries.length === 0) return;
+    const ok = window.confirm(
+        "Nullstille HELE ledertavlen? Dette sletter alle " + racingLeaderboard.entries.length +
+        " lagrede tid(er) permanent - dette kan ikke angres."
+    );
+    if (!ok) return;
+    racingLeaderboard.entries = [];
+    saveRacingLeaderboard();
+    renderRacingLeaderboard();
+}
 
 function addRacingLapResult(timeSec) {
     racingLeaderboard.entries.push({
@@ -5810,6 +5831,7 @@ document.addEventListener("DOMContentLoaded", function () {
         racingLeaderboard.playerName = racingPlayerNameInputEl.value.trim() || "Pilot";
         saveRacingLeaderboard();
     });
+    document.getElementById("racingLeaderboardResetBtn").addEventListener("click", resetRacingLeaderboard);
     renderRacingLeaderboard();
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));

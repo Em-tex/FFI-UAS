@@ -1017,6 +1017,18 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     margin-bottom: 10px;
     color: #ffd76b;
 }
+.sim-racing-lb-reset {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.55);
+    cursor: pointer;
+    padding: 3px 6px;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    font-weight: 400;
+}
+.sim-racing-lb-reset:hover { color: #ff8080; background: rgba(255,255,255,0.12); }
 .sim-racing-lb-name-row {
     display: flex;
     align-items: center;
