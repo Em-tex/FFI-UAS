@@ -5475,11 +5475,13 @@ const RACE_GATE_CENTERS_2 = GATE_PLACEMENTS_2.map(function (placement) {
     };
 });
 const RACE_START_PLACEMENT = GATE_PLACEMENTS_2[0]; // start/mål-porten, se GATE_WAYPOINTS_2
-// meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner. Økt fra 10 - ga for kort strekk
-// til å faktisk komme opp i fart før man krysser start (og dermed før klokken starter) for en "flying
-// start". Sjekket klaring mot forrige gate i løypa (den siste før man runder tilbake til start, se
-// GATE_WAYPOINTS_2 sitt nest siste element) på denne avstanden - fortsatt god margin (~11 m) dit.
-const RACE_SPAWN_BACK_DIST = 15;
+// meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner. Økt videre fra 15 til 18 for enda
+// mer fartsoppbygging-strekk før start/mål - klaringen mot forrige gate i løypa (den siste før man runder
+// tilbake til start, se GATE_WAYPOINTS_2 sitt nest siste element) krymper RASKT jo lenger tilbake man
+// spawner (kun ~7 m igjen ved 20 m tilbake), så 18 er nær grensa for hvor langt dette trygt kan økes uten
+// å risikere å spawne overlappende med den gaten - IKKE øk dette videre uten å sjekke den avstanden på
+// nytt (se distansen fra RACE_SPAWN_POINT til GATE_PLACEMENTS_2 sitt nest siste element).
+const RACE_SPAWN_BACK_DIST = 18;
 const RACE_SPAWN_POINT = new THREE.Vector3(
     RACE_START_PLACEMENT.x - Math.sin(RACE_START_PLACEMENT.yaw) * RACE_SPAWN_BACK_DIST,
     0,
