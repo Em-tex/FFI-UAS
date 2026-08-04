@@ -1762,6 +1762,11 @@ const TREE_COLLIDERS = DECORATIVE_TREES.concat(FOREST_TREES).map(treeToCollider)
 
 // Faste objekter droneen kan lande oppå (i stedet for å falle gjennom): topp-flate per boks,
 // oppgitt akse-rettet (bilens rotasjon tilnærmes med en litt større boks for enkelhets skyld).
+// To former støttes: akse-rettet (minX/maxX/minZ/maxZ, som over) for ting som uansett aldri roterer, og
+// ORIENTERT (cx/cz/halfW/halfD/yaw - se orientedBoxLocalXZ) for roterte bygninger som rådhuset/husene i
+// racingbane 2 (pushet inn senere, se buildGateCourse2) - der ville en akse-rettet boks stor nok til å
+// garantert dekke hele det roterte footprinten (f.eks. halve DIAGONALEN i begge retninger) blitt merkbart
+// større enn selve bygningen, og kollisjonen ville trigget lenge før droneen faktisk nådde veggen.
 const SOLID_COLLIDERS = TREE_COLLIDERS.concat([
     {
         minX: BUILDING_POSITION.x - BUILDING_SIZE.width / 2, maxX: BUILDING_POSITION.x + BUILDING_SIZE.width / 2,
@@ -1771,10 +1776,30 @@ const SOLID_COLLIDERS = TREE_COLLIDERS.concat([
     { minX: 24 - 2.33, maxX: 24 + 2.33, minZ: 14 - 1.58, maxZ: 14 + 1.58, topY: 1.7 } // bilen, se buildWorldObjects
 ]);
 
+// Verdenspunkt (x,z) -> punktets koordinater i boksens LOKALE, urotere rom (senter = origo, lokal +Z =
+// boksens dybde-akse) - samme yaw-konvensjon som resten av banen (se GATE_PLACEMENTS-kommentaren: lokal
+// +Z er "forover" etter rotasjon rundt Y med vinkelen yaw). Utledet ved å invertere (= transponere, siden
+// rotasjonsmatrisen er ortogonal) fremover-transformen world = senter + R(yaw)*lokal.
+function orientedBoxLocalXZ(x, z, c) {
+    const dx = x - c.cx, dz = z - c.cz;
+    const cosA = Math.cos(c.yaw), sinA = Math.sin(c.yaw);
+    return { lx: dx * cosA - dz * sinA, lz: dx * sinA + dz * cosA };
+}
+// Motsatt vei av over - et lokalt (lx,lz)-punkt tilbake til verdensrommet, brukt til å plassere et
+// dyttet punkt (se pushOutOfSolidWalls) tilbake på riktig sted etter at det er klemt til boksens kant i
+// det lokale rommet.
+function orientedBoxWorldFromLocal(lx, lz, c) {
+    const cosA = Math.cos(c.yaw), sinA = Math.sin(c.yaw);
+    return { x: c.cx + lx * cosA + lz * sinA, z: c.cz - lx * sinA + lz * cosA };
+}
+
 function solidSurfaceHeightAt(x, z) {
     let top = mountainHeightAt(x, z); // fjellene er nå del av bakkehøyden - se mountainHeightAt
     SOLID_COLLIDERS.forEach(function (c) {
-        if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
+        if (c.yaw !== undefined) {
+            const p = orientedBoxLocalXZ(x, z, c);
+            if (Math.abs(p.lx) <= c.halfW && Math.abs(p.lz) <= c.halfD) top = Math.max(top, c.topY);
+        } else if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
             top = Math.max(top, c.topY);
         }
     });
@@ -1791,6 +1816,36 @@ function solidSurfaceHeightAt(x, z) {
 function pushOutOfSolidWalls(point, velocity) {
     let embedded = false;
     SOLID_COLLIDERS.forEach(function (c) {
+        if (c.yaw !== undefined) {
+            const loc = orientedBoxLocalXZ(point.x, point.z, c);
+            if (Math.abs(loc.lx) > c.halfW || Math.abs(loc.lz) > c.halfD) return;
+            if (point.y >= c.topY - GROUND_CLEARANCE) return;
+            embedded = true;
+            const distMinX = loc.lx + c.halfW, distMaxX = c.halfW - loc.lx;
+            const distMinZ = loc.lz + c.halfD, distMaxZ = c.halfD - loc.lz;
+            const minDist = Math.min(distMinX, distMaxX, distMinZ, distMaxZ);
+            let newLx = loc.lx, newLz = loc.lz, pushDirLocalX = 0, pushDirLocalZ = 0;
+            if (minDist === distMinX) { newLx = -c.halfW; pushDirLocalX = -1; }
+            else if (minDist === distMaxX) { newLx = c.halfW; pushDirLocalX = 1; }
+            else if (minDist === distMinZ) { newLz = -c.halfD; pushDirLocalZ = -1; }
+            else { newLz = c.halfD; pushDirLocalZ = 1; }
+            const w = orientedBoxWorldFromLocal(newLx, newLz, c);
+            point.x = w.x;
+            point.z = w.z;
+            // Konverter lokal push-retning til en verdens-enhetsvektor (samme fremover-rotasjon som
+            // orientedBoxWorldFromLocal, uten senterforskyvningen - kun retningen er interessant her) -
+            // nullstiller kun hastighetskomponenten INN i veggen, resten av bevegelsen langs veggen
+            // beholdes (samme "gli langs veggen"-følelse som den akse-rettede varianten under).
+            const cosA = Math.cos(c.yaw), sinA = Math.sin(c.yaw);
+            const worldDirX = pushDirLocalX * cosA + pushDirLocalZ * sinA;
+            const worldDirZ = -pushDirLocalX * sinA + pushDirLocalZ * cosA;
+            const vDot = velocity.x * worldDirX + velocity.z * worldDirZ;
+            if (vDot < 0) {
+                velocity.x -= vDot * worldDirX;
+                velocity.z -= vDot * worldDirZ;
+            }
+            return;
+        }
         if (point.x < c.minX || point.x > c.maxX || point.z < c.minZ || point.z > c.maxZ) return;
         if (point.y >= c.topY - GROUND_CLEARANCE) return;
         embedded = true;
@@ -2299,64 +2354,71 @@ function buildSimpleHouse2(width, height, depth, wallColor, roofColor) {
 /* ---------- Elv (kun dekorativ - ingen kollisjon, samme prinsipp som bakketeksturen) ----------
    Ugjennomsiktig med vilje (IKKE transparent:true) - en halvgjennomsiktig overflate lot bakkens
    sjakkrutemønster (Sim.buildGroundTexture, normalt et subtilt gress-triks) skinne tydelig gjennom som
-   synlige "rutenett-linjer" i elva, spesielt ved kontrasten mot blåfargen. */
-const RIVER_JOINT_OVERLAP = 2.5; // m - hvert segment strekkes litt forbi punktene sine i begge ender,
-// slik at det ikke blir synlige glipper (bakken skinner gjennom) der to segmenter møtes i en vinkel.
-// Trapesformet (ikke ensartet bredde) - lar elva smalne inn til en bekk oppe ved fjellet
-// (se RIVER_POINTS/RIVER_WIDTHS) og utvide seg nedover mot dammen i den andre enden.
-function buildRiverSegment(from, to, widthFrom, widthTo, mat) {
-    const dx = to.x - from.x, dz = to.z - from.z;
-    const rawLength = Math.hypot(dx, dz);
-    const dirX = dx / rawLength, dirZ = dz / rawLength;
-    const start = { x: from.x - dirX * RIVER_JOINT_OVERLAP, z: from.z - dirZ * RIVER_JOINT_OVERLAP };
-    const length = rawLength + RIVER_JOINT_OVERLAP * 2;
-    const shape = new THREE.Shape();
-    shape.moveTo(-widthFrom / 2, 0);
-    shape.lineTo(widthFrom / 2, 0);
-    shape.lineTo(widthTo / 2, length);
-    shape.lineTo(-widthTo / 2, length);
-    shape.closePath();
-    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat);
-    mesh.receiveShadow = true; // elva skal ta imot skygge fra trær/gates/bygninger som krysser over den
-    mesh.rotation.x = -Math.PI / 2; // flat - shapens lokale Y (0..length) peker nå langs lokal -Z
-    const group = new THREE.Group();
-    group.add(mesh);
-    const angle = Math.atan2(dx, dz);
-    group.rotation.y = angle + Math.PI; // -Z rotert til å peke fra "from" mot "to" (se buildGroundArrow)
-    group.position.set(start.x, 0.03, start.z); // shapen starter ved lokal Y=0 = "start" (forlenget "from")
-    return group;
-}
-// widths: én bredde per punkt i points (ikke én bredde totalt) - segment i bruker widths[i]/widths[i+1]
-// som hhv. bredde ved "from"- og "to"-enden, se den trapesformede shapen over.
+   synlige "rutenett-linjer" i elva, spesielt ved kontrasten mot blåfargen.
+   Bygget som ETT sammenhengende bånd langs en Catmull-Rom-kurve gjennom RIVER_POINTS (i stedet for rette
+   trapesformede segmenter mellom hvert punkt, med runde "lapper" limt på i svingene) - det gamle
+   oppsettet var fortsatt synlig kantete siden SELVE BANEN aldri var buet, bare skjøtene mellom de rette
+   bitene var avrundet. Én kurve gir naturlig buede svinger over hele lengden, og siden det er ett eneste
+   mesh (ingen overlappende segmentkanter i det hele tatt) forsvinner også all skjøt-relatert flimring. */
+// widths: én bredde per punkt i points (ikke én bredde totalt) - bredden interpoleres jevnt mellom
+// naboverdiene langs kurven, se widthAtParam under.
+const RIVER_Y = 0.12; // høyere enn det opprinnelige (0.03) - samme absolutte klaring blir en mye mindre
+// ANDEL av dybdebufferets presisjon sett fra høyde/avstand, som ga synlig flimring (z-fighting) mot
+// bakken derfra selv om det så helt stabilt ut på nært hold.
+const RIVER_SAMPLES_PER_SEGMENT = 14;
 function buildRiver(points, widths, pondRadius) {
     const group = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ color: 0x3a72a8, roughness: 0.35, side: THREE.DoubleSide });
-    for (let i = 0; i < points.length - 1; i++) {
-        group.add(buildRiverSegment(points[i], points[i + 1], widths[i], widths[i + 1], mat));
+
+    const curvePoints = points.map(function (p) { return new THREE.Vector3(p.x, 0, p.z); });
+    // "centripetal" (i stedet for standard uniform catmullrom) unngår løkker/overshoot ved skarpe
+    // vinkler mellom punktene - viktig her siden RIVER_POINTS ikke er jevnt fordelt langs banen.
+    const curve = new THREE.CatmullRomCurve3(curvePoints, false, "centripetal");
+    const sampleCount = (points.length - 1) * RIVER_SAMPLES_PER_SEGMENT;
+    const sampled = curve.getPoints(sampleCount);
+
+    // Bredden ved kurveparameter t (0..1) - widths[i] er definert til å gjelde nøyaktig ved originalpunkt
+    // i, altså t = i/(points.length-1) (slik CatmullRomCurve3 selv fordeler t jevnt over inputpunktene,
+    // uavhengig av faktisk buelengde mellom dem) - resten lerpes rett fram mellom naboene.
+    function widthAtParam(t) {
+        const f = t * (widths.length - 1);
+        const i0 = Math.min(Math.floor(f), widths.length - 2);
+        return widths[i0] + (widths[i0 + 1] - widths[i0]) * (f - i0);
     }
-    // Rund "lapp" i hvert indre svingpunkt - de rette, trapesformede segmentene over er IKKE gjæret mot
-    // hverandre der de møtes i en vinkel (hver er bygget/rotert helt uavhengig av naboene), så uten dette
-    // blir det en synlig kant/hakk i elvebredden ved hver sving. Samme Y (0.03) og materiale som
-    // segmentene selv - ingen z-fighting siden fargen uansett blir identisk der de overlapper.
-    for (let i = 1; i < points.length - 1; i++) {
-        const joint = new THREE.Mesh(new THREE.CircleGeometry(Math.max(widths[i - 1], widths[i]) / 2, 16), mat);
-        joint.receiveShadow = true;
-        joint.rotation.x = -Math.PI / 2;
-        joint.position.set(points[i].x, 0.03, points[i].z);
-        group.add(joint);
+
+    const positions = [];
+    const indices = [];
+    for (let i = 0; i <= sampleCount; i++) {
+        const t = i / sampleCount;
+        const p = sampled[i];
+        const tangent = curve.getTangent(clamp(t, 0.0001, 0.9999));
+        const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize(); // 90° om Y - peker tvers på elveløpet
+        const halfW = widthAtParam(t) / 2;
+        positions.push(p.x - normal.x * halfW, RIVER_Y, p.z - normal.z * halfW);
+        positions.push(p.x + normal.x * halfW, RIVER_Y, p.z + normal.z * halfW);
+        if (i > 0) {
+            const a = (i - 1) * 2, b = a + 1, c = i * 2, d = c + 1;
+            indices.push(a, c, b, b, c, d);
+        }
     }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true; // elva skal ta imot skygge fra trær/gates/bygninger som krysser over den
+    group.add(mesh);
+
     if (pondRadius) {
         // Liten dam/innsjø i enden av elva - egen (litt dypere) blåtone for å lese som stillestående
-        // vann i motsetning til den rennende elva. Litt HØYERE enn selve elva (0.05 mot 0.03) - det siste
-        // elvesegmentet strekker seg forbi punktet sitt og inn i dammens sirkel (se RIVER_JOINT_OVERLAP),
-        // og der de to (ULIKT fargede) flatene lå helt jevnt overlappet flimret det synlig (z-fighting)
-        // idet kameraet beveget seg. Høydeforskjellen gjør at dammen alltid vinner konsekvent i stedet.
+        // vann i motsetning til den rennende elva. Litt høyere enn selve elva (unngår samme
+        // z-fighting-flimring mot elvebåndets ende som det opprinnelige oppsettet hadde).
         const pondMat = new THREE.MeshStandardMaterial({ color: 0x2f5f8f, roughness: 0.3 });
         const last = points[points.length - 1];
         const pond = new THREE.Mesh(new THREE.CircleGeometry(pondRadius, 24), pondMat);
         pond.receiveShadow = true;
         pond.rotation.x = -Math.PI / 2;
-        pond.position.set(last.x, 0.05, last.z);
+        pond.position.set(last.x, RIVER_Y + 0.02, last.z);
         group.add(pond);
     }
     return group;
@@ -2365,9 +2427,13 @@ function buildRiver(points, widths, pondRadius) {
 // selve portrekka. Starter som en liten bekk oppe ved foten av fjellet nord for banen (se
 // MOUNTAIN_PEAKS index 0 - det tryggeste/minste fjellet, samme retning som selve banen er flyttet til),
 // brer seg gradvis ut til en elv (se RIVER_WIDTHS), og ender i en liten dam/innsjø (se pondRadius).
+// De tre siste punktene bøyer vestover (mot lavere X) sammenlignet med et rett løp ned fra punkt 4 -
+// et rett løp ville tatt dammen/elvemunningen rett inn i FOREST_TREES (definert langt tidligere i
+// filen, sentrert på x=140/z=90 - opprinnelig KUN en del av bane 1) - flere av de trærne lå bokstavelig
+// innenfor dammens radius før denne justeringen.
 const RIVER_POINTS = [
     { x: 64, z: 507 }, { x: 115, z: 415 }, { x: 125, z: 360 }, { x: 120, z: 290 },
-    { x: 130, z: 230 }, { x: 115, z: 170 }, { x: 105, z: 125 }, { x: 95, z: 75 }
+    { x: 130, z: 230 }, { x: 90, z: 165 }, { x: 65, z: 120 }, { x: 45, z: 70 }
 ];
 const RIVER_WIDTHS = [1.5, 3, 5, 7, 8, 9, 9.5, 10];
 const RIVER_POND_RADIUS = 15;
@@ -2490,7 +2556,7 @@ function buildGateCourse2() {
         }
     }
     [
-        { x: 130, z: -20, w: 6, h: 5, d: 6, ry: 0.6, wall: 0xc9b896, roof: 0x6b4a3a },
+        { x: 162, z: -20, w: 6, h: 5, d: 6, ry: 0.6, wall: 0xc9b896, roof: 0x6b4a3a }, // flyttet lenger unna elva (se RIVER_POINTS) - sto for tett på svingen der
         { x: -130, z: -100, w: 5.5, h: 4.5, d: 5.5, ry: 2.1, wall: 0xb8c9b0, roof: 0x4a3a2e }
     ].forEach(function (h) {
         const house = buildSimpleHouse2(h.w, h.h, h.d, h.wall, h.roof);
