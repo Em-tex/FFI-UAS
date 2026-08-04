@@ -2346,36 +2346,34 @@ function updateInput(dt) {
     if (gp) buttonManager.poll(gp);
 
     const dropChance = settings.realisticMode ? (1 - linkQuality) : 0;
-    if (dropChance > 0 && Math.random() < dropChance) {
-        // Simulerer tapt kontrollpakke pga svak/tapt link - pinnene beholder forrige verdi.
-        updateGamepadAxesReadout(gp);
-        applyKillswitchInputOverride();
-        return;
-    }
+    const packetDropped = dropChance > 0 && Math.random() < dropChance;
 
-    if (gp) {
+    if (packetDropped) {
+        // Simulerer tapt kontrollpakke pga svak/tapt link - pinnene beholder forrige verdi.
+    } else if (gp) {
         inputState.source = "gamepad";
         inputState.stick.roll = readStickAxis(gp, gamepadMap.roll);
         inputState.stick.pitch = readStickAxis(gp, gamepadMap.pitch);
         inputState.stick.yaw = readStickAxis(gp, gamepadMap.yaw);
         inputState.stick.throttle = readThrottleAxis(gp, gamepadMap.throttle);
-        updateGamepadAxesReadout(gp);
-        applyKillswitchInputOverride();
-        return;
-    }
-    inputState.source = "keyboard";
-    const rollTarget = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-    const pitchTarget = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
-    const yawTarget = (keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0);
-    inputState.stick.roll = rampStick(inputState.stick.roll, rollTarget, dt);
-    inputState.stick.pitch = rampStick(inputState.stick.pitch, pitchTarget, dt);
-    inputState.stick.yaw = rampStick(inputState.stick.yaw, yawTarget, dt);
+    } else {
+        inputState.source = "keyboard";
+        const rollTarget = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+        const pitchTarget = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
+        const yawTarget = (keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0);
+        inputState.stick.roll = rampStick(inputState.stick.roll, rollTarget, dt);
+        inputState.stick.pitch = rampStick(inputState.stick.pitch, pitchTarget, dt);
+        inputState.stick.yaw = rampStick(inputState.stick.yaw, yawTarget, dt);
 
-    let throttle = inputState.stick.throttle;
-    if (keys.has("ShiftLeft") || keys.has("ShiftRight")) throttle += THROTTLE_RATE * dt;
-    if (keys.has("ControlLeft") || keys.has("ControlRight")) throttle -= THROTTLE_RATE * dt;
-    inputState.stick.throttle = clamp(throttle, 0, 1);
-    updateGamepadAxesReadout(null);
+        let throttle = inputState.stick.throttle;
+        if (keys.has("ShiftLeft") || keys.has("ShiftRight")) throttle += THROTTLE_RATE * dt;
+        if (keys.has("ControlLeft") || keys.has("ControlRight")) throttle -= THROTTLE_RATE * dt;
+        inputState.stick.throttle = clamp(throttle, 0, 1);
+    }
+
+    // gp er null/undefined i tastatur-grenen, akkurat som det eksplisitte null-kallet det erstatter -
+    // updateGamepadAxesReadout faller selv tilbake på getActiveGamepad() da.
+    updateGamepadAxesReadout(gp);
     // Kontrolltap (ex11, crowd/traffic): overstyrer stick-verdiene satt over med en falsk kommando mot
     // faresonen HVIS en slik rømning faktisk pågår akkurat nå - se applyKillswitchInputOverride. Må stå
     // sist i updateInput (etter ekte tastatur/gamepad-lesing over) for faktisk å nå frem til fysikken.
@@ -2738,11 +2736,18 @@ function resolveGroundContact(dt, wasGrounded) {
     // lest som støttet med et voldsomt oppløft som resultat. Fanger opp dette per punkt og dytter
     // kroppen ut av veggen i stedet, slik at punktet IKKE telles som støttet.
     let wallPush = null;
+    // Ett eneste SOLID_COLLIDERS-gjennomløp per punkt (i stedet for to - dette gjennomløpet OG et til
+    // inne i solidSurfaceHeightAt) - avgjør innfelt-i-vegg-status og samler samtidig opp den høyeste
+    // gyldige topp-flaten (colliderTop), akkurat som solidSurfaceHeightAt() ellers ville gjort separat.
     const grounded = points.map(function (f) {
         let embeddedInWall = false;
+        let colliderTop = 0;
         SOLID_COLLIDERS.forEach(function (c) {
             if (f.x < c.minX || f.x > c.maxX || f.z < c.minZ || f.z > c.maxZ) return;
-            if (f.y >= c.topY - GROUND_CLEARANCE) return;
+            if (f.y >= c.topY - GROUND_CLEARANCE) {
+                colliderTop = Math.max(colliderTop, c.topY);
+                return;
+            }
             embeddedInWall = true;
             const distMinX = f.x - c.minX, distMaxX = c.maxX - f.x, distMinZ = f.z - c.minZ, distMaxZ = c.maxZ - f.z;
             const minDist = Math.min(distMinX, distMaxX, distMinZ, distMaxZ);
@@ -2754,7 +2759,7 @@ function resolveGroundContact(dt, wasGrounded) {
             }
         });
         if (embeddedInWall) return false;
-        const groundY = solidSurfaceHeightAt(f.x, f.z);
+        const groundY = Math.max(mountainHeightAt(f.x, f.z), colliderTop);
         const penetration = groundY - f.y;
         if (penetration > maxPenetration) maxPenetration = penetration;
         return penetration > -LEG_CONTACT_TOLERANCE;
@@ -3615,6 +3620,454 @@ function advanceExerciseStage() {
     if (nextStage.type === "killswitch") spawnKillswitchStage(nextStage);
 }
 
+// Kalles rett etter den faste fysikk-løkka i animate() (se lenger ned) - droneState.position/
+// quaternion reflekterer da nettopp integrert fysikk for dette bildet.
+function updateExercise(dt, now) {
+    if (!exerciseState.active || exerciseState.awaitingNext) return; // fryst etter bestått - se completeExercise
+
+    // Landingsfase: deløvelsene er unnagjort - klokka går til droneen står trygt på H-plassen.
+    // (Banner-meldingen ble satt én gang i enterLandingPhase og fases ut av seg selv - kun
+    // landings-deteksjonen kjører her.)
+    if (exerciseState.landingPhase) {
+        exerciseState.headingErrorDeg = null; // ingen nese-krav under landing
+        const horizSpeed = Math.hypot(droneState.velocity.x, droneState.velocity.z);
+        const onPad = droneState.grounded && !droneState.crashed && horizSpeed < 0.5 &&
+            Math.hypot(droneState.position.x, droneState.position.z) <= LANDING_PAD_RADIUS;
+        if (onPad) {
+            if (exerciseState.landedSinceMs === null) exerciseState.landedSinceMs = now;
+            if (now - exerciseState.landedSinceMs >= LANDING_CONFIRM_SEC * 1000) {
+                const exercise = EXERCISES[exerciseState.exerciseId];
+                const isReturnExercise = exercise.stages[0].type === "return";
+                if (isReturnExercise) exerciseState.returnRepsCompleted++;
+                if (isReturnExercise && exerciseState.returnRepsCompleted < REQUIRED_RETURN_REPS) {
+                    // Ikke siste gjennomføring ennå - respawn med ny tilfeldig posisjon/retning og fortsett.
+                    // Klokka fortsetter å gå (samme startTime) - totaltiden for alle rundene lagres til slutt.
+                    exerciseState.landingPhase = false;
+                    exerciseState.landedSinceMs = null;
+                    spawnForExercise(exercise);
+                    exerciseState.warningMessage = "Runde " + exerciseState.returnRepsCompleted + "/" +
+                        REQUIRED_RETURN_REPS + " fullført! Ny posisjon klargjort...";
+                    exerciseState.warningUntil = now + 3000;
+                    exerciseState.warningIsSuccess = true;
+                } else {
+                    completeExercise();
+                }
+            }
+        } else {
+            exerciseState.landedSinceMs = null;
+        }
+        return;
+    }
+
+    const stage = getExerciseStage();
+
+    if (stage.type === "killswitch") {
+        exerciseState.headingErrorDeg = null; // ingen nese-krav i killswitch-scenarioene
+        updateKillswitchStage(stage, dt, now);
+        return;
+    }
+
+    // "Returner hjem": droneen holdes fastfrosset i lufta gjennom nedtelling + gass-matching, og
+    // slippes først når piloten har lagt gassen rundt hover - deretter er det ren landingsfase.
+    if (stage.type === "return") {
+        exerciseState.headingErrorDeg = null; // ingen nese-krav mens dronen henger/venter på overtakelse
+        if (exerciseState.returnPhase) {
+            droneState.position.copy(exerciseState.returnSpawnPos);
+            droneState.velocity.set(0, 0, 0);
+            droneState.quaternion.copy(exerciseState.returnSpawnQuat);
+            droneState.angularVelocity.pitch = 0;
+            droneState.angularVelocity.yaw = 0;
+            droneState.angularVelocity.roll = 0;
+            if (exerciseState.returnPhase === "countdown") {
+                const remainingSec = Math.ceil((exerciseState.returnCountdownEnd - now) / 1000);
+                if (remainingSec > 0) {
+                    exerciseState.warningMessage = "Dronen er langt hjemmefra! Du overtar om " + remainingSec + "...";
+                    exerciseState.warningUntil = now + 500;
+                    exerciseState.warningIsSuccess = false;
+                } else {
+                    exerciseState.returnPhase = "awaitThrottle";
+                }
+            }
+            if (exerciseState.returnPhase === "awaitThrottle") {
+                const throttle = inputState.stick.throttle;
+                if (throttle >= 0.4 && throttle <= 0.65) {
+                    exerciseState.returnPhase = null;
+                    enterLandingPhase("Du har kontrollen! Fly dronen trygt hjem og land på landingsplassen (H).");
+                } else {
+                    exerciseState.warningMessage = "Ta kontroll: legg gassen rundt 50 % (nå " +
+                        Math.round(throttle * 100) + " %)";
+                    exerciseState.warningUntil = now + 500;
+                    exerciseState.warningIsSuccess = false;
+                }
+            }
+        }
+        return;
+    }
+
+    const euler = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ");
+    const currentYaw = euler.y;
+
+    // Hover-steg: ingen løype/runder - hold posisjon, høyde og retning sammenhengende i holdSec
+    // sekunder. Drift ut av toleransene nullstiller bare holde-tiden (mildere enn avviks-maskineriet
+    // for løypene - hover er en ren teknikkovelse, ikke en avviksdrill). Ingen egen engage-gate:
+    // logikken er selv-gatende (tiden teller kun innenfor toleransene).
+    if (stage.type === "hover") {
+        const posOk = horizontalCaptureDistance(droneState.position.x - HOVER_CENTER.x,
+            droneState.position.z - HOVER_CENTER.z) <= HOVER_POS_TOLERANCE;
+        const altOk = Math.abs(droneState.position.y - HOVER_ALTITUDE) <= HOVER_ALTITUDE_TOLERANCE;
+        exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, stage.headingYaw));
+        const headingOk = exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG;
+        if (posOk && altOk && headingOk) {
+            exerciseState.hoverHoldSec += dt;
+            if (exerciseState.hoverHoldSec >= stage.holdSec) advanceExerciseStage();
+        } else {
+            exerciseState.hoverHoldSec = 0;
+        }
+        return;
+    }
+
+    // Sikksakk-steget har veipunkt med egne y-koordinater: der styrer selve formen høyden (fanges i
+    // 3D under), og den faste høydesjekken skrus av.
+    const is3d = stage.waypoints[0].y !== undefined;
+
+    // Løype-steg: reglene (høyde/nese) gjelder først fra det øyeblikket FØRSTE veipunkt er nådd -
+    // hele transitten fra avgangsplassen frem til startpunktet (den pulserende markøren) er fri
+    // flyging. Å nå startpunktet krever riktig høyde, så runden alltid begynner "innenfor reglene".
+    // Fangst-radius: per steg (firkant-hjørner er trange mål), ellers 3D- eller standardradius.
+    const captureRadius = stage.captureRadius || (is3d ? WAYPOINT_CAPTURE_RADIUS_3D : WAYPOINT_CAPTURE_RADIUS);
+
+    if (!exerciseState.engaged) {
+        const wp0 = stage.waypoints[0];
+        const atStart = is3d
+            ? Math.hypot(droneState.position.x - wp0.x, droneState.position.y - wp0.y, droneState.position.z - wp0.z) < captureRadius
+            : (horizontalCaptureDistance(droneState.position.x - wp0.x, droneState.position.z - wp0.z) < captureRadius &&
+                Math.abs(droneState.position.y - EXERCISE_ALTITUDE) <= ALTITUDE_TOLERANCE);
+        if (!atStart) return;
+        exerciseState.engaged = true;
+        exerciseState.wpIndex = 1; // startpunktet er tatt - runden er i gang, neste mål er punkt 2
+        // Startpunktet er også et "hjørne" - gi samme frist til å svinge inn på første kant.
+        if (stage.cornerGraceSec) exerciseState.headingGraceUntil = now + stage.cornerGraceSec * 1000;
+    }
+
+    // headingErrorDeg oppdateres uavhengig av grace/violation-logikken under - rent informativt HUD-tall
+    // (se "Nese-feil" i HUD-baren) slik at piloten kan se nøyaktig hvor mange grader unna man er i
+    // stedet for bare et binært "avvik"-varsel etterpå.
+    let headingViolation = false;
+    if (stage.noseMode === "free") {
+        // Ingen nese-krav i det hele tatt (se ex9 "Åttetall i vind") - headingViolation forblir false
+        // og HUD-feltet "Nese-feil" viser "-" (ikke relevant her).
+        exerciseState.headingErrorDeg = null;
+    } else if (stage.noseMode === "out") {
+        exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, LOCKED_HEADING));
+        headingViolation = exerciseState.headingErrorDeg > HEADING_TOLERANCE_DEG;
+    } else {
+        const horizSpeed = Math.hypot(droneState.velocity.x, droneState.velocity.z);
+        if (horizSpeed > MIN_SPEED_FOR_HEADING_CHECK) {
+            // -Z er forover (se stepPhysics/createChaseCameraController) - samme targetYaw-formel som
+            // nesa "ut" ellers ville brukt, bare med fartsretningen i stedet for en fast retning.
+            const targetYaw = Math.atan2(-droneState.velocity.x, -droneState.velocity.z);
+            exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, targetYaw));
+            const overTolerance = exerciseState.headingErrorDeg > HEADING_TOLERANCE_DEG;
+            if (overTolerance) {
+                if (exerciseState.headingBadSinceMs === null) exerciseState.headingBadSinceMs = now;
+                headingViolation = now >= exerciseState.headingGraceUntil &&
+                    (now - exerciseState.headingBadSinceMs) >= HEADING_FORWARD_SLIP_GRACE_MS;
+            } else {
+                exerciseState.headingBadSinceMs = null;
+            }
+        } else {
+            exerciseState.headingErrorDeg = null; // for lav fart til at fartsretningen er meningsfull
+            exerciseState.headingBadSinceMs = null;
+        }
+    }
+    const altitudeViolation = !is3d && Math.abs(droneState.position.y - EXERCISE_ALTITUDE) > ALTITUDE_TOLERANCE;
+    const violationNow = headingViolation || altitudeViolation;
+
+    if (violationNow) {
+        if (!exerciseState.violationActive) {
+            exerciseState.violationActive = true;
+            exerciseState.attemptViolationCount++;
+            exerciseState.lapHasViolation = true;
+            if (exerciseState.attemptViolationCount === 1) {
+                exerciseState.warningMessage = altitudeViolation ? "Høydeavvik! Advarsel." : "Feil nese-retning! Advarsel.";
+                exerciseState.warningUntil = now + 2500;
+                exerciseState.warningIsSuccess = false;
+            } else {
+                exerciseState.warningMessage = "For mange avvik - steget nullstilt.";
+                exerciseState.warningUntil = now + 2500;
+                exerciseState.warningIsSuccess = false;
+                resetStageProgress();
+                resetDrone();
+                return; // droneen ble nettopp resatt - hopp over vegpunkt-sjekk for dette bildet
+            }
+        }
+    } else {
+        exerciseState.violationActive = false;
+    }
+
+    const wp = stage.waypoints[exerciseState.wpIndex];
+    const captured = is3d
+        ? Math.hypot(droneState.position.x - wp.x, droneState.position.y - wp.y, droneState.position.z - wp.z) < captureRadius
+        : horizontalCaptureDistance(droneState.position.x - wp.x, droneState.position.z - wp.z) < captureRadius;
+    if (captured) {
+        // Hvert veipunkt-treff starter hjørne-fristen på nytt (kun satt for steg med cornerGraceSec).
+        if (stage.cornerGraceSec) exerciseState.headingGraceUntil = now + stage.cornerGraceSec * 1000;
+        exerciseState.wpIndex++;
+        if (exerciseState.wpIndex >= stage.waypoints.length) {
+            exerciseState.wpIndex = 0;
+            if (!exerciseState.lapHasViolation) exerciseState.lapsCleanCount++;
+            exerciseState.lapHasViolation = false;
+            if (exerciseState.lapsCleanCount >= (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS)) advanceExerciseStage();
+        }
+    }
+}
+
+// Cachet én gang (samme mønster som hudMode/hudArmed osv. over updateHud) i stedet for et nytt
+// document.getElementById-oppslag per felt hvert eneste bilde - denne kalles uvilkårlig fra animate().
+const exerciseWarningBannerEl = document.getElementById("exerciseWarningBanner");
+const exerciseWarningTextEl = document.getElementById("exerciseWarningText");
+const exerciseHudBarEl = document.getElementById("exerciseHudBar");
+const exerciseProgressBoxEl = document.getElementById("exerciseProgressBox");
+const exerciseHudStageEl = document.getElementById("exerciseHudStage");
+const exerciseHudLapsEl = document.getElementById("exerciseHudLaps");
+const exerciseHudViolationsEl = document.getElementById("exerciseHudViolations");
+const exerciseHudHeadingErrorEl = document.getElementById("exerciseHudHeadingError");
+const exerciseHudTimerItemEl = document.getElementById("exerciseHudTimerItem");
+const exerciseHudTimerEl = document.getElementById("exerciseHudTimer");
+
+function updateExerciseHud() {
+    const showBanner = performance.now() < exerciseState.warningUntil;
+    exerciseWarningBannerEl.classList.toggle("show", showBanner);
+    exerciseWarningBannerEl.classList.toggle("sim-banner-success", exerciseState.warningIsSuccess);
+    if (showBanner) exerciseWarningTextEl.textContent = exerciseState.warningMessage;
+
+    if (!exerciseState.active) {
+        exerciseHudBarEl.style.display = "none";
+        exerciseProgressBoxEl.style.display = "none";
+        return;
+    }
+    exerciseHudBarEl.style.display = "";
+    exerciseProgressBoxEl.style.display = "";
+    // "Returner hjem" har ett fast steg (stageIndex alltid 0) - stegobjektet er gyldig gjennom hele
+    // landingsfasen der også, i motsetning til vanlige flerstegs-øvelser (der landingPhase betyr
+    // stageIndex har passert siste steg og getExerciseStage() ville returnert undefined). awaitingNext
+    // (bestått og fryst, se completeExercise) betyr ALLTID at stegobjektet ikke lenger er gyldig å lese.
+    const isReturnExercise = EXERCISES[exerciseState.exerciseId].stages[0].type === "return";
+    const stage = (exerciseState.awaitingNext || (exerciseState.landingPhase && !isReturnExercise))
+        ? null : getExerciseStage();
+    // Killswitch-stegnavnet (stage.label) ville spoilet hvilket scenario som kommer/pågår - vises som
+    // et nøytralt løpenummer i stedet, se killswitchDisplayLabel.
+    exerciseHudStageEl.textContent = stage
+        ? (stage.type === "killswitch" ? killswitchDisplayLabel() : stage.label)
+        : (exerciseState.awaitingNext ? "Fullført!" : "Landing");
+    // Merk runden som "teller ikke" så snart et avvik har skjedd i den - synlig konsekvens med en gang.
+    const lapSuffix = (stage && exerciseState.lapHasViolation) ? " (runden teller ikke)" : "";
+    const returnSuffix = exerciseState.landingPhase ? " - land på H" : "";
+    exerciseHudLapsEl.textContent = !stage
+        ? (exerciseState.awaitingNext ? "Se oppsummering" : "Land på H")
+        : (stage.type === "hover"
+            ? exerciseState.hoverHoldSec.toFixed(1) + "/" + stage.holdSec + " s"
+            : (stage.type === "return"
+                ? exerciseState.returnRepsCompleted + "/" + REQUIRED_RETURN_REPS + returnSuffix
+                : stage.type === "killswitch"
+                    ? killswitchStatusText()
+                    : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
+
+    // Avviks-status: tydelig, vedvarende indikator på hvor nær steget er å bli nullstilt - banneret
+    // alene forsvinner etter noen sekunder og etterlot ingen synlig "du har brukt opp advarselen".
+    if (!stage || stage.type === "hover" || stage.type === "return" || stage.type === "killswitch") {
+        exerciseHudViolationsEl.textContent = "-";
+        exerciseHudViolationsEl.className = "sim-status-value";
+    } else if (exerciseState.attemptViolationCount === 0) {
+        exerciseHudViolationsEl.textContent = "Ingen";
+        exerciseHudViolationsEl.className = "sim-status-value sim-armed";
+    } else {
+        exerciseHudViolationsEl.textContent = "1 - neste nullstiller!";
+        exerciseHudViolationsEl.className = "sim-status-value sim-killed";
+    }
+
+    // Løpende nese-avvik i grader - se headingErrorDeg-kommentaren i updateExercise. Svarer direkte på
+    // "hvilken retning sjekkes egentlig akkurat nå" i stedet for å bare oppdage det som et varsel etterpå.
+    if (exerciseState.headingErrorDeg === null) {
+        exerciseHudHeadingErrorEl.textContent = "-";
+        exerciseHudHeadingErrorEl.className = "sim-status-value";
+    } else {
+        exerciseHudHeadingErrorEl.textContent = Math.round(exerciseState.headingErrorDeg) + "°";
+        exerciseHudHeadingErrorEl.className = "sim-status-value " +
+            (exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG ? "sim-armed" : "sim-killed");
+    }
+
+    // "Uforutsette hendelser" (ex11) handler om riktig respons, ikke fart - se noTiming/completeExercise.
+    if (EXERCISES[exerciseState.exerciseId].noTiming) {
+        exerciseHudTimerItemEl.style.display = "none";
+    } else {
+        exerciseHudTimerItemEl.style.display = "";
+        const elapsed = (performance.now() - exerciseState.startTime) / 1000;
+        const mm = Math.floor(elapsed / 60);
+        const ss = Math.floor(elapsed % 60);
+        exerciseHudTimerEl.textContent = mm + ":" + (ss < 10 ? "0" : "") + ss;
+    }
+}
+
+// Plasserer droneen for (om)start av en øvelse: vanlige øvelser starter på avgangsplassen (via
+// resetDrone), "Returner hjem" spawner høyt og langt unna med tilfeldig yaw og starter nedtellingen.
+function spawnForExercise(exercise) {
+    resetDrone();
+    exerciseState.returnPhase = null;
+    // Killswitch-øvelsen (ex11): egen spawn/tilstand for steg 0 - se spawnKillswitchStage. Kalles kun
+    // herfra ved førstegangsstart og fullt R-restart (begge nullstiller stageIndex til 0 først), så
+    // exercise.stages[0] er alltid riktig steg å klargjøre.
+    if (exercise.stages[0].type === "killswitch") {
+        spawnKillswitchStage(exercise.stages[0]);
+        exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
+        exerciseState.warningUntil = performance.now() + 4000;
+        exerciseState.warningIsSuccess = true;
+    } else if (exercise.startHint) {
+        exerciseState.warningMessage = exercise.startHint;
+        exerciseState.warningUntil = performance.now() + 4500;
+        exerciseState.warningIsSuccess = true;
+    }
+    if (exercise.spawn === "far") {
+        const bearing = (Math.random() * 2 - 1) * (Math.PI / 3); // innenfor ±60° av rett frem (-Z)
+        const dist = 130 + Math.random() * 40;
+        exerciseState.returnSpawnPos.set(Math.sin(bearing) * dist, 35 + Math.random() * 10, -Math.cos(bearing) * dist);
+        exerciseState.returnSpawnQuat.setFromEuler(new THREE.Euler(0, Math.random() * Math.PI * 2, 0, "YXZ"));
+        droneState.position.copy(exerciseState.returnSpawnPos);
+        droneState.quaternion.copy(exerciseState.returnSpawnQuat);
+        exerciseState.returnPhase = "countdown";
+        exerciseState.returnCountdownEnd = performance.now() + 4000;
+    }
+    // Ny tilfeldig vindretning ved HVER spawn (første start, hver runde og hver R-restart) - ikke bare
+    // ved øvelsesstart. Kjøres etter startExercise sin faste vind-tvang (se der), så denne vinner.
+    if (exercise.wind && exercise.randomizeWindDirection) {
+        settings.wind.directionDeg = Math.floor(Math.random() * 360);
+    }
+    // Tilfeldig skydekke per runde, men minst én av de REQUIRED_RETURN_REPS rundene garantert 100% -
+    // hvilken runde det blir avgjøres på nytt for hver ferske økt (returnRepsCompleted === 0, altså
+    // helt i starten av startExercise ELLER rett etter en R-restart, ikke ved vanlig runde-fremgang).
+    if (exercise.randomizeCloudCoverage) {
+        if (exerciseState.returnRepsCompleted === 0) {
+            exerciseState.returnFullCloudRep = Math.floor(Math.random() * REQUIRED_RETURN_REPS);
+        }
+        settings.cloudsEnabled = true;
+        settings.cloudCoverage = (exerciseState.returnRepsCompleted === exerciseState.returnFullCloudRep)
+            ? 1
+            : 0.3 + Math.random() * 0.6;
+    }
+}
+
+function startExercise(id) {
+    const exercise = EXERCISES[id];
+    if (!exercise) return;
+    // Gaten håndheves også her (ikke bare i UI-en, se showExerciseDetail) - avviser før stopExercise()
+    // slik at et eventuelt PÅGÅENDE forsøk på en annen øvelse ikke avbrytes for et forsøk som uansett blir avvist.
+    if (exercise.requiresGamepadKill && !isGamepadKillBound()) return;
+    stopExercise();
+    exerciseState.savedDroneClass = droneState.droneClass;
+    exerciseState.savedCameraModeIndex = cameraModeIndex;
+    setDroneClassEphemeral("mid");
+    cameraModeIndex = CAMERA_MODES.indexOf("vlos");
+    activeCamera = vlosCamera;
+
+    // Vind-øvelser tvinger sin egen vind mens øvelsen pågår - brukerens innstillinger huskes og
+    // settes tilbake i stopExercise. Ingen saveSettings her: tvangen skal aldri lekke til localStorage.
+    // MÅ settes FØR spawnForExercise (rett under) - for øvelser med randomizeWindDirection er det
+    // spawnForExercise sin oppgave å gi den faktiske (tilfeldige) retningen, denne blokka setter bare
+    // resten av vind-parametrene (styrke/kast/på) og en forhåndsvalgt retning for de øvrige.
+    exerciseState.savedWind = {
+        enabled: settings.wind.enabled, speed: settings.wind.speed,
+        directionDeg: settings.wind.directionDeg, gust: settings.wind.gust
+    };
+    if (exercise.wind) {
+        settings.wind.enabled = true;
+        settings.wind.speed = exercise.wind.speed;
+        settings.wind.directionDeg = exercise.wind.directionDeg;
+        settings.wind.gust = exercise.wind.gust;
+    } else {
+        settings.wind.enabled = false; // øvrige øvelser flys i stille vær uansett hva brukeren hadde på
+    }
+
+    // Enkelte øvelser (ex10) tvinger sitt eget skydekke mens de pågår - samme lagre/gjenopprett-
+    // mønster som vinden over. Statisk verdi settes her; PER RUNDE-randomisering (randomizeCloudCoverage)
+    // håndteres i stedet i spawnForExercise, som kjøres rett under og til slutt vinner.
+    exerciseState.savedClouds = { enabled: settings.cloudsEnabled, coverage: settings.cloudCoverage };
+    if (exercise.cloudCoverage !== undefined && !exercise.randomizeCloudCoverage) {
+        settings.cloudsEnabled = true;
+        settings.cloudCoverage = exercise.cloudCoverage;
+    }
+
+    // MÅ nullstilles FØR spawnForExercise: den leser exerciseState.returnRepsCompleted for å avgjøre om
+    // dette er en helt fersk økt (og i så fall trekke en ny "garantert 100% skydekke"-runde, ex10) -
+    // uten denne rekkefølgen ville den første spawnen i en ny økt sett den GAMLE verdien fra forrige gang.
+    exerciseState.stageIndex = 0;
+    resetStageProgress();
+    exerciseState.warningUntil = 0; // rydd unna en ev. gjenværende banner fra forrige økt FØR spawnForExercise setter start-hintet
+    spawnForExercise(exercise);
+
+    exerciseState.active = true;
+    exerciseState.exerciseId = id;
+    exerciseState.startTime = performance.now();
+    rebuildExerciseGuide();
+    // Lukk menyen - piloten skal rett i gang, og panelet skygger for sikten mot treningsområdet.
+    document.getElementById("exercisesPanel").style.display = "none";
+}
+
+// Idempotent opprydning - kalles både fra "Avbryt" og fra starten av startExercise (dekker "bytt til
+// en annen øvelse" og "start øvelsen på nytt" med én kodesti). Teleporterer IKKE droneen tilbake til
+// plattformen - respekterer det brukeren holder på med akkurat da.
+function stopExercise() {
+    if (!exerciseState.active) return;
+    setDroneClassEphemeral(exerciseState.savedDroneClass);
+    cameraModeIndex = exerciseState.savedCameraModeIndex;
+    const mode = CAMERA_MODES[cameraModeIndex];
+    activeCamera = (mode === "chase") ? chaseCamera : (mode === "fpv") ? fpvCamera : vlosCamera;
+    if (exerciseState.savedClouds) {
+        settings.cloudsEnabled = exerciseState.savedClouds.enabled;
+        settings.cloudCoverage = exerciseState.savedClouds.coverage;
+        exerciseState.savedClouds = null;
+    }
+    if (exerciseState.savedWind) {
+        settings.wind.enabled = exerciseState.savedWind.enabled;
+        settings.wind.speed = exerciseState.savedWind.speed;
+        settings.wind.directionDeg = exerciseState.savedWind.directionDeg;
+        settings.wind.gust = exerciseState.savedWind.gust;
+        exerciseState.savedWind = null;
+    }
+    if (exerciseGuideHandle) {
+        scene.remove(exerciseGuideHandle.group);
+        exerciseGuideHandle = null;
+    }
+    // Re-armer: den eneste grunnen droneState.armed kan stå false her er completeExercise()s frys
+    // (awaitingNext) - i alle andre tilfeller (Avbryt midt i flukt) er den alt armert, så dette er en
+    // no-op da og en nødvendig gjenoppretting her.
+    droneState.armed = true;
+    exerciseState.active = false;
+    exerciseState.exerciseId = null;
+    exerciseState.landingPhase = false;
+    exerciseState.awaitingNext = false;
+}
+
+// Manuell R/reset-knapp: starter HELE øvelsen på nytt fra steg 0 og nullstiller stoppeklokken - i
+// motsetning til det automatiske steg-nullstillet ved 2. avvik (som beholder tidligere bestått steg-
+// fremgang OG lar klokken gå videre, som en implisitt tidsstraff for restarts).
+function handleResetRequest() {
+    if (!exerciseState.active) {
+        resetDrone();
+        return;
+    }
+    // Gyldig også rett etter en bestått (awaitingNext) - full omkamp i stedet for å måtte gå via
+    // oppsummeringskortet. Skjul kortet hvis det står åpent (fra en tidligere fullføring i samme økt
+    // ville det ikke være det, men det koster ingenting å være trygg).
+    document.getElementById("exerciseSummary").style.display = "none";
+    exerciseState.awaitingNext = false;
+    exerciseState.stageIndex = 0;
+    exerciseState.landingPhase = false;
+    resetStageProgress();
+    exerciseState.startTime = performance.now();
+    spawnForExercise(EXERCISES[exerciseState.exerciseId]); // "Returner hjem" får ny tilfeldig posisjon/retning
+    rebuildExerciseGuide();
+}
+
 /* ---------- Øvelser: killswitch-tilstandsmaskin (ex11) ----------
    Hvert steg går gjennom exerciseState.ksPhase: "wait" (tilfeldig ventetid mens patruljeruten flys,
    se updateKillswitchPatrol) -> "danger" (noe har inntruffet) -> enten "resolved" (riktig respons -
@@ -3924,454 +4377,6 @@ function updateKillswitchVisuals(now, dt) {
             pedestrianHandle.position.lerpVectors(exerciseState.ksPedestrianFrom, exerciseState.ksPedestrianTo, t);
         }
     }
-}
-
-// Kalles rett etter den faste fysikk-løkka i animate() (se lenger ned) - droneState.position/
-// quaternion reflekterer da nettopp integrert fysikk for dette bildet.
-function updateExercise(dt, now) {
-    if (!exerciseState.active || exerciseState.awaitingNext) return; // fryst etter bestått - se completeExercise
-
-    // Landingsfase: deløvelsene er unnagjort - klokka går til droneen står trygt på H-plassen.
-    // (Banner-meldingen ble satt én gang i enterLandingPhase og fases ut av seg selv - kun
-    // landings-deteksjonen kjører her.)
-    if (exerciseState.landingPhase) {
-        exerciseState.headingErrorDeg = null; // ingen nese-krav under landing
-        const horizSpeed = Math.hypot(droneState.velocity.x, droneState.velocity.z);
-        const onPad = droneState.grounded && !droneState.crashed && horizSpeed < 0.5 &&
-            Math.hypot(droneState.position.x, droneState.position.z) <= LANDING_PAD_RADIUS;
-        if (onPad) {
-            if (exerciseState.landedSinceMs === null) exerciseState.landedSinceMs = now;
-            if (now - exerciseState.landedSinceMs >= LANDING_CONFIRM_SEC * 1000) {
-                const exercise = EXERCISES[exerciseState.exerciseId];
-                const isReturnExercise = exercise.stages[0].type === "return";
-                if (isReturnExercise) exerciseState.returnRepsCompleted++;
-                if (isReturnExercise && exerciseState.returnRepsCompleted < REQUIRED_RETURN_REPS) {
-                    // Ikke siste gjennomføring ennå - respawn med ny tilfeldig posisjon/retning og fortsett.
-                    // Klokka fortsetter å gå (samme startTime) - totaltiden for alle rundene lagres til slutt.
-                    exerciseState.landingPhase = false;
-                    exerciseState.landedSinceMs = null;
-                    spawnForExercise(exercise);
-                    exerciseState.warningMessage = "Runde " + exerciseState.returnRepsCompleted + "/" +
-                        REQUIRED_RETURN_REPS + " fullført! Ny posisjon klargjort...";
-                    exerciseState.warningUntil = now + 3000;
-                    exerciseState.warningIsSuccess = true;
-                } else {
-                    completeExercise();
-                }
-            }
-        } else {
-            exerciseState.landedSinceMs = null;
-        }
-        return;
-    }
-
-    const stage = getExerciseStage();
-
-    if (stage.type === "killswitch") {
-        exerciseState.headingErrorDeg = null; // ingen nese-krav i killswitch-scenarioene
-        updateKillswitchStage(stage, dt, now);
-        return;
-    }
-
-    // "Returner hjem": droneen holdes fastfrosset i lufta gjennom nedtelling + gass-matching, og
-    // slippes først når piloten har lagt gassen rundt hover - deretter er det ren landingsfase.
-    if (stage.type === "return") {
-        exerciseState.headingErrorDeg = null; // ingen nese-krav mens dronen henger/venter på overtakelse
-        if (exerciseState.returnPhase) {
-            droneState.position.copy(exerciseState.returnSpawnPos);
-            droneState.velocity.set(0, 0, 0);
-            droneState.quaternion.copy(exerciseState.returnSpawnQuat);
-            droneState.angularVelocity.pitch = 0;
-            droneState.angularVelocity.yaw = 0;
-            droneState.angularVelocity.roll = 0;
-            if (exerciseState.returnPhase === "countdown") {
-                const remainingSec = Math.ceil((exerciseState.returnCountdownEnd - now) / 1000);
-                if (remainingSec > 0) {
-                    exerciseState.warningMessage = "Dronen er langt hjemmefra! Du overtar om " + remainingSec + "...";
-                    exerciseState.warningUntil = now + 500;
-                    exerciseState.warningIsSuccess = false;
-                } else {
-                    exerciseState.returnPhase = "awaitThrottle";
-                }
-            }
-            if (exerciseState.returnPhase === "awaitThrottle") {
-                const throttle = inputState.stick.throttle;
-                if (throttle >= 0.4 && throttle <= 0.65) {
-                    exerciseState.returnPhase = null;
-                    enterLandingPhase("Du har kontrollen! Fly dronen trygt hjem og land på landingsplassen (H).");
-                } else {
-                    exerciseState.warningMessage = "Ta kontroll: legg gassen rundt 50 % (nå " +
-                        Math.round(throttle * 100) + " %)";
-                    exerciseState.warningUntil = now + 500;
-                    exerciseState.warningIsSuccess = false;
-                }
-            }
-        }
-        return;
-    }
-
-    const euler = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ");
-    const currentYaw = euler.y;
-
-    // Hover-steg: ingen løype/runder - hold posisjon, høyde og retning sammenhengende i holdSec
-    // sekunder. Drift ut av toleransene nullstiller bare holde-tiden (mildere enn avviks-maskineriet
-    // for løypene - hover er en ren teknikkovelse, ikke en avviksdrill). Ingen egen engage-gate:
-    // logikken er selv-gatende (tiden teller kun innenfor toleransene).
-    if (stage.type === "hover") {
-        const posOk = horizontalCaptureDistance(droneState.position.x - HOVER_CENTER.x,
-            droneState.position.z - HOVER_CENTER.z) <= HOVER_POS_TOLERANCE;
-        const altOk = Math.abs(droneState.position.y - HOVER_ALTITUDE) <= HOVER_ALTITUDE_TOLERANCE;
-        exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, stage.headingYaw));
-        const headingOk = exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG;
-        if (posOk && altOk && headingOk) {
-            exerciseState.hoverHoldSec += dt;
-            if (exerciseState.hoverHoldSec >= stage.holdSec) advanceExerciseStage();
-        } else {
-            exerciseState.hoverHoldSec = 0;
-        }
-        return;
-    }
-
-    // Sikksakk-steget har veipunkt med egne y-koordinater: der styrer selve formen høyden (fanges i
-    // 3D under), og den faste høydesjekken skrus av.
-    const is3d = stage.waypoints[0].y !== undefined;
-
-    // Løype-steg: reglene (høyde/nese) gjelder først fra det øyeblikket FØRSTE veipunkt er nådd -
-    // hele transitten fra avgangsplassen frem til startpunktet (den pulserende markøren) er fri
-    // flyging. Å nå startpunktet krever riktig høyde, så runden alltid begynner "innenfor reglene".
-    // Fangst-radius: per steg (firkant-hjørner er trange mål), ellers 3D- eller standardradius.
-    const captureRadius = stage.captureRadius || (is3d ? WAYPOINT_CAPTURE_RADIUS_3D : WAYPOINT_CAPTURE_RADIUS);
-
-    if (!exerciseState.engaged) {
-        const wp0 = stage.waypoints[0];
-        const atStart = is3d
-            ? Math.hypot(droneState.position.x - wp0.x, droneState.position.y - wp0.y, droneState.position.z - wp0.z) < captureRadius
-            : (horizontalCaptureDistance(droneState.position.x - wp0.x, droneState.position.z - wp0.z) < captureRadius &&
-                Math.abs(droneState.position.y - EXERCISE_ALTITUDE) <= ALTITUDE_TOLERANCE);
-        if (!atStart) return;
-        exerciseState.engaged = true;
-        exerciseState.wpIndex = 1; // startpunktet er tatt - runden er i gang, neste mål er punkt 2
-        // Startpunktet er også et "hjørne" - gi samme frist til å svinge inn på første kant.
-        if (stage.cornerGraceSec) exerciseState.headingGraceUntil = now + stage.cornerGraceSec * 1000;
-    }
-
-    // headingErrorDeg oppdateres uavhengig av grace/violation-logikken under - rent informativt HUD-tall
-    // (se "Nese-feil" i HUD-baren) slik at piloten kan se nøyaktig hvor mange grader unna man er i
-    // stedet for bare et binært "avvik"-varsel etterpå.
-    let headingViolation = false;
-    if (stage.noseMode === "free") {
-        // Ingen nese-krav i det hele tatt (se ex9 "Åttetall i vind") - headingViolation forblir false
-        // og HUD-feltet "Nese-feil" viser "-" (ikke relevant her).
-        exerciseState.headingErrorDeg = null;
-    } else if (stage.noseMode === "out") {
-        exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, LOCKED_HEADING));
-        headingViolation = exerciseState.headingErrorDeg > HEADING_TOLERANCE_DEG;
-    } else {
-        const horizSpeed = Math.hypot(droneState.velocity.x, droneState.velocity.z);
-        if (horizSpeed > MIN_SPEED_FOR_HEADING_CHECK) {
-            // -Z er forover (se stepPhysics/updateChaseCamera) - samme targetYaw-formel som nesa "ut"
-            // ellers ville brukt, bare med fartsretningen i stedet for en fast retning.
-            const targetYaw = Math.atan2(-droneState.velocity.x, -droneState.velocity.z);
-            exerciseState.headingErrorDeg = Math.abs(angularDiffDeg(currentYaw, targetYaw));
-            const overTolerance = exerciseState.headingErrorDeg > HEADING_TOLERANCE_DEG;
-            if (overTolerance) {
-                if (exerciseState.headingBadSinceMs === null) exerciseState.headingBadSinceMs = now;
-                headingViolation = now >= exerciseState.headingGraceUntil &&
-                    (now - exerciseState.headingBadSinceMs) >= HEADING_FORWARD_SLIP_GRACE_MS;
-            } else {
-                exerciseState.headingBadSinceMs = null;
-            }
-        } else {
-            exerciseState.headingErrorDeg = null; // for lav fart til at fartsretningen er meningsfull
-            exerciseState.headingBadSinceMs = null;
-        }
-    }
-    const altitudeViolation = !is3d && Math.abs(droneState.position.y - EXERCISE_ALTITUDE) > ALTITUDE_TOLERANCE;
-    const violationNow = headingViolation || altitudeViolation;
-
-    if (violationNow) {
-        if (!exerciseState.violationActive) {
-            exerciseState.violationActive = true;
-            exerciseState.attemptViolationCount++;
-            exerciseState.lapHasViolation = true;
-            if (exerciseState.attemptViolationCount === 1) {
-                exerciseState.warningMessage = altitudeViolation ? "Høydeavvik! Advarsel." : "Feil nese-retning! Advarsel.";
-                exerciseState.warningUntil = now + 2500;
-                exerciseState.warningIsSuccess = false;
-            } else {
-                exerciseState.warningMessage = "For mange avvik - steget nullstilt.";
-                exerciseState.warningUntil = now + 2500;
-                exerciseState.warningIsSuccess = false;
-                resetStageProgress();
-                resetDrone();
-                return; // droneen ble nettopp resatt - hopp over vegpunkt-sjekk for dette bildet
-            }
-        }
-    } else {
-        exerciseState.violationActive = false;
-    }
-
-    const wp = stage.waypoints[exerciseState.wpIndex];
-    const captured = is3d
-        ? Math.hypot(droneState.position.x - wp.x, droneState.position.y - wp.y, droneState.position.z - wp.z) < captureRadius
-        : horizontalCaptureDistance(droneState.position.x - wp.x, droneState.position.z - wp.z) < captureRadius;
-    if (captured) {
-        // Hvert veipunkt-treff starter hjørne-fristen på nytt (kun satt for steg med cornerGraceSec).
-        if (stage.cornerGraceSec) exerciseState.headingGraceUntil = now + stage.cornerGraceSec * 1000;
-        exerciseState.wpIndex++;
-        if (exerciseState.wpIndex >= stage.waypoints.length) {
-            exerciseState.wpIndex = 0;
-            if (!exerciseState.lapHasViolation) exerciseState.lapsCleanCount++;
-            exerciseState.lapHasViolation = false;
-            if (exerciseState.lapsCleanCount >= (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS)) advanceExerciseStage();
-        }
-    }
-}
-
-// Cachet én gang (samme mønster som hudMode/hudArmed osv. over updateHud) i stedet for et nytt
-// document.getElementById-oppslag per felt hvert eneste bilde - denne kalles uvilkårlig fra animate().
-const exerciseWarningBannerEl = document.getElementById("exerciseWarningBanner");
-const exerciseWarningTextEl = document.getElementById("exerciseWarningText");
-const exerciseHudBarEl = document.getElementById("exerciseHudBar");
-const exerciseProgressBoxEl = document.getElementById("exerciseProgressBox");
-const exerciseHudStageEl = document.getElementById("exerciseHudStage");
-const exerciseHudLapsEl = document.getElementById("exerciseHudLaps");
-const exerciseHudViolationsEl = document.getElementById("exerciseHudViolations");
-const exerciseHudHeadingErrorEl = document.getElementById("exerciseHudHeadingError");
-const exerciseHudTimerItemEl = document.getElementById("exerciseHudTimerItem");
-const exerciseHudTimerEl = document.getElementById("exerciseHudTimer");
-
-function updateExerciseHud() {
-    const showBanner = performance.now() < exerciseState.warningUntil;
-    exerciseWarningBannerEl.classList.toggle("show", showBanner);
-    exerciseWarningBannerEl.classList.toggle("sim-banner-success", exerciseState.warningIsSuccess);
-    if (showBanner) exerciseWarningTextEl.textContent = exerciseState.warningMessage;
-
-    if (!exerciseState.active) {
-        exerciseHudBarEl.style.display = "none";
-        exerciseProgressBoxEl.style.display = "none";
-        return;
-    }
-    exerciseHudBarEl.style.display = "";
-    exerciseProgressBoxEl.style.display = "";
-    // "Returner hjem" har ett fast steg (stageIndex alltid 0) - stegobjektet er gyldig gjennom hele
-    // landingsfasen der også, i motsetning til vanlige flerstegs-øvelser (der landingPhase betyr
-    // stageIndex har passert siste steg og getExerciseStage() ville returnert undefined). awaitingNext
-    // (bestått og fryst, se completeExercise) betyr ALLTID at stegobjektet ikke lenger er gyldig å lese.
-    const isReturnExercise = EXERCISES[exerciseState.exerciseId].stages[0].type === "return";
-    const stage = (exerciseState.awaitingNext || (exerciseState.landingPhase && !isReturnExercise))
-        ? null : getExerciseStage();
-    // Killswitch-stegnavnet (stage.label) ville spoilet hvilket scenario som kommer/pågår - vises som
-    // et nøytralt løpenummer i stedet, se killswitchDisplayLabel.
-    exerciseHudStageEl.textContent = stage
-        ? (stage.type === "killswitch" ? killswitchDisplayLabel() : stage.label)
-        : (exerciseState.awaitingNext ? "Fullført!" : "Landing");
-    // Merk runden som "teller ikke" så snart et avvik har skjedd i den - synlig konsekvens med en gang.
-    const lapSuffix = (stage && exerciseState.lapHasViolation) ? " (runden teller ikke)" : "";
-    const returnSuffix = exerciseState.landingPhase ? " - land på H" : "";
-    exerciseHudLapsEl.textContent = !stage
-        ? (exerciseState.awaitingNext ? "Se oppsummering" : "Land på H")
-        : (stage.type === "hover"
-            ? exerciseState.hoverHoldSec.toFixed(1) + "/" + stage.holdSec + " s"
-            : (stage.type === "return"
-                ? exerciseState.returnRepsCompleted + "/" + REQUIRED_RETURN_REPS + returnSuffix
-                : stage.type === "killswitch"
-                    ? killswitchStatusText()
-                    : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
-
-    // Avviks-status: tydelig, vedvarende indikator på hvor nær steget er å bli nullstilt - banneret
-    // alene forsvinner etter noen sekunder og etterlot ingen synlig "du har brukt opp advarselen".
-    if (!stage || stage.type === "hover" || stage.type === "return" || stage.type === "killswitch") {
-        exerciseHudViolationsEl.textContent = "-";
-        exerciseHudViolationsEl.className = "sim-status-value";
-    } else if (exerciseState.attemptViolationCount === 0) {
-        exerciseHudViolationsEl.textContent = "Ingen";
-        exerciseHudViolationsEl.className = "sim-status-value sim-armed";
-    } else {
-        exerciseHudViolationsEl.textContent = "1 - neste nullstiller!";
-        exerciseHudViolationsEl.className = "sim-status-value sim-killed";
-    }
-
-    // Løpende nese-avvik i grader - se headingErrorDeg-kommentaren i updateExercise. Svarer direkte på
-    // "hvilken retning sjekkes egentlig akkurat nå" i stedet for å bare oppdage det som et varsel etterpå.
-    if (exerciseState.headingErrorDeg === null) {
-        exerciseHudHeadingErrorEl.textContent = "-";
-        exerciseHudHeadingErrorEl.className = "sim-status-value";
-    } else {
-        exerciseHudHeadingErrorEl.textContent = Math.round(exerciseState.headingErrorDeg) + "°";
-        exerciseHudHeadingErrorEl.className = "sim-status-value " +
-            (exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG ? "sim-armed" : "sim-killed");
-    }
-
-    // "Uforutsette hendelser" (ex11) handler om riktig respons, ikke fart - se noTiming/completeExercise.
-    if (EXERCISES[exerciseState.exerciseId].noTiming) {
-        exerciseHudTimerItemEl.style.display = "none";
-    } else {
-        exerciseHudTimerItemEl.style.display = "";
-        const elapsed = (performance.now() - exerciseState.startTime) / 1000;
-        const mm = Math.floor(elapsed / 60);
-        const ss = Math.floor(elapsed % 60);
-        exerciseHudTimerEl.textContent = mm + ":" + (ss < 10 ? "0" : "") + ss;
-    }
-}
-
-// Plasserer droneen for (om)start av en øvelse: vanlige øvelser starter på avgangsplassen (via
-// resetDrone), "Returner hjem" spawner høyt og langt unna med tilfeldig yaw og starter nedtellingen.
-function spawnForExercise(exercise) {
-    resetDrone();
-    exerciseState.returnPhase = null;
-    // Killswitch-øvelsen (ex11): egen spawn/tilstand for steg 0 - se spawnKillswitchStage. Kalles kun
-    // herfra ved førstegangsstart og fullt R-restart (begge nullstiller stageIndex til 0 først), så
-    // exercise.stages[0] er alltid riktig steg å klargjøre.
-    if (exercise.stages[0].type === "killswitch") {
-        spawnKillswitchStage(exercise.stages[0]);
-        exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
-        exerciseState.warningUntil = performance.now() + 4000;
-        exerciseState.warningIsSuccess = true;
-    } else if (exercise.startHint) {
-        exerciseState.warningMessage = exercise.startHint;
-        exerciseState.warningUntil = performance.now() + 4500;
-        exerciseState.warningIsSuccess = true;
-    }
-    if (exercise.spawn === "far") {
-        const bearing = (Math.random() * 2 - 1) * (Math.PI / 3); // innenfor ±60° av rett frem (-Z)
-        const dist = 130 + Math.random() * 40;
-        exerciseState.returnSpawnPos.set(Math.sin(bearing) * dist, 35 + Math.random() * 10, -Math.cos(bearing) * dist);
-        exerciseState.returnSpawnQuat.setFromEuler(new THREE.Euler(0, Math.random() * Math.PI * 2, 0, "YXZ"));
-        droneState.position.copy(exerciseState.returnSpawnPos);
-        droneState.quaternion.copy(exerciseState.returnSpawnQuat);
-        exerciseState.returnPhase = "countdown";
-        exerciseState.returnCountdownEnd = performance.now() + 4000;
-    }
-    // Ny tilfeldig vindretning ved HVER spawn (første start, hver runde og hver R-restart) - ikke bare
-    // ved øvelsesstart. Kjøres etter startExercise sin faste vind-tvang (se der), så denne vinner.
-    if (exercise.wind && exercise.randomizeWindDirection) {
-        settings.wind.directionDeg = Math.floor(Math.random() * 360);
-    }
-    // Tilfeldig skydekke per runde, men minst én av de REQUIRED_RETURN_REPS rundene garantert 100% -
-    // hvilken runde det blir avgjøres på nytt for hver ferske økt (returnRepsCompleted === 0, altså
-    // helt i starten av startExercise ELLER rett etter en R-restart, ikke ved vanlig runde-fremgang).
-    if (exercise.randomizeCloudCoverage) {
-        if (exerciseState.returnRepsCompleted === 0) {
-            exerciseState.returnFullCloudRep = Math.floor(Math.random() * REQUIRED_RETURN_REPS);
-        }
-        settings.cloudsEnabled = true;
-        settings.cloudCoverage = (exerciseState.returnRepsCompleted === exerciseState.returnFullCloudRep)
-            ? 1
-            : 0.3 + Math.random() * 0.6;
-    }
-}
-
-function startExercise(id) {
-    const exercise = EXERCISES[id];
-    if (!exercise) return;
-    // Gaten håndheves også her (ikke bare i UI-en, se showExerciseDetail) - avviser før stopExercise()
-    // slik at et eventuelt PÅGÅENDE forsøk på en annen øvelse ikke avbrytes for et forsøk som uansett blir avvist.
-    if (exercise.requiresGamepadKill && !isGamepadKillBound()) return;
-    stopExercise();
-    exerciseState.savedDroneClass = droneState.droneClass;
-    exerciseState.savedCameraModeIndex = cameraModeIndex;
-    setDroneClassEphemeral("mid");
-    cameraModeIndex = CAMERA_MODES.indexOf("vlos");
-    activeCamera = vlosCamera;
-
-    // Vind-øvelser tvinger sin egen vind mens øvelsen pågår - brukerens innstillinger huskes og
-    // settes tilbake i stopExercise. Ingen saveSettings her: tvangen skal aldri lekke til localStorage.
-    // MÅ settes FØR spawnForExercise (rett under) - for øvelser med randomizeWindDirection er det
-    // spawnForExercise sin oppgave å gi den faktiske (tilfeldige) retningen, denne blokka setter bare
-    // resten av vind-parametrene (styrke/kast/på) og en forhåndsvalgt retning for de øvrige.
-    exerciseState.savedWind = {
-        enabled: settings.wind.enabled, speed: settings.wind.speed,
-        directionDeg: settings.wind.directionDeg, gust: settings.wind.gust
-    };
-    if (exercise.wind) {
-        settings.wind.enabled = true;
-        settings.wind.speed = exercise.wind.speed;
-        settings.wind.directionDeg = exercise.wind.directionDeg;
-        settings.wind.gust = exercise.wind.gust;
-    } else {
-        settings.wind.enabled = false; // øvrige øvelser flys i stille vær uansett hva brukeren hadde på
-    }
-
-    // Enkelte øvelser (ex10) tvinger sitt eget skydekke mens de pågår - samme lagre/gjenopprett-
-    // mønster som vinden over. Statisk verdi settes her; PER RUNDE-randomisering (randomizeCloudCoverage)
-    // håndteres i stedet i spawnForExercise, som kjøres rett under og til slutt vinner.
-    exerciseState.savedClouds = { enabled: settings.cloudsEnabled, coverage: settings.cloudCoverage };
-    if (exercise.cloudCoverage !== undefined && !exercise.randomizeCloudCoverage) {
-        settings.cloudsEnabled = true;
-        settings.cloudCoverage = exercise.cloudCoverage;
-    }
-
-    // MÅ nullstilles FØR spawnForExercise: den leser exerciseState.returnRepsCompleted for å avgjøre om
-    // dette er en helt fersk økt (og i så fall trekke en ny "garantert 100% skydekke"-runde, ex10) -
-    // uten denne rekkefølgen ville den første spawnen i en ny økt sett den GAMLE verdien fra forrige gang.
-    exerciseState.stageIndex = 0;
-    resetStageProgress();
-    exerciseState.warningUntil = 0; // rydd unna en ev. gjenværende banner fra forrige økt FØR spawnForExercise setter start-hintet
-    spawnForExercise(exercise);
-
-    exerciseState.active = true;
-    exerciseState.exerciseId = id;
-    exerciseState.startTime = performance.now();
-    rebuildExerciseGuide();
-    // Lukk menyen - piloten skal rett i gang, og panelet skygger for sikten mot treningsområdet.
-    document.getElementById("exercisesPanel").style.display = "none";
-}
-
-// Idempotent opprydning - kalles både fra "Avbryt" og fra starten av startExercise (dekker "bytt til
-// en annen øvelse" og "start øvelsen på nytt" med én kodesti). Teleporterer IKKE droneen tilbake til
-// plattformen - respekterer det brukeren holder på med akkurat da.
-function stopExercise() {
-    if (!exerciseState.active) return;
-    setDroneClassEphemeral(exerciseState.savedDroneClass);
-    cameraModeIndex = exerciseState.savedCameraModeIndex;
-    const mode = CAMERA_MODES[cameraModeIndex];
-    activeCamera = (mode === "chase") ? chaseCamera : (mode === "fpv") ? fpvCamera : vlosCamera;
-    if (exerciseState.savedClouds) {
-        settings.cloudsEnabled = exerciseState.savedClouds.enabled;
-        settings.cloudCoverage = exerciseState.savedClouds.coverage;
-        exerciseState.savedClouds = null;
-    }
-    if (exerciseState.savedWind) {
-        settings.wind.enabled = exerciseState.savedWind.enabled;
-        settings.wind.speed = exerciseState.savedWind.speed;
-        settings.wind.directionDeg = exerciseState.savedWind.directionDeg;
-        settings.wind.gust = exerciseState.savedWind.gust;
-        exerciseState.savedWind = null;
-    }
-    if (exerciseGuideHandle) {
-        scene.remove(exerciseGuideHandle.group);
-        exerciseGuideHandle = null;
-    }
-    // Re-armer: den eneste grunnen droneState.armed kan stå false her er completeExercise()s frys
-    // (awaitingNext) - i alle andre tilfeller (Avbryt midt i flukt) er den alt armert, så dette er en
-    // no-op da og en nødvendig gjenoppretting her.
-    droneState.armed = true;
-    exerciseState.active = false;
-    exerciseState.exerciseId = null;
-    exerciseState.landingPhase = false;
-    exerciseState.awaitingNext = false;
-}
-
-// Manuell R/reset-knapp: starter HELE øvelsen på nytt fra steg 0 og nullstiller stoppeklokken - i
-// motsetning til det automatiske steg-nullstillet ved 2. avvik (som beholder tidligere bestått steg-
-// fremgang OG lar klokken gå videre, som en implisitt tidsstraff for restarts).
-function handleResetRequest() {
-    if (!exerciseState.active) {
-        resetDrone();
-        return;
-    }
-    // Gyldig også rett etter en bestått (awaitingNext) - full omkamp i stedet for å måtte gå via
-    // oppsummeringskortet. Skjul kortet hvis det står åpent (fra en tidligere fullføring i samme økt
-    // ville det ikke være det, men det koster ingenting å være trygg).
-    document.getElementById("exerciseSummary").style.display = "none";
-    exerciseState.awaitingNext = false;
-    exerciseState.stageIndex = 0;
-    exerciseState.landingPhase = false;
-    resetStageProgress();
-    exerciseState.startTime = performance.now();
-    spawnForExercise(EXERCISES[exerciseState.exerciseId]); // "Returner hjem" får ny tilfeldig posisjon/retning
-    rebuildExerciseGuide();
 }
 
 /* ---------- Øvelser: panel-UI (liste + detaljvisning) ---------- */

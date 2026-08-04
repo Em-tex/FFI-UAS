@@ -1904,6 +1904,13 @@ function initScene() {
     // near-verdien, og de gamle verdiene ga synlig z-fighting på bakke-dekalene sett fra lufta
     // (sammen med polygonOffset-biasen i groundDecalProps, som er hovedgrepet).
     chaseCamera = new THREE.PerspectiveCamera(60, aspect, 0.3, 1500);
+    chaseCameraController = Sim.createChaseCameraController(chaseCamera, document.getElementById("simCanvas"), {
+        defaultPitch: Math.atan2(3.2, 15),
+        zoomMin: 4, zoomMax: 60,
+        initialZoom: 4, // starter nærmest mulig ved innlasting av siden
+        smoothingBase: 0.0015,
+        lookAtOffsetY: 1
+    });
     fpvCamera = new THREE.PerspectiveCamera(90, aspect, 0.1, 1500);
     fpvCamera.position.set(0, 0.08, -0.55);
     fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
@@ -1945,29 +1952,10 @@ function resizeRenderer() {
     Sim.resizeRenderer(renderer, wrap, [chaseCamera, fpvCamera, vlosCamera]);
 }
 
-// Chase-kamera med manuell orbit: hold høyreklikk og dra for å se rundt flyet, scroll for å zoome.
-// Vinkel/avstand er en offset OVENPÅ flyets egen heading - dvs. kameraet henger fortsatt bak flyet
-// og følger det rundt svinger, men piloten kan se seg rundt (f.eks. for å ta skjermbilder) uten at det
-// påvirker selve styringen av flyet.
-const CHASE_DEFAULT_PITCH = Math.atan2(3.2, 15);
-const CHASE_ZOOM_MIN = 4, CHASE_ZOOM_MAX = 60;
-let chaseOrbitYaw = 0;
-let chaseOrbitPitch = CHASE_DEFAULT_PITCH;
-let chaseZoomDistance = CHASE_ZOOM_MIN; // starter nærmest mulig ved innlasting av siden
-let isOrbitingChase = false;
-let lastPointerX = 0, lastPointerY = 0;
-
-function updateChaseCamera(dt) {
-    const euler = new THREE.Euler().setFromQuaternion(planeState.quaternion, "YXZ");
-    const headingQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y + chaseOrbitYaw, 0));
-    const horizontalDist = chaseZoomDistance * Math.cos(chaseOrbitPitch);
-    const verticalDist = chaseZoomDistance * Math.sin(chaseOrbitPitch);
-    const behindOffset = new THREE.Vector3(0, verticalDist, horizontalDist).applyQuaternion(headingQuat);
-    const desiredPos = planeState.position.clone().add(behindOffset);
-    const smoothing = 1 - Math.pow(0.0015, dt);
-    chaseCamera.position.lerp(desiredPos, smoothing);
-    chaseCamera.lookAt(planeState.position.clone().add(new THREE.Vector3(0, 1, 0)));
-}
+// Chase-kamera med manuell orbit - delt logikk med quad-simulatoren, se Sim.createChaseCameraController
+// i simulator-common.js. Instansieres i initScene() (må vente til chaseCamera faktisk finnes),
+// oppdateres fra animate().
+let chaseCameraController;
 
 function updateVlosCamera() {
     vlosCamera.lookAt(planeState.position);
@@ -2846,7 +2834,7 @@ function animate(now) {
     }
 
     updatePlaneVisual(frameDt);
-    updateChaseCamera(frameDt);
+    chaseCameraController.update(frameDt, planeState.position, planeState.quaternion);
     updateVlosCamera();
     updateWindsockVisual(now);
     treeSwayManager.update(now, currentWindVector);
@@ -2960,33 +2948,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     window.addEventListener("resize", resizeRenderer);
-
-    // Chase-kamera orbit: høyreklikk+dra ser rundt flyet, scroll zoomer. Kun aktiv over selve
-    // canvas-en (ikke HUD-knappene), og hindrer nettleserens høyreklikk-kontekstmeny på canvas.
-    const simCanvas = document.getElementById("simCanvas");
-    simCanvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-    simCanvas.addEventListener("mousedown", function (e) {
-        if (e.button !== 2) return;
-        isOrbitingChase = true;
-        lastPointerX = e.clientX;
-        lastPointerY = e.clientY;
-    });
-    window.addEventListener("mouseup", function (e) {
-        if (e.button === 2) isOrbitingChase = false;
-    });
-    window.addEventListener("mousemove", function (e) {
-        if (!isOrbitingChase) return;
-        const dx = e.clientX - lastPointerX;
-        const dy = e.clientY - lastPointerY;
-        lastPointerX = e.clientX;
-        lastPointerY = e.clientY;
-        chaseOrbitYaw -= dx * 0.006;
-        chaseOrbitPitch = clamp(chaseOrbitPitch + dy * 0.006, 0.02, 1.4);
-    });
-    simCanvas.addEventListener("wheel", function (e) {
-        e.preventDefault();
-        chaseZoomDistance = clamp(chaseZoomDistance + e.deltaY * 0.02, CHASE_ZOOM_MIN, CHASE_ZOOM_MAX);
-    }, { passive: false });
 
     document.getElementById("inputSourceSelect").addEventListener("change", function (e) {
         settings.inputSource = e.target.value;
