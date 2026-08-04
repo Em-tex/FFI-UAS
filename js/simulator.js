@@ -1763,16 +1763,25 @@ const FOREST_TREES = (function () {
 // akkurat DEN feilen andre veien - "kollisjon i løse lufta under krona", altså full bredde et stykke FØR
 // selve løvverket faktisk er der. To kroneband (et smalere overgangsband, så det fulle) er en grovere,
 // men mye bedre tilnærming til den avrundede formen enn ett enkelt hopp.
+// t.h er den NOMINELLE høyden som sendes inn til Sim.buildRandomTree - men den funksjonen randomiserer
+// selv høyden videre ±10% internt (0.9-1.1x, se buildRandomTree i simulator-common.js) for visuell
+// variasjon, UTEN å gi den faktiske, endelige høyden tilbake til kalleren. Kollideren her bygges dermed
+// alltid fra den GARANTERTE MINSTE mulige faktiske høyden (t.h*0.9) i stedet for selve t.h - ellers ville
+// ethvert tre som tilfeldigvis ble trukket kortere enn nominell høyde fått en usynlig "hitboks langt over
+// selve treet" (nøyaktig det som ble rapportert). Prisen er at kollideren kan bli opptil ~20% kortere enn
+// et tre som ble trukket i den høye enden - ufarlig (man kan så vidt fly gjennom aller ytterste tuppen),
+// stikk motsatt av å krasje i tomme luft over et kortere tre.
 function treeToColliders(t) {
-    const trunkTopY = t.h * 0.48;
-    const canopyTaperTopY = trunkTopY + (t.h - trunkTopY) * 0.35;
+    const h = t.h * 0.9;
+    const trunkTopY = h * 0.48;
+    const canopyTaperTopY = trunkTopY + (h - trunkTopY) * 0.35;
     const trunkR = 0.15;
-    const canopyR = t.h * 0.22;
+    const canopyR = h * 0.22;
     const taperR = canopyR * 0.5;
     return [
         { minX: t.x - trunkR, maxX: t.x + trunkR, minZ: t.z - trunkR, maxZ: t.z + trunkR, minY: 0, topY: trunkTopY },
         { minX: t.x - taperR, maxX: t.x + taperR, minZ: t.z - taperR, maxZ: t.z + taperR, minY: trunkTopY, topY: canopyTaperTopY },
-        { minX: t.x - canopyR, maxX: t.x + canopyR, minZ: t.z - canopyR, maxZ: t.z + canopyR, minY: canopyTaperTopY, topY: t.h }
+        { minX: t.x - canopyR, maxX: t.x + canopyR, minZ: t.z - canopyR, maxZ: t.z + canopyR, minY: canopyTaperTopY, topY: h }
     ];
 }
 const TREE_COLLIDERS = DECORATIVE_TREES.concat(FOREST_TREES).reduce(function (acc, t) {
@@ -4642,6 +4651,7 @@ function updateExercise(dt, now) {
     }
 
     if (stage.type === "racing") {
+        updateRacingCrashAutoReset(now);
         updateRacingStage(stage, dt, now);
         return;
     }
@@ -5447,6 +5457,28 @@ function spawnRacingStage(stage) {
     exerciseState.wpIndex = 0;
     exerciseState.engaged = false;
     exerciseState.raceStartTime = 0;
+}
+
+// Racing-spesifikk: automatisk omstart et gitt antall sekunder etter et krasj (droneState.crashed) -
+// vanlige øvelser krever fortsatt R manuelt (der er et krasj noe man skal reflektere over/lære av før
+// man prøver igjen), men i racing er poenget å kjøre mange raske forsøk på rad, så et krasj skal ikke
+// kreve en manuell tastetrykk-pause hver gang. IKKE for personskade (droneState.injured, treffer
+// publikum/pilot) - det er bevisst utenfor scope her (bare "krasj", se brukerens ordlyd), og en slik
+// hendelse bør uansett kreve et bevisst R-trykk, ikke stille forsvinne etter 2 sekunder.
+const RACE_CRASH_AUTO_RESET_SEC = 2;
+function updateRacingCrashAutoReset(now) {
+    if (!droneState.crashed) {
+        exerciseState.raceCrashDetectedAt = null;
+        return;
+    }
+    if (exerciseState.raceCrashDetectedAt === null || exerciseState.raceCrashDetectedAt === undefined) {
+        exerciseState.raceCrashDetectedAt = now; // første bilde krasjet oppdages - start nedtellingen
+        return;
+    }
+    if (now - exerciseState.raceCrashDetectedAt >= RACE_CRASH_AUTO_RESET_SEC * 1000) {
+        exerciseState.raceCrashDetectedAt = null;
+        handleResetRequest(); // samme kodesti som å trykke R selv - respawner på start/mål (spawnRacingStage)
+    }
 }
 
 function updateRacingStage(stage, dt, now) {
