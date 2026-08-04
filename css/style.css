@@ -984,6 +984,100 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 .sim-exercise-back-btn:hover { text-decoration: underline; }
 
+/* Racingbanens ledertavle - vises der øvelsesmenyen ellers står (samme topp/høyre-plassering som
+   .sim-panel) mens racingbanen flys, se startExercise/stopExercise. Bevisst mer gjennomsiktig enn de
+   vanlige panelene (rgba med lavere alpha) - den skal kunne stå fremme hele flyturen uten å sperre
+   sikten mot banen, i motsetning til de vanlige innstillingspanelene som alltid lukkes før man flyr. */
+.sim-racing-leaderboard {
+    position: absolute;
+    top: 68px;
+    right: 16px;
+    width: 280px;
+    max-width: calc(100% - 32px);
+    max-height: calc(100% - 90px);
+    overflow-y: auto;
+    background: rgba(3, 71, 127, 0.55);
+    backdrop-filter: blur(2px);
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    pointer-events: auto;
+    color: white;
+    font-family: 'Overpass', sans-serif;
+}
+.sim-racing-lb-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 10px;
+    color: #ffd76b;
+}
+.sim-racing-lb-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.sim-racing-lb-name-row label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255,255,255,0.75);
+}
+.sim-racing-lb-name-row input {
+    flex: 1;
+    min-width: 0;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 5px;
+    padding: 5px 8px;
+    color: white;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.85rem;
+}
+.sim-racing-lb-name-row input::placeholder { color: rgba(255,255,255,0.55); }
+.sim-racing-lb-name-row input:focus { outline: none; border-color: #ffd76b; }
+.sim-racing-lb-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.sim-racing-lb-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    font-size: 0.82rem;
+    background: rgba(255,255,255,0.06);
+}
+.sim-racing-lb-best {
+    background: rgba(255, 215, 107, 0.22);
+    font-weight: 700;
+}
+.sim-racing-lb-rank {
+    flex: 0 0 20px;
+    color: rgba(255,255,255,0.65);
+}
+.sim-racing-lb-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sim-racing-lb-time {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+}
+.sim-racing-lb-empty {
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.7);
+    font-style: italic;
+}
+
 /* --- Print / last ned som PDF --- */
 @media print {
     nav, .no-print { display: none !important; }

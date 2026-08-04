@@ -78,11 +78,11 @@
                 <span class="sim-status-label">Øvelse</span>
                 <span id="exerciseHudStage" class="sim-status-value">-</span>
             </div>
-            <div class="sim-status-item">
+            <div class="sim-status-item" id="exerciseHudViolationsItem">
                 <span class="sim-status-label">Avvik</span>
                 <span id="exerciseHudViolations" class="sim-status-value">-</span>
             </div>
-            <div class="sim-status-item">
+            <div class="sim-status-item" id="exerciseHudHeadingErrorItem">
                 <span class="sim-status-label">Nese-feil</span>
                 <span id="exerciseHudHeadingError" class="sim-status-value">-</span>
             </div>
@@ -250,7 +250,26 @@
                 <h3>Øvelser</h3>
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div id="exerciseListView">
+            <div id="exerciseCategoryView">
+                <button type="button" class="sim-exercise-row" id="categoryStabilizedBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-compass"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">Stabilized</span>
+                        <span class="sim-exercise-row-desc">De elleve grunnleggende øvelsene - hover, løyper, retur og uforutsette hendelser.</span>
+                    </span>
+                </button>
+                <button type="button" class="sim-exercise-row" id="categoryAcroBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-flag-checkered"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">Acro</span>
+                        <span class="sim-exercise-row-desc">Racingbanen - full manuell kontroll, FPV-kamera og en ledertavle med bestetider.</span>
+                    </span>
+                </button>
+            </div>
+            <div id="exerciseListView" style="display:none;">
+                <button type="button" class="sim-exercise-back-btn" id="exerciseBackToCategoryBtn">
+                    <i class="fa-solid fa-arrow-left"></i> Tilbake
+                </button>
                 <div id="exerciseListItems"></div>
             </div>
             <div id="exerciseDetailView" style="display:none;">
@@ -265,6 +284,18 @@
                     <button type="button" class="sim-btn sim-btn-primary" id="exerciseCancelBtn" style="display:none;">Avbryt</button>
                 </div>
             </div>
+        </div>
+
+        <div class="sim-racing-leaderboard" id="racingLeaderboardOverlay" style="display:none;">
+            <div class="sim-racing-lb-header">
+                <i class="fa-solid fa-trophy"></i>
+                <span>Ledertavle</span>
+            </div>
+            <div class="sim-racing-lb-name-row">
+                <label for="racingPlayerNameInput">Navn</label>
+                <input type="text" id="racingPlayerNameInput" maxlength="16" placeholder="Pilot">
+            </div>
+            <div id="racingLeaderboardList" class="sim-racing-lb-list"></div>
         </div>
 
         <div class="sim-exercise-summary" id="exerciseSummary" style="display:none;">

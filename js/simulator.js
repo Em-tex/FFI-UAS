@@ -154,6 +154,13 @@ const LAUNCH_POINT = new THREE.Vector3(0, 1, 0);
 const PILOT_POSITION = new THREE.Vector3(0, 0, 5);
 const PILOT_HIT_RADIUS = 0.45; // m - kroppssylinder rundt piloten
 const PILOT_HEIGHT = 1.85;     // m
+// Litt trangere enn PILOT_HIT_RADIUS for folkemengden/fotgjengerne spesifikt - PILOT_HIT_RADIUS sjekkes
+// individuelt mot HVER av de ~7 sprikende personene i folkemengden (se CROWD_MEMBER_OFFSETS), så den
+// EFFEKTIVE faresonen (unionen av alle sju sirklene) ble merkbart større/mindre forutsigbar enn å bare
+// unngå den ene VLOS-piloten - opplevdes for strengt ("krasjet" med noen i utkanten man ikke så).
+// Senket videre fra 0.35 - selv da trigget skade for tidlig (radiusen legges til propell-rekkevidden
+// under, så totalen ble fortsatt større enn den føltes ut som å skulle være).
+const BYSTANDER_HIT_RADIUS = 0.15;
 const BATTERY_DRAIN_IDLE = 0.15;    // %/s ved 0% gass
 const BATTERY_DRAIN_FULL = 1.4;     // %/s ved 100% gass
 const BATTERY_LOW_THRESHOLD = 20;   // % - under dette svekkes makstrekk (spenningsfall)
@@ -598,9 +605,35 @@ const EXERCISES = {
             { id: "ks-traffic", label: "Rømning mot lufttrafikk", type: "killswitch", variant: "traffic", runawaySec: TRAFFIC_CLIMB_DURATION_SEC },
             { id: "ks-pedestrians", label: "Fotgjengere nærmer seg", type: "killswitch", variant: "pedestrians" }
         ]
+    },
+    race1: {
+        id: "race1",
+        icon: "fa-flag-checkered",
+        label: "Racingbane",
+        droneClass: "racing",
+        forceCameraMode: "fpv",
+        forceFlightMode: "acro",
+        forceFpvTiltDeg: 30,
+        freeCameraToggle: true, // C (kamerabytte) er IKKE låst til VLOS her, se toggleCamera
+        shortDescription: "Fly gjennom alle portene på racingbanen så fort du kan - klokken starter når du krysser start/mål.",
+        startHint: "Fly gjennom porten for å starte tiden.",
+        fullDescription: "En lengre racingbane et stykke unna avgangsplassen, med porter, en låve du flyr " +
+            "gjennom, og en egen gate på taket av rådhuset.\n\nKlokken starter automatisk idet du krysser " +
+            "start/mål-porten (svart/hvitt rutemønster med en gul pil som viser flyretningen), og stopper " +
+            "når du har fløyet gjennom alle de andre portene i rekkefølge og kommer tilbake til samme " +
+            "port. Du kan fly så mange runder du vil - hver fullførte runde havner i ledertavlen (lagres " +
+            "lokalt i nettleseren), med beste tid øverst. Endre navnet ditt øverst i ledertavlen for å " +
+            "merke dine egne tider.\n\nSpawner i Racing-klasse, Acro-modus og FPV-kamera.",
+        // Ikke noTiming (ex11 sin variant) - racing har en helt egen, løpende klokke (se
+        // updateExerciseHud/raceStartTime), bare vist annerledes enn de vanlige øvelsenes tidtaking.
+        stages: [{ id: "race-lap", label: "Racingbane", type: "racing" }]
     }
 };
 const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "ex10", "ex11"];
+// Kategorisering for øvelsesmenyens undermenyer (Stabilized/Acro) - se showExerciseCategoryView. Racing
+// (race1) er bevisst IKKE i EXERCISE_ORDER (som styrer bekreftelsen/diplomet) - det er et åpent
+// tidsforsøk med egen ledertavle, ikke en engangs bestått/ikke-bestått-øvelse.
+const ACRO_EXERCISE_ORDER = ["race1"];
 
 // Kun sluttresultat (bestått + beste tid) lagres - all fremdrift underveis (steg/runde/tid/varsler)
 // lever kun i minnet og forsvinner ved sideinnlasting, se exerciseState lenger ned.
@@ -763,7 +796,11 @@ function buildGround() {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     group.add(ground);
-    group.add(new THREE.GridHelper(2000, 200, 0x1f3d1f, 0x2d4d2d));
+    // Tidligere lå det en THREE.GridHelper (sort/grønne linjer over hele bakken) her i tillegg til
+    // sjakkbrett-teksturen. Den fungerte dårlig sammen med elva - linjene stakk gjennom vannoverflaten
+    // og "blinket" (z-fighting) når kameraet beveget seg, og ga generelt et unaturlig rutenett-utseende
+    // over hele kartet. Sjakkbrett-teksturen (Sim.buildGroundTexture over) gir fortsatt avstandsreferanse
+    // uten dette problemet, så griden er fjernet i stedet for justert.
 
     const poleMat = new THREE.MeshStandardMaterial({ color: 0xff5533 });
     for (let i = 0; i < 8; i++) {
@@ -1436,11 +1473,19 @@ function buildClouds() {
     // Høyt nok til at 100% skydekke faktisk ser fullt overskyet ut, ikke bare noen spredte klynger -
     // se coverageStep-fordelingen i updateClouds(), som viser en jevnt fordelt DEL av disse.
     const CLOUD_COUNT = 60;
+    // Jevnt rutenett over hele skydomenet (IKKE en sirkel rundt origo, som var forrige oppsett) - med
+    // litt tilfeldig forskyvning per rute for naturlig variasjon uten at selve rutenettet blir synlig.
+    // Gir omtrent lik skytetthet over hele kartet (bare små, lokale avvik) i stedet for at skyene
+    // klumper seg rundt sentrum og etterlater hjørnene/kantene av kartet skyfrie.
+    const gridCols = 8;
+    const gridRows = Math.ceil(CLOUD_COUNT / gridCols);
+    const cellW = CLOUD_DOMAIN / gridCols, cellH = CLOUD_DOMAIN / gridRows;
     for (let i = 0; i < CLOUD_COUNT; i++) {
         const cluster = buildCloudCluster(i);
-        const angle = (i / CLOUD_COUNT) * Math.PI * 2 + Math.sin(i) * 0.3;
-        const dist = 110 + Math.abs(Math.sin(i * 2.3)) * 230; // maks 340 - godt innenfor CLOUD_DOMAIN/2
-        cluster.position.set(Math.sin(angle) * dist, 140 + Math.abs(Math.cos(i * 1.3)) * 90, Math.cos(angle) * dist);
+        const gx = i % gridCols, gz = Math.floor(i / gridCols);
+        const x = -CLOUD_DOMAIN / 2 + (gx + 0.5) * cellW + (Math.random() - 0.5) * cellW * 0.8;
+        const z = -CLOUD_DOMAIN / 2 + (gz + 0.5) * cellH + (Math.random() - 0.5) * cellH * 0.8;
+        cluster.position.set(x, 140 + Math.abs(Math.cos(i * 1.3)) * 90, z);
         // baseScale huskes (userData) - updateClouds() skalerer OPPÅ denne ved høy dekning, slik at
         // klyngene vokser seg sammen til et sammenhengende, virkelig overskyet dekke ved 100% i stedet
         // for bare "mange spredte puffer med luft mellom" (som fortsatt ville sett ut som glimt av himmel).
@@ -1786,53 +1831,83 @@ function buildBuilding() {
     return group;
 }
 
-// Firkantet racing-gate med sjakkrutet ramme (oransje/hvit), montert på to bein over bakken.
-function buildGate(size, groundGap) {
+// Sjakkrutet stolpe/bar bygget av vekslende fargede segmenter - delt mellom buildGate (oransje/hvit)
+// og buildStartFinishGate (svart/hvit, tettere rutemønster). horizontal styrer om segmentene forskyves
+// langs lokal X (topp-/bunnbar) eller Y (side-stolper).
+function buildCheckeredBar(length, horizontal, matA, matB, barThickness, segs) {
+    const segLen = length / segs;
+    const barGroup = new THREE.Group();
+    for (let i = 0; i < segs; i++) {
+        const mat = (i % 2 === 0) ? matA : matB;
+        const geo = horizontal
+            ? new THREE.BoxGeometry(segLen, barThickness, barThickness)
+            : new THREE.BoxGeometry(barThickness, segLen, barThickness);
+        const seg = new THREE.Mesh(geo, mat);
+        seg.castShadow = true;
+        seg.receiveShadow = true;
+        const offset = -length / 2 + segLen / 2 + i * segLen;
+        if (horizontal) seg.position.x = offset; else seg.position.y = offset;
+        barGroup.add(seg);
+    }
+    return barGroup;
+}
+const GATE_BAR_THICKNESS = 0.18;
+function buildGateFrame(size, groundGap, matA, matB, segs) {
     const group = new THREE.Group();
-    const barThickness = 0.18;
-    const matA = new THREE.MeshStandardMaterial({ color: 0xff6a00 });
-    const matB = new THREE.MeshStandardMaterial({ color: 0xffffff });
     const legMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
 
-    function checkeredBar(length, horizontal) {
-        const segs = 6;
-        const segLen = length / segs;
-        const barGroup = new THREE.Group();
-        for (let i = 0; i < segs; i++) {
-            const mat = (i % 2 === 0) ? matA : matB;
-            const geo = horizontal
-                ? new THREE.BoxGeometry(segLen, barThickness, barThickness)
-                : new THREE.BoxGeometry(barThickness, segLen, barThickness);
-            const seg = new THREE.Mesh(geo, mat);
-            const offset = -length / 2 + segLen / 2 + i * segLen;
-            if (horizontal) seg.position.x = offset; else seg.position.y = offset;
-            barGroup.add(seg);
-        }
-        return barGroup;
-    }
-
-    const top = checkeredBar(size, true);
+    const top = buildCheckeredBar(size, true, matA, matB, GATE_BAR_THICKNESS, segs);
     top.position.y = groundGap + size;
     group.add(top);
 
-    const bottom = checkeredBar(size, true);
+    const bottom = buildCheckeredBar(size, true, matA, matB, GATE_BAR_THICKNESS, segs);
     bottom.position.y = groundGap;
     group.add(bottom);
 
-    const left = checkeredBar(size, false);
+    const left = buildCheckeredBar(size, false, matA, matB, GATE_BAR_THICKNESS, segs);
     left.position.set(-size / 2, groundGap + size / 2, 0);
     group.add(left);
 
-    const right = checkeredBar(size, false);
+    const right = buildCheckeredBar(size, false, matA, matB, GATE_BAR_THICKNESS, segs);
     right.position.set(size / 2, groundGap + size / 2, 0);
     group.add(right);
 
     [-size / 2, size / 2].forEach(function (x) {
         const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, groundGap, 8), legMat);
         leg.position.set(x, groundGap / 2, 0);
+        leg.castShadow = true;
+        leg.receiveShadow = true;
         group.add(leg);
     });
 
+    return group;
+}
+const GATE_MAT_ORANGE = new THREE.MeshStandardMaterial({ color: 0xff6a00 });
+const GATE_MAT_WHITE = new THREE.MeshStandardMaterial({ color: 0xffffff });
+// Firkantet racing-gate med sjakkrutet ramme (oransje/hvit), montert på to bein over bakken.
+function buildGate(size, groundGap) {
+    return buildGateFrame(size, groundGap, GATE_MAT_ORANGE, GATE_MAT_WHITE, 6);
+}
+
+const GATE_MAT_BLACK = new THREE.MeshStandardMaterial({ color: 0x111111 });
+// Start/mål-gate for racingbanen - svart/hvitt rutemønster (tettere enn de vanlige oransje/hvite
+// portene, for å ligne et ekte målflagg) pluss en gul pil montert over toppbaren som peker i
+// flyretningen (lokal +Z - se yaw-formelen ved GATE_PLACEMENTS: samme akse som resten av banen flys mot).
+function buildStartFinishGate(size, groundGap) {
+    const group = buildGateFrame(size, groundGap, GATE_MAT_BLACK, GATE_MAT_WHITE, 8);
+    const arrowMat = new THREE.MeshStandardMaterial({ color: 0xffee55 });
+    const arrowY = groundGap + size + 0.55;
+    const shaftLen = size * 0.5;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, shaftLen, 6), arrowMat);
+    shaft.rotation.x = Math.PI / 2; // sylinderens lengdeakse (normalt +Y) vippes til å peke langs +Z
+    shaft.position.set(0, arrowY, shaftLen / 2);
+    shaft.castShadow = true;
+    group.add(shaft);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 8), arrowMat);
+    tip.rotation.x = Math.PI / 2; // samme vipp - konusspissen peker videre langs +Z
+    tip.position.set(0, arrowY, shaftLen + 0.25);
+    tip.castShadow = true;
+    group.add(tip);
     return group;
 }
 
@@ -1983,6 +2058,504 @@ const PROP_HAZARDS = GATE_PLACEMENTS.map(function (placement) {
     };
 });
 
+/* ---------- Rådhus med klokketårn (racingbane 2 - se GATE_COURSE_2_CENTER) ----------
+   Samme idé som "rådhuset" i fixed-wing-simulatoren (bygget på nytt her, ikke delt via
+   simulator-common.js - de to simulatorene har egne verdener og ingen andre felles bygningstyper):
+   murstein-tekstur, flatt tak (til racing-gaten som står der, se GATE_WAYPOINTS_2), urskiver som følger
+   PC-ens faktiske klokkeslett på alle fire sider av et smalt tårn. */
+let brickTextureBase = null;
+function buildBrickTexture() {
+    if (brickTextureBase) return brickTextureBase;
+    const texW = 64, texH = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = texW;
+    canvas.height = texH;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#8a4a3a";
+    ctx.fillRect(0, 0, texW, texH);
+    ctx.strokeStyle = "#5a2e22";
+    ctx.lineWidth = 2;
+    const rows = 8, brickH = texH / rows, cols = 4;
+    for (let r = 0; r <= rows; r++) {
+        const y = r * brickH;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(texW, y);
+        ctx.stroke();
+    }
+    for (let r = 0; r < rows; r++) {
+        const offset = (r % 2) * (texW / cols / 2);
+        for (let c = 0; c <= cols; c++) {
+            const x = ((c * (texW / cols) + offset) % texW + texW) % texW;
+            ctx.beginPath();
+            ctx.moveTo(x, r * brickH);
+            ctx.lineTo(x, (r + 1) * brickH);
+            ctx.stroke();
+        }
+    }
+    brickTextureBase = new THREE.CanvasTexture(canvas);
+    return brickTextureBase;
+}
+function buildBrickMaterial(repeatX, repeatY) {
+    const tex = buildBrickTexture().clone();
+    tex.needsUpdate = true;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeatX, repeatY);
+    return new THREE.MeshStandardMaterial({ map: tex });
+}
+
+let clockTextureBase = null;
+function buildClockTexture() {
+    if (clockTextureBase) return clockTextureBase;
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#3a3a38";
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = "#e8e2c8";
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#2a2a28";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const r1 = size * 0.42, r2 = size * (i % 3 === 0 ? 0.34 : 0.38);
+        ctx.beginPath();
+        ctx.moveTo(size / 2 + Math.sin(a) * r1, size / 2 - Math.cos(a) * r1);
+        ctx.lineTo(size / 2 + Math.sin(a) * r2, size / 2 - Math.cos(a) * r2);
+        ctx.stroke();
+    }
+    clockTextureBase = new THREE.CanvasTexture(canvas);
+    return clockTextureBase;
+}
+
+// Klokkehendene (dreiepunkt-grupper, ikke selve viser-meshene) registreres her slik at
+// updateClockTower kan rotere dem fra PC-ens klokke hvert bilde - samme "handles"-mønster som
+// windsockHandle/treeSwayManager.
+let clockHandles = [];
+function buildClockFace(radius) {
+    const group = new THREE.Group();
+    const face = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), new THREE.MeshStandardMaterial({ map: buildClockTexture() }));
+    group.add(face);
+
+    const handMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28 });
+    const hourPivot = new THREE.Group();
+    const hourHand = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.1, radius * 0.5, 0.02), handMat);
+    hourHand.position.set(0, radius * 0.25, 0.015);
+    hourPivot.add(hourHand);
+    group.add(hourPivot);
+
+    const minutePivot = new THREE.Group();
+    const minuteHand = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.07, radius * 0.78, 0.02), handMat);
+    minuteHand.position.set(0, radius * 0.39, 0.02);
+    minutePivot.add(minuteHand);
+    group.add(minutePivot);
+
+    clockHandles.push({ hour: hourPivot, minute: minutePivot });
+    return group;
+}
+// Strupet til maks én reell oppdatering i sekundet - viserbevegelsen er umerkelig raskere enn det
+// (samme resonnement som treet/vindpølsen sine egne throttlede oppdateringer).
+let lastClockTowerUpdateMs = 0;
+function updateClockTower(nowMs) {
+    if (clockHandles.length === 0 || nowMs - lastClockTowerUpdateMs < 1000) return;
+    lastClockTowerUpdateMs = nowMs;
+    const now = new Date(nowMs);
+    const hourFrac = (now.getHours() % 12) / 12 + now.getMinutes() / 720;
+    const minuteFrac = now.getMinutes() / 60 + now.getSeconds() / 3600;
+    const hourAngle = hourFrac * Math.PI * 2;
+    const minuteAngle = minuteFrac * Math.PI * 2;
+    clockHandles.forEach(function (c) {
+        c.hour.rotation.z = -hourAngle;
+        c.minute.rotation.z = -minuteAngle;
+    });
+}
+
+function buildClockTower(width, towerHeight) {
+    const group = new THREE.Group();
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(width, towerHeight, width), buildBrickMaterial(1, towerHeight / width));
+    tower.position.y = towerHeight / 2;
+    tower.castShadow = true;
+    tower.receiveShadow = true;
+    group.add(tower);
+
+    const clockY = towerHeight * 0.82, clockR = width * 0.32, faceOffset = width / 2 + 0.02;
+    [
+        { pos: [0, clockY, faceOffset], ry: 0 },
+        { pos: [faceOffset, clockY, 0], ry: Math.PI / 2 },
+        { pos: [0, clockY, -faceOffset], ry: Math.PI },
+        { pos: [-faceOffset, clockY, 0], ry: -Math.PI / 2 }
+    ].forEach(function (side) {
+        const clock = buildClockFace(clockR);
+        clock.position.set(side.pos[0], side.pos[1], side.pos[2]);
+        clock.rotation.y = side.ry;
+        group.add(clock);
+    });
+
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(width * 0.75, towerHeight * 0.35, 4), new THREE.MeshStandardMaterial({ color: 0x2a2a28 }));
+    cap.rotation.y = Math.PI / 4;
+    cap.position.y = towerHeight + towerHeight * 0.35 * 0.5;
+    cap.castShadow = true;
+    group.add(cap);
+    return group;
+}
+
+// Rådhuset - murstein, flatt tak (racing-gaten fra GATE_WAYPOINTS_2 lander midt på det), store vinduer,
+// søyleinngang, klokketårn og flaggstang.
+// Bredere/dypere enn "ekte" rådhus-proporsjoner ville tilsagt - taket må ha god nok plass til racing-
+// gaten (se GATE_WAYPOINTS_2 "roofgate") PLUSS innflygings-/utflygingsrom rundt den, ikke bare så vidt.
+const TOWNHALL_WIDTH = 14, TOWNHALL_HEIGHT = 10, TOWNHALL_DEPTH = 12;
+const TOWNHALL_ROOF_Y = TOWNHALL_HEIGHT + 0.2;
+function buildTownHall(width, height, depth) {
+    const group = new THREE.Group();
+    const walls = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildBrickMaterial(width / 2.2, height / 2.2));
+    walls.position.y = height / 2;
+    walls.castShadow = true;
+    walls.receiveShadow = true;
+    group.add(walls);
+
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x3a3a38 });
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(width + 0.3, 0.4, depth + 0.3), roofMat);
+    roof.position.y = height + 0.2;
+    roof.castShadow = true;
+    roof.receiveShadow = true;
+    group.add(roof);
+
+    const winMat = new THREE.MeshStandardMaterial({ color: 0xbfe0e8, emissive: 0x3a5560, emissiveIntensity: 0.35 });
+    const winCount = 4;
+    for (let i = 0; i < winCount; i++) {
+        const t = (i / (winCount - 1) - 0.5) * (width * 0.72);
+        const win = new THREE.Mesh(new THREE.BoxGeometry(width * 0.11, height * 0.42, 0.06), winMat);
+        win.position.set(t, height * 0.56, depth / 2 + 0.03);
+        win.receiveShadow = true;
+        group.add(win);
+    }
+
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a });
+    const door = new THREE.Mesh(new THREE.BoxGeometry(width * 0.2, height * 0.55, 0.08), doorMat);
+    door.position.set(0, height * 0.28, depth / 2 + 0.04);
+    door.receiveShadow = true;
+    group.add(door);
+
+    const columnMat = new THREE.MeshStandardMaterial({ color: 0xf0ece0 });
+    const porticoWidth = width * 0.42, porticoHeight = height * 0.85, porticoDepth = 1.6;
+    [-1, 1].forEach(function (side) {
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, porticoHeight, 10), columnMat);
+        col.position.set(side * porticoWidth / 2, porticoHeight / 2, depth / 2 + porticoDepth * 0.85);
+        col.castShadow = true;
+        group.add(col);
+    });
+    const porticoRoof = new THREE.Mesh(new THREE.BoxGeometry(porticoWidth + 0.8, 0.3, porticoDepth + 0.6), roofMat);
+    porticoRoof.position.set(0, porticoHeight + 0.15, depth / 2 + porticoDepth * 0.55);
+    porticoRoof.castShadow = true;
+    group.add(porticoRoof);
+
+    const tower = buildClockTower(width * 0.32, height * 1.6);
+    tower.position.set(0, height + 0.4, -depth * 0.15);
+    group.add(tower);
+
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, height * 1.1, 8), poleMat);
+    pole.position.set(width * 0.4, height * 0.55, depth / 2 + 0.5);
+    group.add(pole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshStandardMaterial({ color: 0xba1522, side: THREE.DoubleSide }));
+    flag.position.set(width * 0.4 + 0.3, height * 1.0, depth / 2 + 0.5);
+    group.add(flag);
+
+    return group;
+}
+
+// Enkelt dekorativt bolighus (boks + pyramidetak) langs racingbane 2 - samme lavpoly-prinsipp som
+// fjellhytta (buildMountainCabin) og barnet/rådhuset over, for et par "ledelinjer" til uten den fulle
+// gavltak-detaljen fixed-wing-simulatorens husmodeller har (holdt enklere med vilje her).
+function buildSimpleHouse2(width, height, depth, wallColor, roofColor) {
+    const group = new THREE.Group();
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), new THREE.MeshStandardMaterial({ color: wallColor }));
+    wall.position.y = height / 2;
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    group.add(wall);
+    const roofHeight = height * 0.55;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(width, depth) * 0.5, roofHeight, 4), new THREE.MeshStandardMaterial({ color: roofColor }));
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = height + roofHeight / 2;
+    roof.castShadow = true;
+    roof.receiveShadow = true;
+    group.add(roof);
+    const winMat = new THREE.MeshStandardMaterial({ color: 0xbfe0e8, emissive: 0x3a5560, emissiveIntensity: 0.35 });
+    const win = new THREE.Mesh(new THREE.BoxGeometry(width * 0.22, height * 0.28, 0.05), winMat);
+    win.position.set(0, height * 0.55, depth / 2 + 0.03);
+    win.receiveShadow = true;
+    group.add(win);
+    return group;
+}
+
+/* ---------- Elv (kun dekorativ - ingen kollisjon, samme prinsipp som bakketeksturen) ----------
+   Ugjennomsiktig med vilje (IKKE transparent:true) - en halvgjennomsiktig overflate lot bakkens
+   sjakkrutemønster (Sim.buildGroundTexture, normalt et subtilt gress-triks) skinne tydelig gjennom som
+   synlige "rutenett-linjer" i elva, spesielt ved kontrasten mot blåfargen. */
+const RIVER_JOINT_OVERLAP = 2.5; // m - hvert segment strekkes litt forbi punktene sine i begge ender,
+// slik at det ikke blir synlige glipper (bakken skinner gjennom) der to segmenter møtes i en vinkel.
+// Trapesformet (ikke ensartet bredde) - lar elva smalne inn til en bekk oppe ved fjellet
+// (se RIVER_POINTS/RIVER_WIDTHS) og utvide seg nedover mot dammen i den andre enden.
+function buildRiverSegment(from, to, widthFrom, widthTo, mat) {
+    const dx = to.x - from.x, dz = to.z - from.z;
+    const rawLength = Math.hypot(dx, dz);
+    const dirX = dx / rawLength, dirZ = dz / rawLength;
+    const start = { x: from.x - dirX * RIVER_JOINT_OVERLAP, z: from.z - dirZ * RIVER_JOINT_OVERLAP };
+    const length = rawLength + RIVER_JOINT_OVERLAP * 2;
+    const shape = new THREE.Shape();
+    shape.moveTo(-widthFrom / 2, 0);
+    shape.lineTo(widthFrom / 2, 0);
+    shape.lineTo(widthTo / 2, length);
+    shape.lineTo(-widthTo / 2, length);
+    shape.closePath();
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat);
+    mesh.receiveShadow = true; // elva skal ta imot skygge fra trær/gates/bygninger som krysser over den
+    mesh.rotation.x = -Math.PI / 2; // flat - shapens lokale Y (0..length) peker nå langs lokal -Z
+    const group = new THREE.Group();
+    group.add(mesh);
+    const angle = Math.atan2(dx, dz);
+    group.rotation.y = angle + Math.PI; // -Z rotert til å peke fra "from" mot "to" (se buildGroundArrow)
+    group.position.set(start.x, 0.03, start.z); // shapen starter ved lokal Y=0 = "start" (forlenget "from")
+    return group;
+}
+// widths: én bredde per punkt i points (ikke én bredde totalt) - segment i bruker widths[i]/widths[i+1]
+// som hhv. bredde ved "from"- og "to"-enden, se den trapesformede shapen over.
+function buildRiver(points, widths, pondRadius) {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x3a72a8, roughness: 0.35, side: THREE.DoubleSide });
+    for (let i = 0; i < points.length - 1; i++) {
+        group.add(buildRiverSegment(points[i], points[i + 1], widths[i], widths[i + 1], mat));
+    }
+    // Rund "lapp" i hvert indre svingpunkt - de rette, trapesformede segmentene over er IKKE gjæret mot
+    // hverandre der de møtes i en vinkel (hver er bygget/rotert helt uavhengig av naboene), så uten dette
+    // blir det en synlig kant/hakk i elvebredden ved hver sving. Samme Y (0.03) og materiale som
+    // segmentene selv - ingen z-fighting siden fargen uansett blir identisk der de overlapper.
+    for (let i = 1; i < points.length - 1; i++) {
+        const joint = new THREE.Mesh(new THREE.CircleGeometry(Math.max(widths[i - 1], widths[i]) / 2, 16), mat);
+        joint.receiveShadow = true;
+        joint.rotation.x = -Math.PI / 2;
+        joint.position.set(points[i].x, 0.03, points[i].z);
+        group.add(joint);
+    }
+    if (pondRadius) {
+        // Liten dam/innsjø i enden av elva - egen (litt dypere) blåtone for å lese som stillestående
+        // vann i motsetning til den rennende elva. Litt HØYERE enn selve elva (0.05 mot 0.03) - det siste
+        // elvesegmentet strekker seg forbi punktet sitt og inn i dammens sirkel (se RIVER_JOINT_OVERLAP),
+        // og der de to (ULIKT fargede) flatene lå helt jevnt overlappet flimret det synlig (z-fighting)
+        // idet kameraet beveget seg. Høydeforskjellen gjør at dammen alltid vinner konsekvent i stedet.
+        const pondMat = new THREE.MeshStandardMaterial({ color: 0x2f5f8f, roughness: 0.3 });
+        const last = points[points.length - 1];
+        const pond = new THREE.Mesh(new THREE.CircleGeometry(pondRadius, 24), pondMat);
+        pond.receiveShadow = true;
+        pond.rotation.x = -Math.PI / 2;
+        pond.position.set(last.x, 0.05, last.z);
+        group.add(pond);
+    }
+    return group;
+}
+// Langs banen (se GATE_COURSE_2_CENTER) - rent landskapselement for variasjon, ligger klart utenfor
+// selve portrekka. Starter som en liten bekk oppe ved foten av fjellet nord for banen (se
+// MOUNTAIN_PEAKS index 0 - det tryggeste/minste fjellet, samme retning som selve banen er flyttet til),
+// brer seg gradvis ut til en elv (se RIVER_WIDTHS), og ender i en liten dam/innsjø (se pondRadius).
+const RIVER_POINTS = [
+    { x: 64, z: 507 }, { x: 115, z: 415 }, { x: 125, z: 360 }, { x: 120, z: 290 },
+    { x: 130, z: 230 }, { x: 115, z: 170 }, { x: 105, z: 125 }, { x: 95, z: 75 }
+];
+const RIVER_WIDTHS = [1.5, 3, 5, 7, 8, 9, 9.5, 10];
+const RIVER_POND_RADIUS = 15;
+
+/* ---------- Racingbane 2 - lengre og lenger unna enn den opprinnelige (GATE_COURSE_CENTER) ----------
+   Samme håndplasserte-veipunkt-prinsipp som GATE_WAYPOINTS, men mer variert: en låve å fly gjennom
+   (som før), pluss en egen racing-gate midt på taket av rådhuset (elementet "roofgate" - droneen må
+   klatre opp, gjennom, og ned igjen), og en tydelig trang chikane. Element 0 er start/mål (svart/hvitt
+   rutemønster + retningspil, se buildStartFinishGate) - løypa er en lukket løkke som alle de andre.
+   Senteret er rett NORD for avgangsplassen (samme retning som den TRYGGESTE fjellsektoren, se
+   mountainHeightAt-kommentaren - fjellet i denne retningen har desidert minst "rekkevidde" av alle
+   åtte, se MOUNTAIN_DEFS index 0) i stedet for sørøst, der banens sørøstre hjørne (rådhus-/chikane-
+   området) viste seg å ligge INNENFOR kollisjonsmarginen til det sørøstlige fjellet (index 3) - usynlig
+   "krasj i løse lufta" et godt stykke fra selve fjellsiden, se JITTER_SAFETY_MARGIN.
+*/
+const GATE_COURSE_2_CENTER = new THREE.Vector3(0, 0, 320);
+const TOWNHALL_OFFSET = { dx: 0, dz: -165 };
+const GATE_WAYPOINTS_2 = [
+    { type: "start", dx: 0, dz: 85, gap: 1.6, size: 3.4 },
+    { type: "gate", dx: 40, dz: 100, gap: 2.2, size: 3.2 },
+    { type: "gate", dx: 75, dz: 80, gap: 1.4, size: 2.8 },
+    { type: "gate", dx: 95, dz: 40, gap: 2.4, size: 3.2 },
+    { type: "barn", dx: 90, dz: -10 },
+    { type: "gate", dx: 70, dz: -55, gap: 1.6, size: 3.0 },
+    // Trang chikane - kicker andre veien enn resten av banen, samme idé som GATE_WAYPOINTS.
+    { type: "gate", dx: 75, dz: -100, gap: 1.3, size: 2.6 },
+    { type: "gate", dx: 35, dz: -90, gap: 1.2, size: 2.6 },
+    // God avstand før/etter rådhustak-gaten (se roofgate under) - en lang, tydelig klatring opp og en
+    // like lang, tydelig glidning ned igjen, i stedet for en brå (og forvirrende) rekkefølge tett inntil
+    // selve bygget.
+    { type: "gate", dx: 50, dz: -135, gap: 1.6, size: 2.8 },
+    // Gate på rådhustaket - samme dx/dz som TOWNHALL_OFFSET, men elevation løfter HELE gaten opp på
+    // taket i stedet for bakkeplanet (se GATE_PLACEMENTS_2/buildGateCourse2). gap er her kun høyden på
+    // gatens egne (korte) bein OPPÅ taket, ikke avstanden fra bakken. Sentrert midt på det nå bredere
+    // taket (se TOWNHALL_WIDTH/DEPTH) med god klaring til alle kanter.
+    { type: "roofgate", dx: TOWNHALL_OFFSET.dx, dz: TOWNHALL_OFFSET.dz, gap: 0.4, size: 3.0, elevation: TOWNHALL_ROOF_Y },
+    { type: "gate", dx: -50, dz: -135, gap: 1.6, size: 2.8 },
+    { type: "gate", dx: -95, dz: -80, gap: 1.8, size: 3.0 },
+    { type: "gate", dx: -100, dz: -30, gap: 1.8, size: 3.0 },
+    { type: "gate", dx: -85, dz: 15, gap: 1.4, size: 2.6 },
+    { type: "gate", dx: -55, dz: 55, gap: 2.0, size: 3.0 },
+    { type: "gate", dx: -25, dz: 75, gap: 2.2, size: 3.2 }
+];
+const GATE_PLACEMENTS_2 = GATE_WAYPOINTS_2.map(function (wp, i) {
+    const next = GATE_WAYPOINTS_2[(i + 1) % GATE_WAYPOINTS_2.length];
+    return {
+        wp: wp,
+        x: GATE_COURSE_2_CENTER.x + wp.dx,
+        z: GATE_COURSE_2_CENTER.z + wp.dz,
+        y: wp.elevation || 0,
+        yaw: Math.atan2(next.dx - wp.dx, next.dz - wp.dz)
+    };
+});
+function buildGateCourse2() {
+    const group = new THREE.Group();
+    GATE_PLACEMENTS_2.forEach(function (placement) {
+        const wp = placement.wp;
+        const obstacle = (wp.type === "barn")
+            ? buildBarn(BARN_DIMENSIONS.width, BARN_DIMENSIONS.height, BARN_DIMENSIONS.depth,
+                BARN_DIMENSIONS.windowW, BARN_DIMENSIONS.windowH, BARN_DIMENSIONS.sillY)
+            : (wp.type === "start")
+                ? buildStartFinishGate(wp.size, wp.gap)
+                : buildGate(wp.size, wp.gap);
+        obstacle.position.set(placement.x, placement.y, placement.z);
+        obstacle.rotation.y = placement.yaw;
+        group.add(obstacle);
+    });
+
+    const townHall = buildTownHall(TOWNHALL_WIDTH, TOWNHALL_HEIGHT, TOWNHALL_DEPTH);
+    const roofGatePlacement = GATE_PLACEMENTS_2.filter(function (p) { return p.wp.type === "roofgate"; })[0];
+    const townHallX = GATE_COURSE_2_CENTER.x + TOWNHALL_OFFSET.dx;
+    const townHallZ = GATE_COURSE_2_CENTER.z + TOWNHALL_OFFSET.dz;
+    townHall.position.set(townHallX, 0, townHallZ);
+    townHall.rotation.y = roofGatePlacement.yaw; // rådhuset vender samme vei som gaten på taket flys
+    group.add(townHall);
+    // Registreres i SOLID_COLLIDERS (definert lenger opp i filen, men fortsatt bare en vanlig mutert
+    // array på dette tidspunktet - buildGateCourse2 kjøres først ved scene-oppbygging, godt etter at
+    // hele filen er lest inn) slik at droneen faktisk kolliderer med veggene og kan lande på taket, i
+    // stedet for å fly rett gjennom - samme AABB-mot-toppflate-modell som bygningen/bilen ved
+    // avgangsplassen. Halve DIAGONALEN (ikke halve bredden/dybden) brukes som halv boksstørrelse i
+    // begge retninger - garanterer at boksen dekker hele det roterte footprinten uansett hvilken vei
+    // rådhuset vender (samme tilnærming som bilens kollider lenger opp - "litt større boks").
+    const townHallHalfDiag = Math.hypot(TOWNHALL_WIDTH / 2, TOWNHALL_DEPTH / 2);
+    SOLID_COLLIDERS.push({
+        minX: townHallX - townHallHalfDiag, maxX: townHallX + townHallHalfDiag,
+        minZ: townHallZ - townHallHalfDiag, maxZ: townHallZ + townHallHalfDiag,
+        topY: TOWNHALL_ROOF_Y
+    });
+
+    group.add(buildRiver(RIVER_POINTS, RIVER_WIDTHS, RIVER_POND_RADIUS));
+
+    // "Ledelinjer" langs banen - referansepunkter for å bedømme fart/høyde/retning i høy fart, samme
+    // begrunnelse som selve porthjørnene. Alle punktene holder minst ~20 m klaring til nærmeste port
+    // (se GATE_WAYPOINTS_2) OG til elva (se RIVER_POINTS, dx ~95-130 langs denne siden av banen -
+    // de to første punktene sto opprinnelig nesten oppå elva, flyttet vestover/innover her).
+    // Tettere rundt chikanen og rådhustak-gaten (elementene 6-9, som svinger brått) - der trengs
+    // ledelinjene mest.
+    [
+        { x: 80, z: 100 }, { x: 80, z: -25 }, { x: 100, z: -115 }, { x: -120, z: -55 },
+        { x: -105, z: 45 }, { x: 35, z: 130 }, { x: 20, z: -60 }, { x: 10, z: -95 },
+        { x: 60, z: -70 }, { x: 15, z: -130 }, { x: -25, z: -145 }
+    ].forEach(function (t) {
+        const tree = Sim.buildRandomTree(6 + Math.random() * 3);
+        tree.position.set(GATE_COURSE_2_CENTER.x + t.x, 0, GATE_COURSE_2_CENTER.z + t.z);
+        group.add(treeSwayManager.addSwayingTree(tree));
+    });
+    // Liten skog midt i "infield"-området, godt unna alle portene i begge retninger (ut langs
+    // østsiden, tilbake langs vestsiden) - gir banen et landskapsinnslag midt i, ikke bare i kantene.
+    for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+            const idx = r * 3 + c;
+            const jitterX = Math.sin(idx * 12.9) * 3;
+            const jitterZ = Math.cos(idx * 7.3) * 3;
+            const tree = Sim.buildRandomTree(7 + Math.abs(Math.sin(idx * 3.7)) * 4);
+            tree.position.set(
+                GATE_COURSE_2_CENTER.x + (c - 1) * 9 + jitterX, 0,
+                GATE_COURSE_2_CENTER.z - 40 + (r - 1) * 9 + jitterZ
+            );
+            group.add(treeSwayManager.addSwayingTree(tree));
+        }
+    }
+    [
+        { x: 130, z: -20, w: 6, h: 5, d: 6, ry: 0.6, wall: 0xc9b896, roof: 0x6b4a3a },
+        { x: -130, z: -100, w: 5.5, h: 4.5, d: 5.5, ry: 2.1, wall: 0xb8c9b0, roof: 0x4a3a2e }
+    ].forEach(function (h) {
+        const house = buildSimpleHouse2(h.w, h.h, h.d, h.wall, h.roof);
+        const houseX = GATE_COURSE_2_CENTER.x + h.x, houseZ = GATE_COURSE_2_CENTER.z + h.z;
+        house.position.set(houseX, 0, houseZ);
+        house.rotation.y = h.ry;
+        group.add(house);
+        // Samme registrering som rådhuset over - ellers ville droneen flydd rett gjennom husene også.
+        const halfDiag = Math.hypot(h.w / 2, h.d / 2);
+        SOLID_COLLIDERS.push({
+            minX: houseX - halfDiag, maxX: houseX + halfDiag,
+            minZ: houseZ - halfDiag, maxZ: houseZ + halfDiag,
+            topY: h.h
+        });
+    });
+
+    return group;
+}
+
+/* ---------- Propell-treffbokser for racingbane 2 - se PROP_HAZARDS-kommentaren for prinsippet.
+   Identisk oppbygging, bare med et Y-elevasjonsledd (placement.y) lagt til hvor relevant, for
+   rådhustak-gaten (den eneste som ikke står med bunnbein rett på bakkeplanet). */
+const PROP_HAZARDS_2 = GATE_PLACEMENTS_2.map(function (placement) {
+    const wp = placement.wp;
+    const boxes = [];
+    let boundR, maxY;
+    if (wp.type === "barn") {
+        const b = BARN_DIMENSIONS, t = 0.15;
+        const hw = b.width / 2, hd = b.depth / 2;
+        boxes.push({ minX: -hw - t, maxX: -hw + t, minY: 0, maxY: b.height, minZ: -hd, maxZ: hd });
+        boxes.push({ minX: hw - t, maxX: hw + t, minY: 0, maxY: b.height, minZ: -hd, maxZ: hd });
+        [-hd, hd].forEach(function (zPos) {
+            const topY = b.sillY + b.windowH, panelW = (b.width - b.windowW) / 2;
+            boxes.push({ minX: -hw, maxX: hw, minY: 0, maxY: b.sillY, minZ: zPos - t, maxZ: zPos + t });
+            boxes.push({ minX: -hw, maxX: hw, minY: topY, maxY: b.height, minZ: zPos - t, maxZ: zPos + t });
+            boxes.push({ minX: -hw, maxX: -hw + panelW, minY: b.sillY, maxY: topY, minZ: zPos - t, maxZ: zPos + t });
+            boxes.push({ minX: hw - panelW, maxX: hw, minY: b.sillY, maxY: topY, minZ: zPos - t, maxZ: zPos + t });
+        });
+        boxes.push({ minX: -hw - 0.3, maxX: hw + 0.3, minY: b.height, maxY: b.height + 0.3, minZ: -hd - 0.3, maxZ: hd + 0.3 });
+        boundR = Math.hypot(hw + 0.3, hd + 0.3);
+        maxY = b.height + 0.3;
+    } else {
+        const s = wp.size, gap = wp.gap, t = 0.09;
+        const hs = s / 2;
+        boxes.push({ minX: -hs, maxX: hs, minY: gap - t, maxY: gap + t, minZ: -t, maxZ: t });
+        boxes.push({ minX: -hs, maxX: hs, minY: gap + s - t, maxY: gap + s + t, minZ: -t, maxZ: t });
+        boxes.push({ minX: -hs - t, maxX: -hs + t, minY: 0, maxY: gap + s, minZ: -t, maxZ: t });
+        boxes.push({ minX: hs - t, maxX: hs + t, minY: 0, maxY: gap + s, minZ: -t, maxZ: t });
+        boundR = hs + 0.2;
+        maxY = gap + s + 0.2;
+    }
+    // Y-boksene over er alle relative til gatens/låvens EGEN bunn (0) - løft dem opp med
+    // placement.y for elementer som ikke står rett på bakken (rådhustak-gaten).
+    const yOffset = placement.y || 0;
+    boxes.forEach(function (b) { b.minY += yOffset; b.maxY += yOffset; });
+    return {
+        x: placement.x, z: placement.z,
+        cosYaw: Math.cos(placement.yaw), sinYaw: Math.sin(placement.yaw),
+        boundRSq: (boundR + 1.5) * (boundR + 1.5),
+        maxY: maxY + yOffset + 0.5,
+        boxes: boxes
+    };
+});
+const ALL_PROP_HAZARDS = PROP_HAZARDS.concat(PROP_HAZARDS_2);
+
 function buildWorldObjects() {
     const group = new THREE.Group();
 
@@ -2015,6 +2588,7 @@ function buildWorldObjects() {
     });
 
     group.add(buildGateCourse());
+    group.add(buildGateCourse2());
 
     return group;
 }
@@ -2225,20 +2799,22 @@ function initScene() {
     scene.add(buildClouds());
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.42)); // litt lavere enn før - gir tydeligere kontrast i den ekte skyggekart-skyggen
-    const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-    sun.position.set(60, 90, 40);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -80;
-    sun.shadow.camera.right = 80;
-    sun.shadow.camera.top = 80;
-    sun.shadow.camera.bottom = -80;
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 250;
-    sun.shadow.bias = -0.0015;
-    sun.target.position.set(0, 0, -40);
-    scene.add(sun.target);
-    scene.add(sun);
+    sunLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    sunLight.position.set(
+        SHADOW_CENTER.x + SHADOW_LIGHT_OFFSET.x, SHADOW_LIGHT_OFFSET.y, SHADOW_CENTER.z + SHADOW_LIGHT_OFFSET.z
+    );
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.left = -80;
+    sunLight.shadow.camera.right = 80;
+    sunLight.shadow.camera.top = 80;
+    sunLight.shadow.camera.bottom = -80;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 250;
+    sunLight.shadow.bias = -0.0015;
+    sunLight.target.position.copy(SHADOW_CENTER);
+    scene.add(sunLight.target);
+    scene.add(sunLight);
 
     const aspect = window.innerWidth / Math.max(1, window.innerHeight - 70);
     chaseCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
@@ -2315,9 +2891,37 @@ function resizeRenderer() {
 // chaseCamera faktisk finnes), oppdateres fra animate().
 let chaseCameraController;
 
+// Sollyset (skygge-castende DirectionalLight, se initScene) - modul-scope slik at skyggekamerarets
+// senter kan følge droneen (se updateShadowCamera). Skyggekartet dekker kun en ±SHADOW_CAMERA_HALF_SIZE
+// boks (fast oppløsning, se sun.shadow.mapSize) - med to racingbaner spredt over flere hundre meter ville
+// én statisk boks stor nok til å dekke begge enten gitt store, grovpikslede skygger, eller (som det var
+// før denne fiksen) rett og slett ingen skygger i det hele tatt utenfor boksen. Løsningen er å flytte
+// boksen med droneen i stedet for å gjøre den større.
+let sunLight;
+const SHADOW_CENTER = new THREE.Vector3(0, 0, -40);
+const SHADOW_LIGHT_OFFSET = { x: 60, y: 90, z: 80 }; // sun.position - SHADOW_CENTER ved init (se initScene)
+const SHADOW_RECENTER_DIST = 40; // m - reposisjoner først når droneen har beveget seg dette langt fra
+// forrige senter, ikke hvert bilde - hvert bilde ville fått skyggekantene til å "svømme" merkbart.
+
 function updateVlosCamera() {
     // Fast plassert ved avgangsplassen - dreier kun for å følge droneen med blikket, som en pilot på bakken.
     vlosCamera.lookAt(droneState.position);
+}
+
+// Flytter skyggekamera-boksen til droneens nåværende område når den har beveget seg langt nok unna
+// forrige senter (se SHADOW_RECENTER_DIST) - se kommentaren ved SHADOW_CENTER for hvorfor. Lysretningen
+// (offset fra senter til sun.position) holdes konstant, kun SELVE boksen flyttes, så solvinkelen ser
+// alltid lik ut uansett hvor på kartet droneen befinner seg.
+function updateShadowCamera() {
+    const dx = droneState.position.x - SHADOW_CENTER.x;
+    const dz = droneState.position.z - SHADOW_CENTER.z;
+    if (dx * dx + dz * dz < SHADOW_RECENTER_DIST * SHADOW_RECENTER_DIST) return;
+    SHADOW_CENTER.set(droneState.position.x, 0, droneState.position.z);
+    sunLight.position.set(
+        SHADOW_CENTER.x + SHADOW_LIGHT_OFFSET.x, SHADOW_LIGHT_OFFSET.y, SHADOW_CENTER.z + SHADOW_LIGHT_OFFSET.z
+    );
+    sunLight.target.position.copy(SHADOW_CENTER);
+    sunLight.target.updateMatrixWorld();
 }
 
 /* ---------- Input ---------- */
@@ -2883,10 +3487,11 @@ function updatePropStrikes(dt, impactVelocity) {
     const spec = currentDroneSpec();
     const scale = spec.visualScale;
     const propRadius = (bladeLengthForClass(droneState.droneClass) / 2) * scale;
-    // Grovsil: kun baneelementer nær droneen testes per punkt - vanligvis 0-1 stykker.
+    // Grovsil: kun baneelementer nær droneen testes per punkt - vanligvis 0-1 stykker. ALL_PROP_HAZARDS
+    // dekker begge racingbanene (se PROP_HAZARDS/PROP_HAZARDS_2).
     const nearbyHazards = [];
-    for (let i = 0; i < PROP_HAZARDS.length; i++) {
-        const hz = PROP_HAZARDS[i];
+    for (let i = 0; i < ALL_PROP_HAZARDS.length; i++) {
+        const hz = ALL_PROP_HAZARDS[i];
         const dx = droneState.position.x - hz.x, dz = droneState.position.z - hz.z;
         if (dx * dx + dz * dz <= hz.boundRSq && droneState.position.y <= hz.maxY) nearbyHazards.push(hz);
     }
@@ -2973,7 +3578,7 @@ function updateBystanderCollision() {
         const off = CROWD_MEMBER_OFFSETS[i];
         const dx = droneState.position.x - (CROWD_CENTER.x + off.x);
         const dz = droneState.position.z - (CROWD_CENTER.z + off.z);
-        if (Math.hypot(dx, dz) <= PILOT_HIT_RADIUS + reach) {
+        if (Math.hypot(dx, dz) <= BYSTANDER_HIT_RADIUS + reach) {
             droneState.injured = true;
             droneState.injuredTarget = "bystander";
             droneState.armed = false;
@@ -2983,7 +3588,7 @@ function updateBystanderCollision() {
     if (pedestrianHandle && pedestrianHandle.visible) {
         const dx = droneState.position.x - pedestrianHandle.position.x;
         const dz = droneState.position.z - pedestrianHandle.position.z;
-        if (Math.hypot(dx, dz) <= PILOT_HIT_RADIUS + reach) {
+        if (Math.hypot(dx, dz) <= BYSTANDER_HIT_RADIUS + reach) {
             droneState.injured = true;
             droneState.injuredTarget = "bystander";
             droneState.armed = false;
@@ -3055,8 +3660,11 @@ function killswitchDisplayLabel() {
 }
 
 function toggleCamera() {
-    // Øvelsene flys per definisjon fra VLOS - kamerabytte er låst mens en øvelse er aktiv.
-    if (exerciseState.active) {
+    // De fleste øvelsene flys per definisjon fra VLOS - kamerabytte er låst mens de er aktive.
+    // Racingbanen er unntaket (se EXERCISES.race1.freeCameraToggle): den krever ikke VLOS for at
+    // øvelseslogikken skal gi mening, og piloten skal fritt kunne bytte mellom FPV/chase/VLOS i farta.
+    const exercise = exerciseState.active ? EXERCISES[exerciseState.exerciseId] : null;
+    if (exercise && !exercise.freeCameraToggle) {
         exerciseState.warningMessage = "Kamera er låst til VLOS under øvelser.";
         exerciseState.warningUntil = performance.now() + 2000;
         exerciseState.warningIsSuccess = false;
@@ -3326,7 +3934,13 @@ const exerciseState = {
     ksPedestrianTo: new THREE.Vector3(),
     ksPedestrianStartTime: 0,
     ksPatrolIndex: 0, // "vente"-fasens "liksom"-runde (gjenbruker CIRCLE_WAYPOINTS) - rent kosmetisk
-    ksSavedFlightMode: null // flightMode midlertidig tvunget til Stabilized under crowd/traffic-rømning
+    ksSavedFlightMode: null, // flightMode midlertidig tvunget til Stabilized under crowd/traffic-rømning
+
+    // Racingbanen (ex-race1) - se "Øvelser: racing-tilstandsmaskin". Gjenbruker wpIndex/engaged (samme
+    // felt som løype-øvelsene) for hvilken port som er neste/om start/mål er krysset minst én gang.
+    raceStartTime: 0, // tidspunkt inneværende runde startet (0 = klokken går ikke ennå)
+    savedFlightMode: null, // flightMode slik den var før en øvelse tvang sin egen (racingbanen: Acro)
+    savedFpvTiltDeg: null // FPV-kameravinkelen slik den var før en øvelse tvang sin egen (racingbanen: 30°)
 };
 let exerciseGuideHandle = null;
 
@@ -3438,6 +4052,12 @@ function buildExerciseGuide(stage) {
         const patrolWp = stage.patrolWaypoints || CIRCLE_WAYPOINTS;
         group.add(buildLoopStruts(patrolWp, patrolAlt, 0.08, guideMat));
         group.add(buildLoopStruts(stripWaypointY(patrolWp), 0.05, 0.06, groundMat));
+    } else if (stage.type === "racing") {
+        // Racingbanens porter er allerede tydelig markert i verden selv (sjakkrutete start/mål,
+        // oransje/hvite portrammer) - ingen ekstra grønn løype-visualisering trengs her. Merk: denne
+        // grenen MÅ finnes - uten den ville stage.waypoints under vært undefined for racing-steget og
+        // kastet en feil midt i startExercise (som stopper den før menyen rekker å lukkes/ledertavlen
+        // vises, se rebuildExerciseGuide-kallet i startExercise).
     } else if (stage.type !== "return") {
         // "Returner hjem" har ingen løype/veiledning - hele poenget er å finne hjem selv; markøren
         // (under) pulserer over H-plassen som mål.
@@ -3476,6 +4096,9 @@ function updateExerciseGuideVisual(now) {
         exerciseGuideHandle.nextWaypointMarker.position.set(HOVER_CENTER.x, HOVER_ALTITUDE, HOVER_CENTER.z);
     } else if (stage.type === "return") {
         exerciseGuideHandle.nextWaypointMarker.position.set(0, 1.0, 0); // målet: H-plassen hjemme
+    } else if (stage.type === "racing") {
+        const wp = RACE_GATE_CENTERS_2[exerciseState.wpIndex];
+        exerciseGuideHandle.nextWaypointMarker.position.set(wp.x, wp.y, wp.z);
     } else {
         const wp = stage.waypoints[exerciseState.wpIndex];
         exerciseGuideHandle.nextWaypointMarker.position.set(wp.x, wp.y !== undefined ? wp.y : EXERCISE_ALTITUDE, wp.z);
@@ -3667,6 +4290,11 @@ function updateExercise(dt, now) {
         return;
     }
 
+    if (stage.type === "racing") {
+        updateRacingStage(stage, dt, now);
+        return;
+    }
+
     // "Returner hjem": droneen holdes fastfrosset i lufta gjennom nedtelling + gass-matching, og
     // slippes først når piloten har lagt gassen rundt hover - deretter er det ren landingsfase.
     if (stage.type === "return") {
@@ -3831,7 +4459,9 @@ const exerciseProgressBoxEl = document.getElementById("exerciseProgressBox");
 const exerciseHudStageEl = document.getElementById("exerciseHudStage");
 const exerciseHudLapsEl = document.getElementById("exerciseHudLaps");
 const exerciseHudViolationsEl = document.getElementById("exerciseHudViolations");
+const exerciseHudViolationsItemEl = document.getElementById("exerciseHudViolationsItem");
 const exerciseHudHeadingErrorEl = document.getElementById("exerciseHudHeadingError");
+const exerciseHudHeadingErrorItemEl = document.getElementById("exerciseHudHeadingErrorItem");
 const exerciseHudTimerItemEl = document.getElementById("exerciseHudTimerItem");
 const exerciseHudTimerEl = document.getElementById("exerciseHudTimer");
 
@@ -3871,7 +4501,15 @@ function updateExerciseHud() {
                 ? exerciseState.returnRepsCompleted + "/" + REQUIRED_RETURN_REPS + returnSuffix
                 : stage.type === "killswitch"
                     ? killswitchStatusText()
-                    : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
+                    : stage.type === "racing"
+                        ? (exerciseState.engaged ? "Port " + exerciseState.wpIndex + "/" + RACE_GATE_CENTERS_2.length : "Kryss start/mål")
+                        : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
+
+    // Racing har verken avviks-telling eller nese-krav (fri stil) - begge feltene er bare støy der,
+    // se stage.type === "racing" i updateRacingStage.
+    const isRacing = stage && stage.type === "racing";
+    exerciseHudViolationsItemEl.style.display = isRacing ? "none" : "";
+    exerciseHudHeadingErrorItemEl.style.display = isRacing ? "none" : "";
 
     // Avviks-status: tydelig, vedvarende indikator på hvor nær steget er å bli nullstilt - banneret
     // alene forsvinner etter noen sekunder og etterlot ingen synlig "du har brukt opp advarselen".
@@ -3900,6 +4538,13 @@ function updateExerciseHud() {
     // "Uforutsette hendelser" (ex11) handler om riktig respons, ikke fart - se noTiming/completeExercise.
     if (EXERCISES[exerciseState.exerciseId].noTiming) {
         exerciseHudTimerItemEl.style.display = "none";
+    } else if (stage && stage.type === "racing") {
+        // Racingbanens klokke er en helt egen løpende rundetid (se updateRacingStage/raceStartTime),
+        // IKKE den vanlige exerciseState.startTime (som bare markerer når selve øvelsen ble åpnet) -
+        // står på "0:00" til klokken faktisk starter idet start/mål-porten krysses første gang.
+        exerciseHudTimerItemEl.style.display = "";
+        const elapsedSec = exerciseState.engaged ? (performance.now() - exerciseState.raceStartTime) / 1000 : 0;
+        exerciseHudTimerEl.textContent = formatExerciseTime(elapsedSec);
     } else {
         exerciseHudTimerItemEl.style.display = "";
         const elapsed = (performance.now() - exerciseState.startTime) / 1000;
@@ -3922,10 +4567,15 @@ function spawnForExercise(exercise) {
         exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
         exerciseState.warningUntil = performance.now() + 4000;
         exerciseState.warningIsSuccess = true;
-    } else if (exercise.startHint) {
-        exerciseState.warningMessage = exercise.startHint;
-        exerciseState.warningUntil = performance.now() + 4500;
-        exerciseState.warningIsSuccess = true;
+    } else {
+        // Racingbanen (ex-race1): egen spawn ved den nye banens start/mål-port i stedet for
+        // avgangsplassen - se spawnRacingStage/RACE_SPAWN_POINT.
+        if (exercise.stages[0].type === "racing") spawnRacingStage(exercise.stages[0]);
+        if (exercise.startHint) {
+            exerciseState.warningMessage = exercise.startHint;
+            exerciseState.warningUntil = performance.now() + 4500;
+            exerciseState.warningIsSuccess = true;
+        }
     }
     if (exercise.spawn === "far") {
         const bearing = (Math.random() * 2 - 1) * (Math.PI / 3); // innenfor ±60° av rett frem (-Z)
@@ -3965,9 +4615,20 @@ function startExercise(id) {
     stopExercise();
     exerciseState.savedDroneClass = droneState.droneClass;
     exerciseState.savedCameraModeIndex = cameraModeIndex;
-    setDroneClassEphemeral("mid");
-    cameraModeIndex = CAMERA_MODES.indexOf("vlos");
-    activeCamera = vlosCamera;
+    exerciseState.savedFlightMode = droneState.flightMode;
+    exerciseState.savedFpvTiltDeg = settings.fpvTiltDeg;
+    // De aller fleste øvelsene flys i Middels/VLOS - racingbanen (ex-race1) er unntaket: Racing-klasse,
+    // Acro-modus, FPV-kamera med et lavere standard kameravinkel (se exercise.forceFpvTiltDeg) egnet for
+    // racing. Alt lagres her og gjenopprettes i stopExercise, akkurat som vind/skydekke under.
+    setDroneClassEphemeral(exercise.droneClass || "mid");
+    const forcedCameraMode = exercise.forceCameraMode || "vlos";
+    cameraModeIndex = CAMERA_MODES.indexOf(forcedCameraMode);
+    activeCamera = (forcedCameraMode === "chase") ? chaseCamera : (forcedCameraMode === "fpv") ? fpvCamera : vlosCamera;
+    if (exercise.forceFlightMode) droneState.flightMode = exercise.forceFlightMode;
+    if (exercise.forceFpvTiltDeg !== undefined) {
+        settings.fpvTiltDeg = exercise.forceFpvTiltDeg;
+        fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
+    }
 
     // Vind-øvelser tvinger sin egen vind mens øvelsen pågår - brukerens innstillinger huskes og
     // settes tilbake i stopExercise. Ingen saveSettings her: tvangen skal aldri lekke til localStorage.
@@ -4010,6 +4671,9 @@ function startExercise(id) {
     rebuildExerciseGuide();
     // Lukk menyen - piloten skal rett i gang, og panelet skygger for sikten mot treningsområdet.
     document.getElementById("exercisesPanel").style.display = "none";
+    // Racingbanens ledertavle vises i stedet for menyen mens den flys (se stopExercise for skjuling) -
+    // delvis gjennomsiktig, se CSS, så den ikke sperrer sikten helt slik selve menyen ville gjort.
+    document.getElementById("racingLeaderboardOverlay").style.display = (id === "race1") ? "" : "none";
 }
 
 // Idempotent opprydning - kalles både fra "Avbryt" og fra starten av startExercise (dekker "bytt til
@@ -4017,10 +4681,20 @@ function startExercise(id) {
 // plattformen - respekterer det brukeren holder på med akkurat da.
 function stopExercise() {
     if (!exerciseState.active) return;
+    document.getElementById("racingLeaderboardOverlay").style.display = "none";
     setDroneClassEphemeral(exerciseState.savedDroneClass);
     cameraModeIndex = exerciseState.savedCameraModeIndex;
     const mode = CAMERA_MODES[cameraModeIndex];
     activeCamera = (mode === "chase") ? chaseCamera : (mode === "fpv") ? fpvCamera : vlosCamera;
+    if (exerciseState.savedFlightMode) {
+        droneState.flightMode = exerciseState.savedFlightMode;
+        exerciseState.savedFlightMode = null;
+    }
+    if (exerciseState.savedFpvTiltDeg !== undefined && exerciseState.savedFpvTiltDeg !== null) {
+        settings.fpvTiltDeg = exerciseState.savedFpvTiltDeg;
+        fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
+        exerciseState.savedFpvTiltDeg = null;
+    }
     if (exerciseState.savedClouds) {
         settings.cloudsEnabled = exerciseState.savedClouds.enabled;
         settings.cloudCoverage = exerciseState.savedClouds.coverage;
@@ -4379,10 +5053,164 @@ function updateKillswitchVisuals(now, dt) {
     }
 }
 
+/* ---------- Øvelser: racing-tilstandsmaskin (racingbane 2, se GATE_COURSE_2_CENTER) ----------
+   Fritt løpende tidsforsøk, ikke en engangs-øvelse: klokken starter idet start/mål-porten (element 0 i
+   GATE_WAYPOINTS_2) krysses FØRSTE gang, og hver fullførte runde (alle porter i rekkefølge, tilbake til
+   samme port) logges i den lokale ledertavlen (se addRacingLapResult) - deretter starter neste runde
+   umiddelbart uten å måtte krysse start på nytt. wpIndex/engaged gjenbrukes fra det generelle
+   øvelsessystemet (samme felt som løype-øvelsene bruker); racing-spesifikt er kun raceStartTime.
+*/
+// captureRadius: romslig nok til å dekke det meste av selve åpningen (ikke bare et lite punkt midt i)
+// - en drone som flyr gjennom nær kanten i høy fart skal fortsatt registreres, ikke bare et perfekt
+// sentrert gjennomtreff. 0.55 * størrelsen dekker godt over halve åpningsbredden på hver kant.
+const RACE_GATE_CENTERS_2 = GATE_PLACEMENTS_2.map(function (placement) {
+    const wp = placement.wp;
+    if (wp.type === "barn") {
+        return {
+            x: placement.x, y: BARN_DIMENSIONS.sillY + BARN_DIMENSIONS.windowH / 2, z: placement.z,
+            captureRadius: Math.min(BARN_DIMENSIONS.windowW, BARN_DIMENSIONS.windowH) * 0.55
+        };
+    }
+    return {
+        x: placement.x, y: placement.y + wp.gap + wp.size / 2, z: placement.z,
+        captureRadius: wp.size * 0.55
+    };
+});
+const RACE_START_PLACEMENT = GATE_PLACEMENTS_2[0]; // start/mål-porten, se GATE_WAYPOINTS_2
+const RACE_SPAWN_BACK_DIST = 10; // meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner
+const RACE_SPAWN_POINT = new THREE.Vector3(
+    RACE_START_PLACEMENT.x - Math.sin(RACE_START_PLACEMENT.yaw) * RACE_SPAWN_BACK_DIST,
+    0,
+    RACE_START_PLACEMENT.z - Math.cos(RACE_START_PLACEMENT.yaw) * RACE_SPAWN_BACK_DIST
+);
+// +PI: droneens EGEN "forover er lokal -Z"-konvensjon er motsatt av portenes (lokal +Z er flyretningen
+// gjennom en port, se GATE_PLACEMENTS-kommentaren) - nesa skal peke MOT porten, altså langs portens +Z.
+const RACE_SPAWN_YAW = RACE_START_PLACEMENT.yaw + Math.PI;
+
+function spawnRacingStage(stage) {
+    resetDrone();
+    droneState.position.x = RACE_SPAWN_POINT.x;
+    droneState.position.z = RACE_SPAWN_POINT.z;
+    droneState.quaternion.setFromEuler(new THREE.Euler(0, RACE_SPAWN_YAW, 0, "YXZ"));
+    settleDroneOnGround();
+    exerciseState.wpIndex = 0;
+    exerciseState.engaged = false;
+    exerciseState.raceStartTime = 0;
+}
+
+function updateRacingStage(stage, dt, now) {
+    exerciseState.headingErrorDeg = null; // ingen nese-krav i racing - fri stil, bare gjennom portene
+    const gates = RACE_GATE_CENTERS_2;
+    const wp = gates[exerciseState.wpIndex];
+    const dist = Math.hypot(droneState.position.x - wp.x, droneState.position.y - wp.y, droneState.position.z - wp.z);
+    if (dist >= wp.captureRadius) return;
+
+    if (exerciseState.wpIndex === 0) {
+        if (!exerciseState.engaged) {
+            // Første kryssing av start/mål - klokken starter. Bevisst ingen forhåndsvarsel om NÅR dette
+            // skjer (kun det generelle exercise.startHint ved spawn) - selve klokkestarten skal
+            // oppleves akkurat idet streken krysses, som i ekte racing.
+            exerciseState.engaged = true;
+            exerciseState.raceStartTime = now;
+        } else {
+            // Runde fullført - alle porter truffet i rekkefølge for å komme hit igjen.
+            const elapsedSec = (now - exerciseState.raceStartTime) / 1000;
+            addRacingLapResult(elapsedSec);
+            exerciseState.warningMessage = "Runde fullført: " + formatExerciseTime(elapsedSec) + "!";
+            exerciseState.warningUntil = now + 3500;
+            exerciseState.warningIsSuccess = true;
+            exerciseState.raceStartTime = now; // ny runde starter umiddelbart - løpende tidsforsøk
+        }
+    }
+    exerciseState.wpIndex = (exerciseState.wpIndex + 1) % gates.length;
+}
+
+/* ---------- Racingbanens ledertavle - lagres lokalt i nettleseren (samme Sim.loadJSON/saveJSON-mønster
+   som exerciseProgress/settings), helt separat fra det vanlige øvelses-fremgangssystemet siden dette
+   er et åpent tidsforsøk (så mange runder man vil), ikke en engangs bestått/ikke-bestått-sjekk. ---------- */
+const RACING_LEADERBOARD_KEY = "ffi-uas:racing-leaderboard-v1";
+const RACING_LEADERBOARD_MAX_ENTRIES = 20;
+const DEFAULT_RACING_LEADERBOARD = { playerName: "Pilot", entries: [] };
+function loadRacingLeaderboard() {
+    return Sim.loadJSON(RACING_LEADERBOARD_KEY, DEFAULT_RACING_LEADERBOARD);
+}
+function saveRacingLeaderboard() {
+    Sim.saveJSON(RACING_LEADERBOARD_KEY, racingLeaderboard);
+}
+const racingLeaderboard = loadRacingLeaderboard();
+
+function addRacingLapResult(timeSec) {
+    racingLeaderboard.entries.push({
+        name: racingLeaderboard.playerName || "Pilot", timeSec: timeSec, dateISO: new Date().toISOString()
+    });
+    // Beste tid øverst - kappes til RACING_LEADERBOARD_MAX_ENTRIES for at listen ikke skal vokse i det
+    // uendelige (bare de beste rundene er interessante uansett).
+    racingLeaderboard.entries.sort(function (a, b) { return a.timeSec - b.timeSec; });
+    if (racingLeaderboard.entries.length > RACING_LEADERBOARD_MAX_ENTRIES) {
+        racingLeaderboard.entries.length = RACING_LEADERBOARD_MAX_ENTRIES;
+    }
+    saveRacingLeaderboard();
+    renderRacingLeaderboard();
+}
+function renderRacingLeaderboard() {
+    const listEl = document.getElementById("racingLeaderboardList");
+    if (!listEl) return;
+    listEl.innerHTML = "";
+    if (racingLeaderboard.entries.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "sim-racing-lb-empty";
+        empty.textContent = "Ingen tider ennå - fullfør en runde!";
+        listEl.appendChild(empty);
+        return;
+    }
+    racingLeaderboard.entries.forEach(function (entry, i) {
+        const row = document.createElement("div");
+        row.className = "sim-racing-lb-row" + (i === 0 ? " sim-racing-lb-best" : "");
+        const rank = document.createElement("span");
+        rank.className = "sim-racing-lb-rank";
+        rank.textContent = (i + 1) + ".";
+        const name = document.createElement("span");
+        name.className = "sim-racing-lb-name";
+        name.textContent = entry.name;
+        const time = document.createElement("span");
+        time.className = "sim-racing-lb-time";
+        time.textContent = formatExerciseTime(entry.timeSec);
+        row.appendChild(rank);
+        row.appendChild(name);
+        row.appendChild(time);
+        listEl.appendChild(row);
+    });
+}
+function racingBestTimeSec() {
+    return racingLeaderboard.entries.length > 0 ? racingLeaderboard.entries[0].timeSec : null;
+}
+
 /* ---------- Øvelser: panel-UI (liste + detaljvisning) ---------- */
-function renderExerciseList() {
+function renderExerciseList(category) {
     const container = document.getElementById("exerciseListItems");
     container.innerHTML = "";
+
+    if (category === "acro") {
+        ACRO_EXERCISE_ORDER.forEach(function (id) {
+            const exercise = EXERCISES[id];
+            const bestSec = racingBestTimeSec();
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "sim-exercise-row";
+            row.innerHTML =
+                '<span class="sim-exercise-row-icon"><i class="fa-solid ' + exercise.icon + '"></i></span>' +
+                '<span class="sim-exercise-row-main">' +
+                '<span class="sim-exercise-row-title">' + exercise.label + "</span>" +
+                '<span class="sim-exercise-row-desc">' + exercise.shortDescription + "</span>" +
+                "</span>" +
+                (bestSec !== null
+                    ? '<span class="sim-exercise-check"><i class="fa-solid fa-trophy"></i> ' + formatExerciseTime(bestSec) + "</span>"
+                    : "");
+            row.addEventListener("click", function () { showExerciseDetail(id); });
+            container.appendChild(row);
+        });
+        return;
+    }
 
     // Alle øvelser bestått: diplom-rad ØVERST (mest fremtredende plassen - se etterspurt om å flytte
     // den opp fra bunnen) - klikk for å fylle ut navn og skrive ut/lagre som PDF. (Diplomet dukker i
@@ -4470,13 +5298,26 @@ function openDiploma() {
     };
     overlay.style.display = "";
 }
-function showExerciseListView() {
+// Hvilken undermeny (Stabilized/Acro) som sist var åpen - husker valget slik at "Tilbake" fra
+// detaljvisningen og gjenåpning av panelet (M/knapp) havner samme sted, se showExerciseDetail/
+// toggleExercisesBtn-lytteren.
+let currentExerciseCategory = "stabilized";
+function showExerciseCategoryView() {
+    document.getElementById("exerciseCategoryView").style.display = "";
+    document.getElementById("exerciseListView").style.display = "none";
+    document.getElementById("exerciseDetailView").style.display = "none";
+}
+function showExerciseListView(category) {
+    if (category) currentExerciseCategory = category;
+    renderExerciseList(currentExerciseCategory);
+    document.getElementById("exerciseCategoryView").style.display = "none";
     document.getElementById("exerciseListView").style.display = "";
     document.getElementById("exerciseDetailView").style.display = "none";
 }
 function showExerciseDetail(id) {
     const exercise = EXERCISES[id];
     if (!exercise) return;
+    document.getElementById("exerciseCategoryView").style.display = "none";
     document.getElementById("exerciseListView").style.display = "none";
     document.getElementById("exerciseDetailView").style.display = "";
     document.getElementById("exerciseDetailTitle").innerHTML =
@@ -4507,7 +5348,9 @@ function showExerciseDetail(id) {
                 ? " - " + killswitchStatusText()
                 : stage.type === "hover"
                     ? " - " + exerciseState.hoverHoldSec.toFixed(0) + "/" + stage.holdSec + " s"
-                    : " - runde " + exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS));
+                    : stage.type === "racing"
+                        ? (exerciseState.engaged ? " - port " + exerciseState.wpIndex + "/" + RACE_GATE_CENTERS_2.length : " - kryss start/mål")
+                        : " - runde " + exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS));
         }
         startBtn.style.display = "none";
         cancelBtn.style.display = "";
@@ -4519,6 +5362,10 @@ function showExerciseDetail(id) {
             progressEl.classList.add("sim-exercise-gate-warning");
             progressEl.textContent = "Krever at Kill/Arm-knappen er bundet til en fysisk fjernkontroll i " +
                 "Fjernkontroll-kalibrering (Innstillinger) - tastatur og skjermknappen virker ikke i denne øvelsen.";
+        } else if (exercise.stages[0].type === "racing") {
+            const bestSec = racingBestTimeSec();
+            progressEl.style.display = bestSec !== null ? "" : "none";
+            if (bestSec !== null) progressEl.textContent = "Beste rundetid: " + formatExerciseTime(bestSec);
         } else if (progress.passed) {
             progressEl.style.display = "";
             progressEl.textContent = exercise.noTiming ? "Bestått" : "Bestått - beste tid: " + formatExerciseTime(progress.bestTimeSec);
@@ -4558,6 +5405,8 @@ function animate(now) {
     updateVlosCamera();
     updateWindsockVisual(now);
     treeSwayManager.update(now, currentWindVector);
+    updateClockTower(Date.now());
+    updateShadowCamera();
     updateExerciseGuideVisual(now);
     updateHud();
     updateExerciseHud();
@@ -4617,7 +5466,27 @@ document.addEventListener("DOMContentLoaded", function () {
         if (exerciseState.active) showExerciseDetail(exerciseState.exerciseId);
         else showExerciseListView();
     });
-    document.getElementById("exerciseBackToListBtn").addEventListener("click", showExerciseListView);
+    document.getElementById("exerciseBackToListBtn").addEventListener("click", function () {
+        showExerciseListView(currentExerciseCategory);
+    });
+    document.getElementById("exerciseBackToCategoryBtn").addEventListener("click", showExerciseCategoryView);
+    document.getElementById("categoryStabilizedBtn").addEventListener("click", function () {
+        showExerciseListView("stabilized");
+    });
+    document.getElementById("categoryAcroBtn").addEventListener("click", function () {
+        showExerciseListView("acro");
+    });
+
+    // Ledertavlens navnefelt - lagres fortløpende (samme Sim.saveJSON-mønster som resten), brukes som
+    // "name" på HVER runde som logges fra og med nå (se addRacingLapResult). Gamle rader i listen
+    // beholder navnet de ble lagret med.
+    const racingPlayerNameInputEl = document.getElementById("racingPlayerNameInput");
+    racingPlayerNameInputEl.value = racingLeaderboard.playerName || "";
+    racingPlayerNameInputEl.addEventListener("input", function () {
+        racingLeaderboard.playerName = racingPlayerNameInputEl.value.trim() || "Pilot";
+        saveRacingLeaderboard();
+    });
+    renderRacingLeaderboard();
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));
         closeSettingsMenu();
@@ -4762,7 +5631,7 @@ document.addEventListener("DOMContentLoaded", function () {
             case "KeyM":
                 togglePanel(document.getElementById("exercisesPanel"));
                 if (exerciseState.active) showExerciseDetail(exerciseState.exerciseId);
-                else showExerciseListView();
+                else showExerciseCategoryView();
                 break;
         }
     });
