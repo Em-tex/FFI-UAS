@@ -687,6 +687,10 @@ function updateWind(dt) {
     Sim.computeWind(dt, settings.wind, windGustOffset, currentWindVector);
 }
 
+// Trebygging (bjørk/furu) og vind-svai er delt med fixed-wing-simulatoren - se Sim.buildRandomTree/
+// createTreeSwayManager i simulator-common.js.
+const treeSwayManager = Sim.createTreeSwayManager();
+
 function currentDroneSpec() {
     return DRONE_CLASSES[droneState.droneClass];
 }
@@ -792,34 +796,51 @@ function buildGround() {
 // silhuett; dist+radius holder fortsatt trygg margin til himmelkulen (radius 800).
 // curvePower styrer stigningsprofilen fra fot til topp (se mountainProfileRadiusFrac) - 1 er den
 // opprinnelige rette skråstreken (kjegle), >1 gir en avrundet/bred topp med brattere nedre flanker,
-// <1 gir en bred/slak fot med en brattere, spissere topp (klassisk alpin silhuett). Blandet bevisst,
-// ikke alle buet - noen få skal fortsatt være rette for variasjon.
+// <1 gir en bred/slak fot med en brattere, spissere topp (klassisk alpin silhuett). jaggedness styrer
+// hvor ru/steinete overflaten er (0,65 = glatt/erodert kolle, 1,4 = kraftig taggete massiv - se
+// buildGradientPeakGeometry), noiseFreqMul hvor MANGE bulker/rygger silhuetten har (lav = få, brede
+// former, høy = mange små tagger). subPeaks er en egen, håndlaget bi-topp-liste PER fjell (1-3 stk,
+// ulik plassering/størrelse) i stedet for samme faste tvilling-rygg-oppskrift på alle åtte - ellers
+// er alle fjell strukturelt identiske massiv, bare skalert. Bevisst blandet variasjon, ikke alle like.
 const MOUNTAIN_DEFS = [
-    { angle: 0, dist: 620, height: 69, radius: 110, snow: false, curvePower: 1 },
-    { angle: 45, dist: 560, height: 103, radius: 165, snow: true, curvePower: 1.7 },
-    { angle: 90, dist: 600, height: 81, radius: 130, snow: false, curvePower: 0.6 },
-    { angle: 135, dist: 540, height: 116, radius: 185, snow: true, curvePower: 0.75 },
-    { angle: 180, dist: 610, height: 75, radius: 120, snow: false, curvePower: 1.4 },
-    { angle: 225, dist: 570, height: 97, radius: 155, snow: true, curvePower: 0.55 },
-    { angle: 270, dist: 590, height: 88, radius: 140, snow: false, curvePower: 1 },
-    { angle: 315, dist: 550, height: 109, radius: 175, snow: true, curvePower: 0.8 }
+    { angle: 0, dist: 620, height: 69, radius: 110, snow: false, curvePower: 1, jaggedness: 0.7, noiseFreqMul: 0.8,
+        subPeaks: [{ f: 0.35, off: 0.3, dirOffset: 2.0 }] }, // lav, avrundet ås
+    { angle: 45, dist: 560, height: 103, radius: 165, snow: true, curvePower: 1.7, jaggedness: 1.1, noiseFreqMul: 1,
+        subPeaks: [{ f: 0.55, off: 0.32, dirOffset: 1.3 }, { f: 0.4, off: -0.38, dirOffset: 3.6 }, { f: 0.3, off: 0.45, dirOffset: 5.0 }] }, // bredt massiv
+    { angle: 90, dist: 600, height: 81, radius: 130, snow: false, curvePower: 0.6, jaggedness: 1.3, noiseFreqMul: 1.3,
+        subPeaks: [{ f: 0.3, off: 0.28, dirOffset: 1.6 }, { f: 0.25, off: -0.3, dirOffset: 4.2 }] }, // spiss, steinete alpintopp
+    { angle: 135, dist: 540, height: 116, radius: 185, snow: true, curvePower: 0.75, jaggedness: 1.4, noiseFreqMul: 1.4,
+        subPeaks: [{ f: 0.6, off: 0.35, dirOffset: 1.1 }, { f: 0.45, off: -0.4, dirOffset: 3.3 }, { f: 0.35, off: 0.4, dirOffset: 5.4 }] }, // dramatisk, taggete massiv (trollet)
+    { angle: 180, dist: 610, height: 75, radius: 120, snow: false, curvePower: 1.4, jaggedness: 0.65, noiseFreqMul: 0.7,
+        subPeaks: [{ f: 0.25, off: 0.25, dirOffset: 2.6 }] }, // rund, slak kolle
+    { angle: 225, dist: 570, height: 97, radius: 155, snow: true, curvePower: 0.55, jaggedness: 1.2, noiseFreqMul: 1.2,
+        subPeaks: [{ f: 0.32, off: 0.3, dirOffset: 1.8 }, { f: 0.28, off: -0.32, dirOffset: 4.5 }] }, // spiss snøtopp
+    { angle: 270, dist: 590, height: 88, radius: 140, snow: false, curvePower: 1, jaggedness: 1, noiseFreqMul: 1,
+        subPeaks: [{ f: 0.55, off: 0.32, dirOffset: 1.3 }, { f: 0.4, off: -0.38, dirOffset: 3.6 }] }, // klassisk, balansert (varden)
+    { angle: 315, dist: 550, height: 109, radius: 175, snow: true, curvePower: 0.8, jaggedness: 1.15, noiseFreqMul: 1.05,
+        subPeaks: [{ f: 0.5, off: 0.3, dirOffset: 1.0 }, { f: 0.42, off: -0.35, dirOffset: 3.0 }, { f: 0.3, off: 0.42, dirOffset: 5.2 }] } // stort massiv (hytta)
 ];
 // Flat liste over ALLE fjell-koner (hovedtopper + bi-topper) - bygget ÉN gang og delt mellom
 // geometribyggingen (buildMountainRange) og kollisjonsdeteksjon (mountainHeightAt). Med dette som
 // eneste kilde til sannhet kan ikke kollisjonsflaten komme ut av synk med det som faktisk vises -
 // samme posisjon/radius/høyde/kurve/seed brukes begge steder. topRadiusFrac/seed-formlene matcher
-// nøyaktig det buildMountainRange brukte før denne ble innført.
+// nøyaktig det buildMountainRange brukte før denne ble innført. jaggedness/noiseFreqMul er rent
+// visuelle (kollisjonen bruker kun den glatte profilkurven, se mountainHeightAt), men lagres her
+// likevel for at MOUNTAIN_PEAKS skal forbli eneste kilde til sannhet for ALT ved hvert fjell.
 const MOUNTAIN_PEAKS = (function () {
     const peaks = [];
     MOUNTAIN_DEFS.forEach(function (m, i) {
         const rad = m.angle * Math.PI / 180;
         const x = Math.sin(rad) * m.dist, z = Math.cos(rad) * m.dist;
         const curvePower = m.curvePower || 1;
+        const jaggedness = m.jaggedness || 1;
+        const noiseFreqMul = m.noiseFreqMul || 1;
         peaks.push({
             x: x, z: z, radius: m.radius, height: m.height, topRadiusFrac: 0.18, curvePower: curvePower,
+            jaggedness: jaggedness, noiseFreqMul: noiseFreqMul,
             angle: rad, seed: i * 1.7 + 1, snow: m.snow, isMain: true, mainIndex: i
         });
-        [{ f: 0.55, off: 0.32, dirOffset: 1.3 }, { f: 0.4, off: -0.38, dirOffset: 3.6 }].forEach(function (sub, si) {
+        (m.subPeaks || []).forEach(function (sub, si) {
             const subHeight = m.height * sub.f;
             const subRadius = m.radius * (0.5 + sub.f * 0.2);
             const subDir = rad + sub.dirOffset;
@@ -827,6 +848,7 @@ const MOUNTAIN_PEAKS = (function () {
             peaks.push({
                 x: x + Math.sin(subDir) * subDist, z: z + Math.cos(subDir) * subDist,
                 radius: subRadius, height: subHeight, topRadiusFrac: 0.2, curvePower: curvePower,
+                jaggedness: jaggedness, noiseFreqMul: noiseFreqMul,
                 angle: subDir, seed: i * 1.7 + 2 + si * 5.3, snow: false, isMain: false
             });
         });
@@ -864,12 +886,13 @@ function mountainProfileHeightFrac(distFrac, topRadiusFrac, curvePower) {
 // fargestopp i stedet for separate meshes med harde fargegrenser (det ga tidligere en synlig skarp
 // overgang der snø-/stein-meshene møttes). Jitteren dempes (ikke fjernes helt) nær toppen, for en
 // avrundet/erodert topp i stedet for enten en skarp spiss eller en unaturlig helt glatt/flat platå-sirkel.
-function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness, topRadiusFrac, curvePower) {
+function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness, topRadiusFrac, curvePower, noiseFreqMul) {
     const geo = new THREE.CylinderGeometry(radius, radius, height, 14, 7);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     const tmp = new THREE.Color();
     const p = curvePower || 1;
+    const fm = noiseFreqMul || 1; // antall bulker/rygger rundt silhuetten - se MOUNTAIN_DEFS-kommentaren
     for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
         const heightFrac = clamp((y + height / 2) / height, 0, 1);
@@ -877,9 +900,15 @@ function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness,
         let radialScale = mountainProfileRadiusFrac(heightFrac, topRadiusFrac || 0, p);
         if (jaggedness > 0) {
             const topDamp = 1 - Math.pow(heightFrac, 3) * 0.7; // roligere silhuett mot toppen, ikke null
-            const jitter = Math.sin(angle * 5 + seed * 3.1) * 0.18 + Math.sin(angle * 11 + seed * 7.7) * 0.1;
+            // baseDamp dempet Y-jitteret til null de aller nederste par prosentene av høyden - UTEN denne
+            // fikk fotringen (heightFrac 0) FULL jitterstyrke (topDamp er 1 der, ikke dempet), som kunne
+            // løfte deler av foten flere meter over selve bakkeplanet og etterlate synlige "svevende"
+            // hull der fjellet ikke lenger har kontakt med bakken. Rampes raskt opp (innen 4% av høyden)
+            // så overgangen er umerkelig og resten av silhuetten er uendret.
+            const baseDamp = clamp(heightFrac / 0.04, 0, 1);
+            const jitter = Math.sin(angle * 5 * fm + seed * 3.1) * 0.18 + Math.sin(angle * 11 * fm + seed * 7.7) * 0.1;
             radialScale *= 1 + jitter * jaggedness * topDamp;
-            pos.setY(i, y + Math.sin(angle * 7 + seed * 4.3) * height * 0.03 * jaggedness * topDamp);
+            pos.setY(i, y + Math.sin(angle * 7 * fm + seed * 4.3) * height * 0.03 * jaggedness * topDamp * baseDamp);
         }
         pos.setX(i, x * radialScale);
         pos.setZ(i, z * radialScale);
@@ -900,11 +929,12 @@ function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness,
     return geo;
 }
 
-// Nøyaktig samme Y-jitter som senter-vertexen i toppdekket over (angle=0 siden x=z=0 der, heightFrac=1
-// gir topDamp=0.3 fast) - uten denne fikk påskeeggene en fast antatt topp-høyde og svevde over/sank ned
-// i den faktisk ujevne toppflaten (spesielt synlig på de høyeste fjellene, der jitteret er størst).
-function peakApexYOffset(height, seed) {
-    return Math.sin(seed * 4.3) * height * 0.03 * 0.3;
+// Nøyaktig samme Y-jitter som senter-vertexen i toppdekket over (angle=0 siden x=z=0 der - upåvirket av
+// noiseFreqMul siden 0*fm alltid er 0 - heightFrac=1 gir topDamp=0.3 og baseDamp=1 fast) - uten denne
+// fikk påskeeggene en fast antatt topp-høyde og svevde over/sank ned i den faktisk ujevne toppflaten
+// (spesielt synlig på de høyeste og mest taggete fjellene, der jitteret er størst).
+function peakApexYOffset(height, seed, jaggedness) {
+    return Math.sin(seed * 4.3) * height * 0.03 * (jaggedness || 1) * 0.3;
 }
 
 // ---------- Påskeegg på fjelltoppene ----------
@@ -956,31 +986,88 @@ function buildSummitCairn() {
     return group;
 }
 
-// En liten, godmodig fjelltroll som titter ut over kanten - norsk folklore-referanse.
+// Et godmodig fjelltroll som titter ut over kanten - norsk folklore-referanse. Litt større og med et
+// fullt ansikt (øyne, øyenbryn, munn, tenner, vorter) i stedet for bare et blankt hode med nese og ører -
+// den detaljen er det som faktisk gir det karakter når man flyr helt inntil for å se på det.
 function buildMountainTroll() {
     const group = new THREE.Group();
     const skinMat = new THREE.MeshStandardMaterial({ color: 0x6b7a5e, flatShading: true, roughness: 1 });
     const hairMat = new THREE.MeshStandardMaterial({ color: 0x3a2f1f, flatShading: true });
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), skinMat);
+    const wartMat = new THREE.MeshStandardMaterial({ color: 0x545e46, flatShading: true, roughness: 1 });
+
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.72, 9, 7), skinMat);
     body.scale.set(1, 0.85, 1);
-    body.position.y = 0.5;
+    body.position.y = 0.62;
     group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), skinMat);
-    head.position.y = 1.0;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 10, 8), skinMat);
+    head.position.y = 1.28;
     group.add(head);
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.45, 6), skinMat);
+    // Underkjeve - gir hodet en tydeligere ansiktsform i stedet for én ensom kule.
+    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), skinMat);
+    jaw.scale.set(0.95, 0.7, 0.85);
+    jaw.position.set(0, 1.06, 0.1);
+    group.add(jaw);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.58, 6), skinMat);
     nose.rotation.x = Math.PI / 2;
-    nose.position.set(0, 0.96, 0.38);
+    nose.position.set(0, 1.24, 0.48);
     group.add(nose);
     [-1, 1].forEach(function (side) {
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.22, 5), skinMat);
-        ear.position.set(side * 0.32, 1.14, 0);
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.28, 5), skinMat);
+        ear.position.set(side * 0.4, 1.44, 0);
         ear.rotation.z = side * 0.5;
         group.add(ear);
     });
-    const hairTuft = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.3, 5), hairMat);
-    hairTuft.position.y = 1.35;
+    const hairTuft = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.38, 5), hairMat);
+    hairTuft.position.y = 1.72;
     group.add(hairTuft);
+
+    // Øyne under buskete, sammenknepne øyenbryn - det som gjør et hode om til et ANSIKT.
+    const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xe8dfa0 });
+    const pupilMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c });
+    [-1, 1].forEach(function (side) {
+        const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), eyeWhiteMat);
+        eyeWhite.position.set(side * 0.17, 1.33, 0.37);
+        group.add(eyeWhite);
+        const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), pupilMat);
+        pupil.position.set(side * 0.17, 1.33, 0.43);
+        group.add(pupil);
+        const brow = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.045, 0.06), hairMat);
+        brow.position.set(side * 0.17, 1.4, 0.4);
+        brow.rotation.z = side * -0.35; // sammenknepet, litt sint/lurt uttrykk
+        group.add(brow);
+    });
+
+    // Munn med et par tenner/hoggtenner som stikker opp - klassisk trolltrekk.
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.04), pupilMat);
+    mouth.position.set(0, 1.09, 0.44);
+    group.add(mouth);
+    const toothMat = new THREE.MeshStandardMaterial({ color: 0xe8e0c8 });
+    [-1, 1].forEach(function (side) {
+        const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.1, 4), toothMat);
+        tooth.rotation.x = Math.PI;
+        tooth.position.set(side * 0.09, 1.12, 0.44);
+        group.add(tooth);
+    });
+
+    // Vorter på nese og kinn - litt asymmetriske for å ikke se maskinelt plasserte ut.
+    [{ x: 0.09, y: 1.15, z: 0.53, r: 0.045 }, { x: -0.16, y: 1.27, z: 0.36, r: 0.04 }, { x: 0.2, y: 1.3, z: 0.28, r: 0.035 }]
+        .forEach(function (w) {
+            const wart = new THREE.Mesh(new THREE.SphereGeometry(w.r, 6, 5), wartMat);
+            wart.position.set(w.x, w.y, w.z);
+            group.add(wart);
+        });
+
+    // Armer/never som griper kanten - forsterker inntrykket av at det faktisk sitter og titter ut.
+    [-1, 1].forEach(function (side) {
+        const arm = new THREE.Mesh(new THREE.SphereGeometry(0.14, 7, 6), skinMat);
+        arm.scale.set(0.8, 1.3, 0.8);
+        arm.position.set(side * 0.62, 0.75, 0.28);
+        arm.rotation.z = side * -0.3;
+        group.add(arm);
+        const hand = new THREE.Mesh(new THREE.SphereGeometry(0.13, 7, 6), skinMat);
+        hand.position.set(side * 0.68, 0.52, 0.42);
+        group.add(hand);
+    });
     return group;
 }
 
@@ -1227,7 +1314,10 @@ function buildMountainRange() {
                 { frac: 1, color: MOUNTAIN_ROCK_LIGHT_COLOR }
             ];
         const mesh = new THREE.Mesh(
-            buildGradientPeakGeometry(peak.radius, peak.height, peak.seed, colorStops, 1, peak.topRadiusFrac, peak.curvePower),
+            buildGradientPeakGeometry(
+                peak.radius, peak.height, peak.seed, colorStops,
+                peak.jaggedness, peak.topRadiusFrac, peak.curvePower, peak.noiseFreqMul
+            ),
             peakMat
         );
         mesh.position.set(peak.x, peak.height / 2, peak.z);
@@ -1236,11 +1326,12 @@ function buildMountainRange() {
 
         // Påskeegg rett på toppunktet (kun hovedtopper) - snudd til å vende mot spillområdet (origo),
         // som om det venter på en nysgjerrig pilot. Y beregnes eksakt via peakApexYOffset (samme seed
-        // som toppdekket over), pluss en liten klaring for å unngå z-fighting mot selve fjelloverflaten.
+        // og jaggedness som toppdekket over), pluss en liten klaring for å unngå z-fighting mot selve
+        // fjelloverflaten.
         const eggBuilder = peak.isMain && MOUNTAIN_EASTER_EGGS[peak.mainIndex];
         if (eggBuilder) {
             const egg = eggBuilder();
-            const apexY = peak.height + peakApexYOffset(peak.height, peak.seed) + 0.04;
+            const apexY = peak.height + peakApexYOffset(peak.height, peak.seed, peak.jaggedness) + 0.04;
             egg.position.set(peak.x, apexY, peak.z);
             egg.rotation.y = peak.angle + Math.PI;
             group.add(egg);
@@ -1249,19 +1340,23 @@ function buildMountainRange() {
     return group;
 }
 
-// Fjellenes kollisjonsflate - gjenbruker EKSAKT samme profil/kurve/jitter-fri tilnærming som geometrien
-// (mountainProfileHeightFrac er inversen av mountainProfileRadiusFrac som selve meshen bygges med), så
-// "bakken" droneen faktisk lander/krasjer på matcher det den ser. Finjitteret fra buildGradientPeakGeometry
-// er utelatt her (samme forenkling som SOLID_COLLIDERS - en glatt tilnærming er mer enn god nok for
-// kollisjon), MEN grunnprofilen (buet stigning + flat toppflate) er identisk. Returnerer høyeste
-// overlappende fjell-kjegle ved (x,z), eller 0 hvis ingen dekker punktet.
+// Fjellenes kollisjonsflate - gjenbruker den glatte profilkurven fra geometrien (mountainProfileHeightFrac
+// er inversen av mountainProfileRadiusFrac som selve meshen bygges med), MEN uten finjitteret vertex for
+// vertex (samme forenkling som SOLID_COLLIDERS - en glatt tilnærming er mer enn god nok). Radiusen blåses
+// derfor opp litt utover selve profilkurven (JITTER_SAFETY_MARGIN * jaggedness) - den synlige overflaten
+// buler utover med opptil ~28 % i steinete partier pga. vinkelavhengig jitter (se buildGradientPeakGeometry),
+// og uten denne marginen kunne droneen synke synlig gjennom fjellsiden før den glatte, litt INNENFOR
+// liggende profilen faktisk stanset den. Et par ekstra centimeter "usynlig vegg" et stykke fra en
+// bergknaus er et mye mindre problem enn å fly rett gjennom synlig stein.
+const JITTER_SAFETY_MARGIN = 0.25;
 function mountainHeightAt(x, z) {
     let top = 0;
     for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
         const peak = MOUNTAIN_PEAKS[i];
+        const collisionRadius = peak.radius * (1 + JITTER_SAFETY_MARGIN * peak.jaggedness);
         const dist = Math.hypot(x - peak.x, z - peak.z);
-        if (dist >= peak.radius) continue;
-        const h = peak.height * mountainProfileHeightFrac(dist / peak.radius, peak.topRadiusFrac, peak.curvePower);
+        if (dist >= collisionRadius) continue;
+        const h = peak.height * mountainProfileHeightFrac(dist / collisionRadius, peak.topRadiusFrac, peak.curvePower);
         if (h > top) top = h;
     }
     return top;
@@ -1273,9 +1368,9 @@ function mountainHeightAt(x, z) {
 function buildForestArea() {
     const group = new THREE.Group();
     FOREST_TREES.forEach(function (t) {
-        const tree = Sim.buildTree(t.h);
+        const tree = Sim.buildRandomTree(t.h);
         tree.position.set(t.x, 0, t.z);
-        group.add(tree);
+        group.add(treeSwayManager.addSwayingTree(tree));
     });
     return group;
 }
@@ -1610,9 +1705,10 @@ const FOREST_TREES = (function () {
     }
     return trees;
 })();
-// Trekollidere - boks-tilnærming av kronen (samme radius-formel som Sim.buildTree bruker til selve
-// canopy-geometrien: height*0.28), samme forenklede "topp-flate å lande på"-modell som resten av
-// SOLID_COLLIDERS (bygning/bil) - ingen egen sideveis vegg-fysikk, kun en flat kollisjonshøyde.
+// Trekollidere - boks-tilnærming av kronen (height*0.28 - romslig nok til å dekke den bredeste kronen
+// hos begge treslagene i Sim.buildBirch/buildPine, se simulator-common.js), samme forenklede "topp-flate
+// å lande på"-modell som resten av SOLID_COLLIDERS (bygning/bil) - ingen egen sideveis vegg-fysikk, kun
+// en flat kollisjonshøyde.
 function treeToCollider(t) {
     const r = t.h * 0.28;
     return { minX: t.x - r, maxX: t.x + r, minZ: t.z - r, maxZ: t.z + r, topY: t.h };
@@ -1789,8 +1885,6 @@ function buildBarn(width, height, depth, windowW, windowH, sillY) {
     return group;
 }
 
-// buildTree: se Sim.buildTree i simulator-common.js.
-
 const GATE_COURSE_CENTER = new THREE.Vector3(0, 0, -110);
 // Håndplasserte veipunkter (relativt til senter) gir en avlang bane (lange rettstrekk, trange svinger i
 // hver ende - som en ekte racerbane, ikke bare en stor sirkel) med én låve du flyr gjennom (inn det ene
@@ -1915,9 +2009,9 @@ function buildWorldObjects() {
     group.add(building);
 
     DECORATIVE_TREES.forEach(function (t) {
-        const tree = Sim.buildTree(t.h);
+        const tree = Sim.buildRandomTree(t.h);
         tree.position.set(t.x, 0, t.z);
-        group.add(tree);
+        group.add(treeSwayManager.addSwayingTree(tree));
     });
 
     group.add(buildGateCourse());
@@ -2000,8 +2094,13 @@ function getLegTopLocalPositions(armLength) {
         { x: -armLength, z: armLength }
     ].map(function (p) { return new THREE.Vector3(p.x, 0, p.z); });
 }
+// Alle faktiske kallere i fysikk-/kollisjons-hot-pathen (getContactLocalPoints, updatePropStrikes)
+// bruker alltid DRONE_ARM_LENGTH - cachet én gang her i stedet for å bygge 4 nye Vector3-er på nytt
+// flere ganger per fysikk-tick (120 Hz). Kun lesing (map/x/z) noensinne av disse - trygt å dele.
+const LEG_TOP_LOCAL = getLegTopLocalPositions(DRONE_ARM_LENGTH);
 function getLegFootLocalPositions(legLength, armLength) {
-    return getLegTopLocalPositions(armLength).map(function (top) {
+    const tops = armLength === DRONE_ARM_LENGTH ? LEG_TOP_LOCAL : getLegTopLocalPositions(armLength);
+    return tops.map(function (top) {
         const outward = new THREE.Vector2(top.x, top.z).normalize();
         return new THREE.Vector3(
             top.x + outward.x * legLength * 0.35,
@@ -2143,6 +2242,15 @@ function initScene() {
 
     const aspect = window.innerWidth / Math.max(1, window.innerHeight - 70);
     chaseCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
+    // Startverdiene matcher nøyaktig den gamle faste (0, 1.2, 3.5)-offseten, så standardutsikten er
+    // uendret - orbit/zoom (høyreklikk+dra / scroll) er bare lagt oppå den, se createChaseCameraController.
+    chaseCameraController = Sim.createChaseCameraController(chaseCamera, document.getElementById("simCanvas"), {
+        defaultPitch: Math.atan2(1.2, 3.5),
+        zoomMin: 1.5, zoomMax: 40,
+        initialZoom: Math.hypot(1.2, 3.5),
+        smoothingBase: 0.001,
+        lookAtOffsetY: 0.3
+    });
     fpvCamera = new THREE.PerspectiveCamera(95, aspect, 0.05, 2000);
     // Onboard FPV-kamera, montert litt foran/over senter. Vinkel er justerbar (Rates-panelet).
     fpvCamera.position.set(0, 0.06, -0.12);
@@ -2202,17 +2310,10 @@ function resizeRenderer() {
     Sim.resizeRenderer(renderer, wrap, [chaseCamera, fpvCamera, vlosCamera]);
 }
 
-function updateChaseCamera(dt) {
-    // Følger kun med på yaw (heading), ikke full roll/pitch - gir en stabil, brukbar chase-cam
-    // fremfor en kamera-rigg som er stivt låst til droneens fulle rotasjon.
-    const euler = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ");
-    const headingQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0));
-    const behindOffset = new THREE.Vector3(0, 1.2, 3.5).applyQuaternion(headingQuat);
-    const desiredPos = droneState.position.clone().add(behindOffset);
-    const smoothing = 1 - Math.pow(0.001, dt);
-    chaseCamera.position.lerp(desiredPos, smoothing);
-    chaseCamera.lookAt(droneState.position.clone().add(new THREE.Vector3(0, 0.3, 0)));
-}
+// Chase-kamera med manuell orbit - delt logikk med fixed-wing-simulatoren, se
+// Sim.createChaseCameraController i simulator-common.js. Instansieres i initScene() (må vente til
+// chaseCamera faktisk finnes), oppdateres fra animate().
+let chaseCameraController;
 
 function updateVlosCamera() {
     // Fast plassert ved avgangsplassen - dreier kun for å følge droneen med blikket, som en pilot på bakken.
@@ -2509,7 +2610,7 @@ function droneHasLandingLegs(classKey) {
 // føttene (som da peker til værs) til slutt tok imot den.
 // Rekkefølge innen hver firergruppe: 0=fremre-høyre, 1=fremre-venstre, 2=bakre-høyre, 3=bakre-venstre.
 function getContactLocalPoints(classKey) {
-    const armTops = getLegTopLocalPositions(DRONE_ARM_LENGTH);
+    const armTops = LEG_TOP_LOCAL;
     const pts = droneHasLandingLegs(classKey)
         ? getLegFootLocalPositions(legLengthForClass(classKey), DRONE_ARM_LENGTH)
         : armTops.map(function (t) { return new THREE.Vector3(t.x, -0.03, t.z); });
@@ -2789,7 +2890,7 @@ function updatePropStrikes(dt, impactVelocity) {
         new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
         new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
     ].map(function (d) { return d.applyQuaternion(droneState.quaternion); });
-    const armTops = getLegTopLocalPositions(DRONE_ARM_LENGTH);
+    const armTops = LEG_TOP_LOCAL;
     for (let i = 0; i < 4; i++) {
         const center = new THREE.Vector3(armTops[i].x, 0.05, armTops[i].z)
             .multiplyScalar(scale).applyQuaternion(droneState.quaternion).add(droneState.position);
@@ -3067,12 +3168,12 @@ function buildGamepadButtonsPanel() {
     Sim.buildGamepadButtonsGrid(container, gamepadMap.buttons, BUTTON_ACTION_LABELS, buttonManager, getActiveGamepad, saveGamepadMap);
 }
 
+const gamepadPanelEl = document.getElementById("gamepadPanel");
+const gamepadAxesReadoutEl = document.getElementById("gamepadAxesReadout");
 function updateGamepadAxesReadout(gp) {
-    const panel = document.getElementById("gamepadPanel");
-    if (panel.style.display === "none") return;
-    const readout = document.getElementById("gamepadAxesReadout");
+    if (gamepadPanelEl.style.display === "none") return;
     const activeGp = gp || getActiveGamepad();
-    Sim.updateGamepadAxesReadout(readout, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
+    Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
 }
 
 function setGamepadButtonVisible(visible) {
@@ -3084,11 +3185,11 @@ function setGamepadButtonVisible(visible) {
 let noiseCtx = null;
 let lastNoiseUpdate = 0;
 
+const signalNoiseCanvasEl = document.getElementById("signalNoiseCanvas");
 function initNoiseCanvas() {
-    const canvas = document.getElementById("signalNoiseCanvas");
-    canvas.width = 96;
-    canvas.height = 96;
-    noiseCtx = canvas.getContext("2d");
+    signalNoiseCanvasEl.width = 96;
+    signalNoiseCanvasEl.height = 96;
+    noiseCtx = signalNoiseCanvasEl.getContext("2d");
 }
 
 function drawNoiseFrame() {
@@ -3104,10 +3205,9 @@ function drawNoiseFrame() {
 }
 
 function updateSignalOverlay(now) {
-    const overlay = document.getElementById("signalNoiseCanvas");
     if (!settings.realisticMode || activeCamera !== fpvCamera || linkQuality > 0.9) {
-        overlay.style.opacity = 0;
-        overlay.style.background = "";
+        signalNoiseCanvasEl.style.opacity = 0;
+        signalNoiseCanvasEl.style.background = "";
         return;
     }
     const badness = 1 - linkQuality;
@@ -3115,19 +3215,19 @@ function updateSignalOverlay(now) {
         drawNoiseFrame();
         lastNoiseUpdate = now;
     }
-    overlay.style.opacity = Math.min(0.85, badness * 1.1);
-    overlay.style.background = (linkQuality < 0.08 && Math.random() < 0.6) ? "#000" : "";
+    signalNoiseCanvasEl.style.opacity = Math.min(0.85, badness * 1.1);
+    signalNoiseCanvasEl.style.background = (linkQuality < 0.08 && Math.random() < 0.6) ? "#000" : "";
 }
 
 /* ---------- FPV HUD/OSD (crosshair / kunstig horisont) ---------- */
 let fpvHudCtx = null;
 let fpvHudModeIndex = 0;
 
+const fpvHudCanvasEl = document.getElementById("fpvHudCanvas");
 function initFpvHudCanvas() {
-    const canvas = document.getElementById("fpvHudCanvas");
-    canvas.width = 400;
-    canvas.height = 300;
-    fpvHudCtx = canvas.getContext("2d");
+    fpvHudCanvasEl.width = 400;
+    fpvHudCanvasEl.height = 300;
+    fpvHudCtx = fpvHudCanvasEl.getContext("2d");
     fpvHudModeIndex = Math.max(0, FPV_HUD_MODES.indexOf(settings.fpvHudMode));
 }
 
@@ -3149,14 +3249,13 @@ function drawFpvHorizon(ctx, w, h) {
     Sim.drawFpvHorizonFromAngles(ctx, w, h, pitchDeg, rollDeg);
 }
 function updateFpvHud() {
-    const canvas = document.getElementById("fpvHudCanvas");
     const mode = FPV_HUD_MODES[fpvHudModeIndex];
     if (activeCamera !== fpvCamera || mode === "none") {
-        canvas.style.display = "none";
+        fpvHudCanvasEl.style.display = "none";
         return;
     }
-    canvas.style.display = "block";
-    const w = canvas.width, h = canvas.height;
+    fpvHudCanvasEl.style.display = "block";
+    const w = fpvHudCanvasEl.width, h = fpvHudCanvasEl.height;
     fpvHudCtx.clearRect(0, 0, w, h);
     if (mode === "horizon") drawFpvHorizon(fpvHudCtx, w, h);
     drawFpvCrosshair(fpvHudCtx, w, h);
@@ -4029,23 +4128,32 @@ function updateExercise(dt, now) {
     }
 }
 
-function updateExerciseHud() {
-    const banner = document.getElementById("exerciseWarningBanner");
-    const bannerText = document.getElementById("exerciseWarningText");
-    const showBanner = performance.now() < exerciseState.warningUntil;
-    banner.classList.toggle("show", showBanner);
-    banner.classList.toggle("sim-banner-success", exerciseState.warningIsSuccess);
-    if (showBanner) bannerText.textContent = exerciseState.warningMessage;
+// Cachet én gang (samme mønster som hudMode/hudArmed osv. over updateHud) i stedet for et nytt
+// document.getElementById-oppslag per felt hvert eneste bilde - denne kalles uvilkårlig fra animate().
+const exerciseWarningBannerEl = document.getElementById("exerciseWarningBanner");
+const exerciseWarningTextEl = document.getElementById("exerciseWarningText");
+const exerciseHudBarEl = document.getElementById("exerciseHudBar");
+const exerciseProgressBoxEl = document.getElementById("exerciseProgressBox");
+const exerciseHudStageEl = document.getElementById("exerciseHudStage");
+const exerciseHudLapsEl = document.getElementById("exerciseHudLaps");
+const exerciseHudViolationsEl = document.getElementById("exerciseHudViolations");
+const exerciseHudHeadingErrorEl = document.getElementById("exerciseHudHeadingError");
+const exerciseHudTimerItemEl = document.getElementById("exerciseHudTimerItem");
+const exerciseHudTimerEl = document.getElementById("exerciseHudTimer");
 
-    const hudBar = document.getElementById("exerciseHudBar");
-    const progressBox = document.getElementById("exerciseProgressBox");
+function updateExerciseHud() {
+    const showBanner = performance.now() < exerciseState.warningUntil;
+    exerciseWarningBannerEl.classList.toggle("show", showBanner);
+    exerciseWarningBannerEl.classList.toggle("sim-banner-success", exerciseState.warningIsSuccess);
+    if (showBanner) exerciseWarningTextEl.textContent = exerciseState.warningMessage;
+
     if (!exerciseState.active) {
-        hudBar.style.display = "none";
-        progressBox.style.display = "none";
+        exerciseHudBarEl.style.display = "none";
+        exerciseProgressBoxEl.style.display = "none";
         return;
     }
-    hudBar.style.display = "";
-    progressBox.style.display = "";
+    exerciseHudBarEl.style.display = "";
+    exerciseProgressBoxEl.style.display = "";
     // "Returner hjem" har ett fast steg (stageIndex alltid 0) - stegobjektet er gyldig gjennom hele
     // landingsfasen der også, i motsetning til vanlige flerstegs-øvelser (der landingPhase betyr
     // stageIndex har passert siste steg og getExerciseStage() ville returnert undefined). awaitingNext
@@ -4055,13 +4163,13 @@ function updateExerciseHud() {
         ? null : getExerciseStage();
     // Killswitch-stegnavnet (stage.label) ville spoilet hvilket scenario som kommer/pågår - vises som
     // et nøytralt løpenummer i stedet, se killswitchDisplayLabel.
-    document.getElementById("exerciseHudStage").textContent = stage
+    exerciseHudStageEl.textContent = stage
         ? (stage.type === "killswitch" ? killswitchDisplayLabel() : stage.label)
         : (exerciseState.awaitingNext ? "Fullført!" : "Landing");
     // Merk runden som "teller ikke" så snart et avvik har skjedd i den - synlig konsekvens med en gang.
     const lapSuffix = (stage && exerciseState.lapHasViolation) ? " (runden teller ikke)" : "";
     const returnSuffix = exerciseState.landingPhase ? " - land på H" : "";
-    document.getElementById("exerciseHudLaps").textContent = !stage
+    exerciseHudLapsEl.textContent = !stage
         ? (exerciseState.awaitingNext ? "Se oppsummering" : "Land på H")
         : (stage.type === "hover"
             ? exerciseState.hoverHoldSec.toFixed(1) + "/" + stage.holdSec + " s"
@@ -4073,40 +4181,37 @@ function updateExerciseHud() {
 
     // Avviks-status: tydelig, vedvarende indikator på hvor nær steget er å bli nullstilt - banneret
     // alene forsvinner etter noen sekunder og etterlot ingen synlig "du har brukt opp advarselen".
-    const violationsEl = document.getElementById("exerciseHudViolations");
     if (!stage || stage.type === "hover" || stage.type === "return" || stage.type === "killswitch") {
-        violationsEl.textContent = "-";
-        violationsEl.className = "sim-status-value";
+        exerciseHudViolationsEl.textContent = "-";
+        exerciseHudViolationsEl.className = "sim-status-value";
     } else if (exerciseState.attemptViolationCount === 0) {
-        violationsEl.textContent = "Ingen";
-        violationsEl.className = "sim-status-value sim-armed";
+        exerciseHudViolationsEl.textContent = "Ingen";
+        exerciseHudViolationsEl.className = "sim-status-value sim-armed";
     } else {
-        violationsEl.textContent = "1 - neste nullstiller!";
-        violationsEl.className = "sim-status-value sim-killed";
+        exerciseHudViolationsEl.textContent = "1 - neste nullstiller!";
+        exerciseHudViolationsEl.className = "sim-status-value sim-killed";
     }
 
     // Løpende nese-avvik i grader - se headingErrorDeg-kommentaren i updateExercise. Svarer direkte på
     // "hvilken retning sjekkes egentlig akkurat nå" i stedet for å bare oppdage det som et varsel etterpå.
-    const headingErrEl = document.getElementById("exerciseHudHeadingError");
     if (exerciseState.headingErrorDeg === null) {
-        headingErrEl.textContent = "-";
-        headingErrEl.className = "sim-status-value";
+        exerciseHudHeadingErrorEl.textContent = "-";
+        exerciseHudHeadingErrorEl.className = "sim-status-value";
     } else {
-        headingErrEl.textContent = Math.round(exerciseState.headingErrorDeg) + "°";
-        headingErrEl.className = "sim-status-value " +
+        exerciseHudHeadingErrorEl.textContent = Math.round(exerciseState.headingErrorDeg) + "°";
+        exerciseHudHeadingErrorEl.className = "sim-status-value " +
             (exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG ? "sim-armed" : "sim-killed");
     }
 
     // "Uforutsette hendelser" (ex11) handler om riktig respons, ikke fart - se noTiming/completeExercise.
-    const timerItem = document.getElementById("exerciseHudTimerItem");
     if (EXERCISES[exerciseState.exerciseId].noTiming) {
-        timerItem.style.display = "none";
+        exerciseHudTimerItemEl.style.display = "none";
     } else {
-        timerItem.style.display = "";
+        exerciseHudTimerItemEl.style.display = "";
         const elapsed = (performance.now() - exerciseState.startTime) / 1000;
         const mm = Math.floor(elapsed / 60);
         const ss = Math.floor(elapsed % 60);
-        document.getElementById("exerciseHudTimer").textContent = mm + ":" + (ss < 10 ? "0" : "") + ss;
+        exerciseHudTimerEl.textContent = mm + ":" + (ss < 10 ? "0" : "") + ss;
     }
 }
 
@@ -4444,9 +4549,10 @@ function animate(now) {
     updateKillswitchVisuals(now, frameDt);
 
     updateDroneVisual(frameDt);
-    updateChaseCamera(frameDt);
+    chaseCameraController.update(frameDt, droneState.position, droneState.quaternion);
     updateVlosCamera();
     updateWindsockVisual(now);
+    treeSwayManager.update(now, currentWindVector);
     updateExerciseGuideVisual(now);
     updateHud();
     updateExerciseHud();

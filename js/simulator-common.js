@@ -782,21 +782,104 @@
         return group;
     }
 
-    function buildTree(height) {
+    // To norske treslag i stedet for én generisk trekjegle - begge bygges rundt samme origo-konvensjon
+    // (basen på bakken, y=0), slik at createTreeSwayManager sin pivot-rundt-basen fungerer identisk
+    // for begge. Delt mellom quad- og fixed-wing-simulatoren (begge hadde hver sin nesten identiske
+    // trebygger før - flyttet hit for én kilde til sannhet).
+    // Bjørk: lys, tynn stamme med noen mørke "bjørkeflekker", og en rundere, fyldigere krone bygget av
+    // flere overlappende klumper (i stedet for én kjegle) - gir et løvtre-preg.
+    function buildBirch(height) {
         const group = new THREE.Group();
-        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b3d24 });
-        const canopyMat = new THREE.MeshStandardMaterial({ color: 0x2f5d34 });
-        const trunkHeight = height * 0.45;
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, trunkHeight, 8), trunkMat);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0xd8d0c0 });
+        const barkMat = new THREE.MeshStandardMaterial({ color: 0x2a2a26 });
+        const canopyMat = new THREE.MeshStandardMaterial({ color: 0x7ba050 });
+        const trunkHeight = height * 0.55;
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, trunkHeight, 8), trunkMat);
         trunk.position.y = trunkHeight / 2;
         trunk.castShadow = true;
         group.add(trunk);
-        const canopyHeight = height - trunkHeight;
-        const canopy = new THREE.Mesh(new THREE.ConeGeometry(height * 0.28, canopyHeight, 10), canopyMat);
-        canopy.position.y = trunkHeight + canopyHeight / 2;
-        canopy.castShadow = true;
-        group.add(canopy);
+        for (let i = 0; i < 4; i++) {
+            const mark = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), barkMat);
+            mark.position.set(0.09, trunkHeight * (0.15 + i * 0.2), 0.06);
+            mark.rotation.y = i * 1.3;
+            group.add(mark);
+        }
+        const canopyBaseY = trunkHeight * 0.85;
+        [
+            { dx: 0, dz: 0, dy: 0, r: height * 0.22 },
+            { dx: height * 0.13, dz: height * 0.05, dy: height * 0.08, r: height * 0.16 },
+            { dx: -height * 0.11, dz: -height * 0.07, dy: height * 0.14, r: height * 0.15 }
+        ].forEach(function (c) {
+            const cluster = new THREE.Mesh(new THREE.IcosahedronGeometry(c.r, 1), canopyMat);
+            cluster.position.set(c.dx, canopyBaseY + c.dy, c.dz);
+            cluster.castShadow = true;
+            group.add(cluster);
+        });
         return group;
+    }
+    // Furu: mørk, tykkere stamme og en lagvis krone av avtagende kjeglesegmenter (typisk bartre-silhuett)
+    // i stedet for én stor, jevn kjegle.
+    function buildPine(height) {
+        const group = new THREE.Group();
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3320 });
+        const canopyMat = new THREE.MeshStandardMaterial({ color: 0x264a2e });
+        const trunkHeight = height * 0.3;
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.15, trunkHeight, 8), trunkMat);
+        trunk.position.y = trunkHeight / 2;
+        trunk.castShadow = true;
+        group.add(trunk);
+        const layerCount = 4;
+        const canopyTotalHeight = height - trunkHeight;
+        let y = trunkHeight;
+        for (let i = 0; i < layerCount; i++) {
+            const progress = i / (layerCount - 1);
+            const layerH = canopyTotalHeight * 0.42 * (1 - progress * 0.35);
+            const layerR = height * 0.24 * (1 - progress * 0.55);
+            const layer = new THREE.Mesh(new THREE.ConeGeometry(layerR, layerH, 9), canopyMat);
+            layer.position.y = y + layerH * 0.45;
+            layer.castShadow = true;
+            group.add(layer);
+            y += layerH * 0.62;
+        }
+        return group;
+    }
+    // Tilfeldig bjørk eller furu, med litt tilfeldig høyde-/skala-variasjon for et mindre ensartet utseende.
+    function buildRandomTree(height) {
+        const h = height * (0.9 + Math.random() * 0.2);
+        return Math.random() < 0.5 ? buildBirch(h) : buildPine(h);
+    }
+
+    // Trær som vaier i vinden - hvert tre lagres med sin egen tilfeldige fase/frekvens slik at de ikke
+    // svaier helt synkront (som ville sett kunstig/robotisk ut). Egen factory (i stedet for delt modul-
+    // tilstand) slik at quad- og fixed-wing-simulatoren har hver sin uavhengige treliste selv om begge
+    // laster samme fil. Trærne bøyer seg i selve VINDRETNINGEN (ikke bare en generisk, retningsløs
+    // oscillasjon), pluss en raskere, fase-forskjøvet "kast"-rist oppå den jevne bøyningen. Roterer
+    // tre-gruppen rundt sin egen base (y=0, se buildBirch/buildPine) - en liten-vinkel-tilnærming
+    // (separate X/Z-rotasjoner) til å tilte toppen mot vindretningen.
+    function createTreeSwayManager() {
+        let treeHandles = [];
+        function addSwayingTree(group) {
+            treeHandles.push({ group: group, phase: Math.random() * Math.PI * 2, freq: 0.7 + Math.random() * 0.5 });
+            return group;
+        }
+        function update(now, windVector) {
+            const windSpeed = windVector.length();
+            if (windSpeed < 0.05) {
+                treeHandles.forEach(function (t) { t.group.rotation.set(0, 0, 0); });
+                return;
+            }
+            const t = now / 1000;
+            const windDirX = windVector.x / windSpeed;
+            const windDirZ = windVector.z / windSpeed;
+            const leanAngle = Math.min(0.16, windSpeed * 0.015);
+            treeHandles.forEach(function (tree) {
+                const gustWiggle = 1 + Math.sin(t * tree.freq * 2.3 + tree.phase) * 0.3;
+                const lean = leanAngle * gustWiggle;
+                tree.group.rotation.x = windDirZ * lean;
+                tree.group.rotation.z = -windDirX * lean;
+            });
+        }
+        return { addSwayingTree: addSwayingTree, update: update };
     }
 
     /* ---------- Renderer/kamera ---------- */
@@ -807,6 +890,59 @@
             cam.aspect = w / h;
             cam.updateProjectionMatrix();
         });
+    }
+
+    // Chase-kamera med manuell orbit - delt mellom quad- og fixed-wing-simulatoren (begge hadde tidligere
+    // hver sin nesten identiske kopi av både tilstanden og de fem event-lytterne). Hold høyreklikk og dra
+    // for å se rundt kjøretøyet, scroll for å zoome. Vinkel/avstand er en offset OVENPÅ kjøretøyets egen
+    // heading - kameraet henger fortsatt bak og følger med rundt svinger, men piloten kan se seg rundt
+    // (f.eks. for skjermbilder) uten at det påvirker selve styringen.
+    // opts: { defaultPitch, zoomMin, zoomMax, initialZoom, smoothingBase, lookAtOffsetY }
+    function createChaseCameraController(camera, canvasEl, opts) {
+        let orbitYaw = 0;
+        let orbitPitch = opts.defaultPitch;
+        let zoomDistance = opts.initialZoom;
+        let isOrbiting = false;
+        let lastPointerX = 0, lastPointerY = 0;
+
+        canvasEl.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+        canvasEl.addEventListener("mousedown", function (e) {
+            if (e.button !== 2) return;
+            isOrbiting = true;
+            lastPointerX = e.clientX;
+            lastPointerY = e.clientY;
+        });
+        global.addEventListener("mouseup", function (e) {
+            if (e.button === 2) isOrbiting = false;
+        });
+        global.addEventListener("mousemove", function (e) {
+            if (!isOrbiting) return;
+            const dx = e.clientX - lastPointerX;
+            const dy = e.clientY - lastPointerY;
+            lastPointerX = e.clientX;
+            lastPointerY = e.clientY;
+            orbitYaw -= dx * 0.006;
+            orbitPitch = clamp(orbitPitch + dy * 0.006, 0.02, 1.4);
+        });
+        canvasEl.addEventListener("wheel", function (e) {
+            e.preventDefault();
+            zoomDistance = clamp(zoomDistance + e.deltaY * 0.02, opts.zoomMin, opts.zoomMax);
+        }, { passive: false });
+
+        function update(dt, targetPosition, targetQuaternion) {
+            // Følger kun med på yaw (heading), ikke full roll/pitch - gir en stabil, brukbar chase-cam
+            // fremfor en kamera-rigg som er stivt låst til kjøretøyets fulle rotasjon.
+            const euler = new THREE.Euler().setFromQuaternion(targetQuaternion, "YXZ");
+            const headingQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y + orbitYaw, 0));
+            const horizontalDist = zoomDistance * Math.cos(orbitPitch);
+            const verticalDist = zoomDistance * Math.sin(orbitPitch);
+            const behindOffset = new THREE.Vector3(0, verticalDist, horizontalDist).applyQuaternion(headingQuat);
+            const desiredPos = targetPosition.clone().add(behindOffset);
+            const smoothing = 1 - Math.pow(opts.smoothingBase, dt);
+            camera.position.lerp(desiredPos, smoothing);
+            camera.lookAt(targetPosition.clone().add(new THREE.Vector3(0, opts.lookAtOffsetY || 0, 0)));
+        }
+        return { update: update };
     }
 
     /* ---------- FPV HUD/OSD (crosshair / kunstig horisont) ---------- */
@@ -932,8 +1068,12 @@
         buildWindsockPole: buildWindsockPole,
         updateWindsockVisual: updateWindsockVisual,
         buildPersonFigure: buildPersonFigure,
-        buildTree: buildTree,
+        buildBirch: buildBirch,
+        buildPine: buildPine,
+        buildRandomTree: buildRandomTree,
+        createTreeSwayManager: createTreeSwayManager,
         resizeRenderer: resizeRenderer,
+        createChaseCameraController: createChaseCameraController,
         drawFpvCrosshair: drawFpvCrosshair,
         drawFpvHorizonFromAngles: drawFpvHorizonFromAngles,
         togglePanel: togglePanel,

@@ -173,7 +173,11 @@ const CRASH_SINK_RATE = 6;      // m/s synkefart ved berøring som teller som ha
 const CRASH_BANK_DEG = 45;      // krengevinkel ved berøring som teller som hard landing
 
 const FIXED_DT = 1 / 120;       // fysikk-tidssteg, samme substep-mønster (akkumulator) som quad-simulatoren
-const STICK_RAMP_TIME = 0.22;
+// Samme verdi som Sim.rampStick sin egen interne default (simulator-common.js) - en referanse i stedet
+// for en egen hardkodet kopi, så en fremtidig tuning ikke kan endre den ene og glemme den andre. Holdt
+// som et eget, navngitt lokalt konstantnavn likevel (i stedet for å bare utelate 4. parameteren til
+// rampStick) for å kunne kontrastere eksplisitt mot GAMEPAD_STICK_RAMP_TIME rett under.
+const STICK_RAMP_TIME = Sim.STICK_RAMP_TIME;
 // Kortere enn tastaturets STICK_RAMP_TIME - en ekte RC-sender-gimbal er raskere/mer presis enn en
 // syntetisk tastatur-rampe, men et rått, ufiltrert gamepad-akse-signal (uten NOEN glatting) kan gi et
 // momentant, fullt utslag i én eneste fysikk-tick - en umulig-i-virkeligheten dreiemoment-spike.
@@ -347,80 +351,11 @@ let planeAileronLeft, planeAileronRight, planeElevator, planeRudder;
 let propSpinSpeed = 0;
 let cameraModeIndex = 0;
 let windsockHandles = [];
-// Trær som vaier i vinden (se updateTreeSway) - hvert tre lagres med sin egen tilfeldige fase/frekvens
-// slik at de ikke svaier helt synkront (som ville sett kunstig/robotisk ut), pluss sin egen naturlige
-// hvile-rotasjon (opprinnelig rotasjon.z/x - normalt 0, men bevart for evt. fremtidig skrå plassering).
-let treeHandles = [];
-function addSwayingTree(group) {
-    treeHandles.push({ group: group, phase: Math.random() * Math.PI * 2, freq: 0.7 + Math.random() * 0.5 });
-    return group;
-}
-
-// To norske treslag i stedet for én generisk trekjegle - begge bygges rundt samme origo-konvensjon
-// (basen på bakken, y=0) som Sim.buildTree, slik at addSwayingTree/updateTreeSway sin pivot-rundt-basen
-// fungerer identisk for begge.
-// Bjørk: lys, tynn stamme med noen mørke "bjørkeflekker", og en rundere, fyldigere krone bygget av flere
-// overlappende klumper (i stedet for én kjegle) - gir et løvtre-preg.
-function buildBirch(height) {
-    const group = new THREE.Group();
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0xd8d0c0 });
-    const barkMat = new THREE.MeshStandardMaterial({ color: 0x2a2a26 });
-    const canopyMat = new THREE.MeshStandardMaterial({ color: 0x7ba050 });
-    const trunkHeight = height * 0.55;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, trunkHeight, 8), trunkMat);
-    trunk.position.y = trunkHeight / 2;
-    trunk.castShadow = true;
-    group.add(trunk);
-    for (let i = 0; i < 4; i++) {
-        const mark = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), barkMat);
-        mark.position.set(0.09, trunkHeight * (0.15 + i * 0.2), 0.06);
-        mark.rotation.y = i * 1.3;
-        group.add(mark);
-    }
-    const canopyBaseY = trunkHeight * 0.85;
-    [
-        { dx: 0, dz: 0, dy: 0, r: height * 0.22 },
-        { dx: height * 0.13, dz: height * 0.05, dy: height * 0.08, r: height * 0.16 },
-        { dx: -height * 0.11, dz: -height * 0.07, dy: height * 0.14, r: height * 0.15 }
-    ].forEach(function (c) {
-        const cluster = new THREE.Mesh(new THREE.IcosahedronGeometry(c.r, 1), canopyMat);
-        cluster.position.set(c.dx, canopyBaseY + c.dy, c.dz);
-        cluster.castShadow = true;
-        group.add(cluster);
-    });
-    return group;
-}
-// Furu: mørk, tykkere stamme og en lagvis krone av avtagende kjeglesegmenter (typisk bartre-silhuett) i
-// stedet for én stor, jevn kjegle.
-function buildPine(height) {
-    const group = new THREE.Group();
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3320 });
-    const canopyMat = new THREE.MeshStandardMaterial({ color: 0x264a2e });
-    const trunkHeight = height * 0.3;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.15, trunkHeight, 8), trunkMat);
-    trunk.position.y = trunkHeight / 2;
-    trunk.castShadow = true;
-    group.add(trunk);
-    const layerCount = 4;
-    const canopyTotalHeight = height - trunkHeight;
-    let y = trunkHeight;
-    for (let i = 0; i < layerCount; i++) {
-        const progress = i / (layerCount - 1);
-        const layerH = canopyTotalHeight * 0.42 * (1 - progress * 0.35);
-        const layerR = height * 0.24 * (1 - progress * 0.55);
-        const layer = new THREE.Mesh(new THREE.ConeGeometry(layerR, layerH, 9), canopyMat);
-        layer.position.y = y + layerH * 0.45;
-        layer.castShadow = true;
-        group.add(layer);
-        y += layerH * 0.62;
-    }
-    return group;
-}
-// Tilfeldig bjørk eller furu, med litt tilfeldig høyde-/skala-variasjon for et mindre ensartet utseende.
-function buildRandomTree(height) {
-    const h = height * (0.9 + Math.random() * 0.2);
-    return Math.random() < 0.5 ? buildBirch(h) : buildPine(h);
-}
+// Trebygging (bjørk/furu) og vind-svai er delt med quad-simulatoren - se Sim.buildBirch/buildPine/
+// buildRandomTree/createTreeSwayManager i simulator-common.js (begge simulatorene hadde tidligere hver
+// sin nesten identiske kopi).
+const treeSwayManager = Sim.createTreeSwayManager();
+const buildRandomTree = Sim.buildRandomTree;
 
 // Løv/rusk som driver langs bakken i vindretningen - synlig, retningsvisende vindtegn nær rullebanen (der
 // piloten uansett ser under taksing/avgang/landing), i tillegg til vindpølsene. Kun synlig når vind er
@@ -1331,9 +1266,16 @@ function buildClockFace(radius) {
     return group;
 }
 // Setter viserne til faktisk PC-klokkeslett - kalt en gang ved bygging og hvert bilde fra animate()
-// (se updateClockTowers), akkurat som updateTreeSway/updateWindsockVisual leser andre live-verdier.
+// (se updateClockTowers), akkurat som treeSwayManager.update/updateWindsockVisual leser andre live-verdier.
+// Kalt hvert bilde (60 Hz), men viserbevegelsen er umerkelig raskere enn ca. ett sekund av gangen
+// (minuttviseren flytter seg ~0,1°/sek) - kastet ny Date() og satt rotasjonene på nytt uansett var ren
+// bortkastet arbeid resten av tiden. Strupet til maks én reell oppdatering i sekundet.
+let lastClockTowerUpdateMs = 0;
 function updateClockTowers() {
-    const now = new Date();
+    const nowMs = Date.now();
+    if (nowMs - lastClockTowerUpdateMs < 1000) return;
+    lastClockTowerUpdateMs = nowMs;
+    const now = new Date(nowMs);
     const hourFrac = (now.getHours() % 12) / 12 + now.getMinutes() / 720;
     const minuteFrac = now.getMinutes() / 60 + now.getSeconds() / 3600;
     const hourAngle = hourFrac * Math.PI * 2;
@@ -1506,7 +1448,7 @@ function buildTown() {
     });
 
     // Skorstein + røyk - et retningsuavhengig vindtegn (røyken driver med vinden) synlig fra lang avstand,
-    // i tillegg til vindpølsene ved rullebanen og de vaiende trærne (se updateTreeSway).
+    // i tillegg til vindpølsene ved rullebanen og de vaiende trærne (se treeSwayManager.update).
     const chimneyMat = new THREE.MeshStandardMaterial({ color: 0x555550 });
     const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, 0.5), chimneyMat);
     const chimneyLocalPos = new THREE.Vector3(2.8, 5.5 + 0.65, 1.6);
@@ -1537,7 +1479,7 @@ function buildTown() {
     ].forEach(function (t) {
         const tree = buildRandomTree(t.h);
         tree.position.set(TOWN_CENTER_X + t.dx, 0, TOWN_CENTER_Z + t.dz);
-        group.add(addSwayingTree(tree));
+        group.add(treeSwayManager.addSwayingTree(tree));
     });
 
     return group;
@@ -1615,7 +1557,7 @@ function buildWorldObjects() {
     ].forEach(function (t) {
         const tree = buildRandomTree(t.h);
         tree.position.set(t.x, 0, t.z);
-        group.add(addSwayingTree(tree));
+        group.add(treeSwayManager.addSwayingTree(tree));
     });
 
     return group;
@@ -2678,6 +2620,7 @@ function resolveGroundContact(dt) {
     planeState.velocity.addScaledVector(rightWorld, -lateralSpeed * Math.min(1, 8 * dt));
 }
 
+/* ---------- Fly-kontroller (reset/motor/kamera) ---------- */
 function resetPlane() {
     planeState.position.set(0, 0.3, RUNWAY_SPAWN_Z);
     planeState.velocity.set(0, 0, 0);
@@ -2740,6 +2683,8 @@ const hudTrim = document.getElementById("hudTrim");
 const armToggleBtn = document.getElementById("armToggleBtn");
 const crashBanner = document.getElementById("crashBanner");
 const tailstrikeBanner = document.getElementById("tailstrikeBanner");
+const trimInputEl = document.getElementById("trimInput");
+const trimValueEl = document.getElementById("trimValue");
 
 function updateHud() {
     hudMode.textContent = MODE_LABELS[planeState.flightMode];
@@ -2759,11 +2704,9 @@ function updateHud() {
     hudTrim.textContent = trimText;
     armToggleBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> ' + (planeState.engineOn ? "Motor av (K)" : "Motor på (K)");
 
-    const trimInputEl = document.getElementById("trimInput");
     if (trimInputEl && document.activeElement !== trimInputEl) {
         trimInputEl.value = planeState.elevatorTrimDeg;
     }
-    const trimValueEl = document.getElementById("trimValue");
     if (trimValueEl) trimValueEl.textContent = trimText;
 }
 
@@ -2807,12 +2750,12 @@ function buildGamepadButtonsPanel() {
     Sim.buildGamepadButtonsGrid(container, gamepadMap.buttons, BUTTON_ACTION_LABELS, buttonManager, getActiveGamepad, saveGamepadMap);
 }
 
+const gamepadPanelEl = document.getElementById("gamepadPanel");
+const gamepadAxesReadoutEl = document.getElementById("gamepadAxesReadout");
 function updateGamepadAxesReadout(gp) {
-    const panel = document.getElementById("gamepadPanel");
-    if (panel.style.display === "none") return;
-    const readout = document.getElementById("gamepadAxesReadout");
+    if (gamepadPanelEl.style.display === "none") return;
     const activeGp = gp || getActiveGamepad();
-    Sim.updateGamepadAxesReadout(readout, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
+    Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
 }
 
 function setGamepadButtonVisible(visible) {
@@ -2824,11 +2767,11 @@ function setGamepadButtonVisible(visible) {
 let fpvHudCtx = null;
 let fpvHudModeIndex = 0;
 
+const fpvHudCanvasEl = document.getElementById("fpvHudCanvas");
 function initFpvHudCanvas() {
-    const canvas = document.getElementById("fpvHudCanvas");
-    canvas.width = 400;
-    canvas.height = 300;
-    fpvHudCtx = canvas.getContext("2d");
+    fpvHudCanvasEl.width = 400;
+    fpvHudCanvasEl.height = 300;
+    fpvHudCtx = fpvHudCanvasEl.getContext("2d");
     fpvHudModeIndex = Math.max(0, FPV_HUD_MODES.indexOf(settings.fpvHudMode));
 }
 
@@ -2864,14 +2807,13 @@ function fpvCrosshairOffsetPx(h) {
 }
 
 function updateFpvHud() {
-    const canvas = document.getElementById("fpvHudCanvas");
     const mode = FPV_HUD_MODES[fpvHudModeIndex];
     if (activeCamera !== fpvCamera || mode === "none") {
-        canvas.style.display = "none";
+        fpvHudCanvasEl.style.display = "none";
         return;
     }
-    canvas.style.display = "block";
-    const w = canvas.width, h = canvas.height;
+    fpvHudCanvasEl.style.display = "block";
+    const w = fpvHudCanvasEl.width, h = fpvHudCanvasEl.height;
     fpvHudCtx.clearRect(0, 0, w, h);
     if (mode === "horizon") drawFpvHorizon(fpvHudCtx, w, h);
     fpvHudCtx.save();
@@ -2883,29 +2825,6 @@ function updateFpvHud() {
 function updateWindsockVisual(now) {
     windsockHandles.forEach(function (h) {
         Sim.updateWindsockVisual(h, now, currentWindVector);
-    });
-}
-
-// Trærne bøyer seg i selve VINDRETNINGEN (ikke bare en generisk, retningsløs oscillasjon), pluss en
-// raskere, fase-forskjøvet "kast"-rist oppå den jevne bøyningen - siden currentWindVector allerede
-// inkluderer gust-tilbudet fra Sim.computeWind, svinger selve bøynings-AMPLITUDEN naturlig opp/ned med
-// kastene i tillegg til rist-leddet. Roterer tre-gruppen rundt sin egen base (y=0, se buildBirch/
-// buildPine) - en liten-vinkel-tilnærming (separate X/Z-rotasjoner) til å tilte toppen mot vindretningen.
-function updateTreeSway(now) {
-    const windSpeed = currentWindVector.length();
-    if (windSpeed < 0.05) {
-        treeHandles.forEach(function (t) { t.group.rotation.set(0, 0, 0); });
-        return;
-    }
-    const t = now / 1000;
-    const windDirX = currentWindVector.x / windSpeed;
-    const windDirZ = currentWindVector.z / windSpeed;
-    const leanAngle = Math.min(0.16, windSpeed * 0.015);
-    treeHandles.forEach(function (tree) {
-        const gustWiggle = 1 + Math.sin(t * tree.freq * 2.3 + tree.phase) * 0.3;
-        const lean = leanAngle * gustWiggle;
-        tree.group.rotation.x = windDirZ * lean;
-        tree.group.rotation.z = -windDirX * lean;
     });
 }
 
@@ -2930,7 +2849,7 @@ function animate(now) {
     updateChaseCamera(frameDt);
     updateVlosCamera();
     updateWindsockVisual(now);
-    updateTreeSway(now);
+    treeSwayManager.update(now, currentWindVector);
     updateWindLeaves(frameDt, now);
     updateWindSmoke(frameDt);
     updateClockTowers();
