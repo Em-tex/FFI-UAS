@@ -802,6 +802,8 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     padding: 18px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     pointer-events: auto;
+    z-index: 4; /* over .sim-racing-leaderboard (1) - den ligger sist i DOM-en og ville ellers (uten
+    eksplisitt z-index her) stablet seg OVENPÅ alle andre menyer/paneler brukeren åpner mens den vises */
 }
 .sim-panel h3 {
     margin: 0 0 12px 0;
@@ -996,6 +998,7 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     max-width: calc(100% - 32px);
     max-height: calc(100% - 90px);
     overflow-y: auto;
+    z-index: 1; /* under .sim-panel (4) og dropdownen (5) - se kommentaren ved .sim-panel */
     background: rgba(3, 71, 127, 0.55);
     backdrop-filter: blur(2px);
     border-radius: 8px;
@@ -1072,6 +1075,17 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     flex: 0 0 auto;
     font-variant-numeric: tabular-nums;
 }
+.sim-racing-lb-edit {
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.55);
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+}
+.sim-racing-lb-edit:hover { color: #ffd76b; background: rgba(255,255,255,0.12); }
 .sim-racing-lb-empty {
     font-size: 0.8rem;
     color: rgba(255,255,255,0.7);

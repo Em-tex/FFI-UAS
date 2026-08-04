@@ -22,7 +22,7 @@ const DRONE_CLASSES = {
         label: "Racing (rask, lett)",
         mass: 0.5, maxThrust: 18,
         inertiaRollPitch: 0.025, inertiaYaw: 0.05,
-        dragLinear: 0.2, dragQuad: 0.006, visualScale: 1.0
+        dragLinear: 0.2, dragQuad: 0.006, visualScale: 0.72 // kun visuell størrelse - massen er uendret
     },
     mid: {
         label: "Middels",
@@ -2151,6 +2151,78 @@ function buildBrickTexture() {
     brickTextureBase = new THREE.CanvasTexture(canvas);
     return brickTextureBase;
 }
+// Norsk flagg (forhold 22:16, korset forskjøvet mot stangsiden) - prosedural canvas-tekstur, samme
+// prinsipp som buildBrickTexture/buildClockTexture. Bygget én gang og gjenbrukt (som de andre) - kun ett
+// flagg i verden akkurat nå, men samme cache-mønster uansett.
+let norwayFlagTextureBase = null;
+function buildNorwayFlagTexture() {
+    if (norwayFlagTextureBase) return norwayFlagTextureBase;
+    const w = 220, h = 160;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ba0c2f";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 60, w, 40);  // hvit horisontal stripe
+    ctx.fillRect(40, 0, 40, h); // hvit vertikal stripe (nær stangsiden, venstre kant)
+    ctx.fillStyle = "#00205b";
+    ctx.fillRect(0, 70, w, 20);  // blå horisontal stripe
+    ctx.fillRect(50, 0, 20, h); // blå vertikal stripe
+    norwayFlagTextureBase = new THREE.CanvasTexture(canvas);
+    return norwayFlagTextureBase;
+}
+// Vindpåvirkede flaggduk-håndtak (kun rotasjonspivoten, se updateFlags) - fylt av buildTownHallFlag.
+const flagHandles = [];
+// Flaggstang + duk, ment for TAKET (ikke veggfasaden som før) - se plasseringen i buildTownHall under.
+// "pivot" (returnert som andre del) er den delen som roterer med vindretningen (se updateFlags) - selve
+// stangen står fast, kun duken svinger, som på ekte.
+function buildTownHallFlag(poleHeight, flagWidth, flagHeight) {
+    const group = new THREE.Group();
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, poleHeight, 8), poleMat);
+    pole.position.y = poleHeight / 2;
+    pole.castShadow = true;
+    group.add(pole);
+
+    const pivot = new THREE.Group();
+    pivot.position.y = poleHeight - flagHeight * 0.6;
+    group.add(pivot);
+
+    // To duk-plan (ikke ett dobbeltsidig) - et enkelt DoubleSide-plan ville vist korset SPEILVENDT (altså
+    // feil side av stangen) fra baksiden, siden korset ikke er symmetrisk (forskjøvet mot stangsiden).
+    // Baksiden roteres 180° OG speilvendes (scale.x=-1) - rotasjonen alene ville speilvendt mønsteret,
+    // scale.x kompenserer akkurat det tilbake, slik at begge sider viser korrekt, uspeilet flagg.
+    const flagMat = new THREE.MeshStandardMaterial({ map: buildNorwayFlagTexture() });
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(flagWidth, flagHeight), flagMat);
+    front.position.x = flagWidth / 2 + 0.05;
+    front.castShadow = true;
+    pivot.add(front);
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(flagWidth, flagHeight), flagMat);
+    back.position.x = flagWidth / 2 + 0.05;
+    back.rotation.y = Math.PI;
+    back.scale.x = -1;
+    pivot.add(back);
+
+    flagHandles.push(pivot);
+    return group;
+}
+// Strupet oppdatering (se lastFlagUpdateMs) - flagget skal se levende ut (litt raskere enn
+// klokketårnet/treet), men trenger ikke oppdateres hvert eneste bilde. IKKE ekte duk-simulering - en
+// "værhane"-rotasjon mot vindretningen (som vindpølsen, se Sim.updateWindsockVisual) pluss en liten
+// sinus-"flagre" oppå, som leser fint som vindpåvirket på avstand uten kostnaden ved ekte klut-fysikk.
+let lastFlagUpdateMs = 0;
+function updateFlags(now) {
+    if (flagHandles.length === 0 || now - lastFlagUpdateMs < 60) return;
+    lastFlagUpdateMs = now;
+    const windSpeed = currentWindVector.length();
+    const baseYaw = windSpeed > 0.05 ? Math.atan2(currentWindVector.x, currentWindVector.z) : 0;
+    const flutter = Math.sin(now / 180) * 0.08 * Math.min(1, windSpeed / 3 + 0.15);
+    flagHandles.forEach(function (pivot) {
+        pivot.rotation.y = baseYaw + flutter;
+    });
+}
 function buildBrickMaterial(repeatX, repeatY) {
     const tex = buildBrickTexture().clone();
     tex.needsUpdate = true;
@@ -2265,8 +2337,15 @@ function buildClockTower(width, towerHeight) {
 // søyleinngang, klokketårn og flaggstang.
 // Bredere/dypere enn "ekte" rådhus-proporsjoner ville tilsagt - taket må ha god nok plass til racing-
 // gaten (se GATE_WAYPOINTS_2 "roofgate") PLUSS innflygings-/utflygingsrom rundt den, ikke bare så vidt.
-const TOWNHALL_WIDTH = 14, TOWNHALL_HEIGHT = 10, TOWNHALL_DEPTH = 12;
-const TOWNHALL_ROOF_Y = TOWNHALL_HEIGHT + 0.2;
+// Økt videre fra 14x12 - gaten (midt på taket) og klokketårnet (se tower.position.set under) overlappet
+// før denne økningen, siden tårnet bare sto rett bak sentrum. Tårnet er nå flyttet ut til et bakre hjørne
+// i stedet (se lenger ned) - denne ekstra bredden gir god klaring der også.
+const TOWNHALL_WIDTH = 18, TOWNHALL_HEIGHT = 10, TOWNHALL_DEPTH = 14;
+// Roof-boksen under er sentrert på height+0.2 med 0.4 tykkelse (se roof.position.y/BoxGeometry) - selve
+// OVERFLATEN (der droneen faktisk skal lande) er dermed height+0.4, IKKE height+0.2 (senteret). Brukte
+// feilaktig senterhøyden her tidligere, som lot droneen synke ~0.2 m ned i selve takplaten før
+// kollisjonen fanget den opp - retter det opp til å matche den visuelle toppflaten nøyaktig.
+const TOWNHALL_ROOF_Y = TOWNHALL_HEIGHT + 0.4;
 function buildTownHall(width, height, depth) {
     const group = new THREE.Group();
     const walls = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildBrickMaterial(width / 2.2, height / 2.2));
@@ -2311,17 +2390,18 @@ function buildTownHall(width, height, depth) {
     porticoRoof.castShadow = true;
     group.add(porticoRoof);
 
+    // Flyttet ut til et bakre hjørne (i stedet for nær sentrum) - racing-gaten på taket (se
+    // GATE_WAYPOINTS_2 "roofgate") flys gjennom midten av taket, og tårnet stod tidligere i veien for
+    // den. Sentrum (lokal X=0) holdes dermed fritt for selve gaten.
     const tower = buildClockTower(width * 0.32, height * 1.6);
-    tower.position.set(0, height + 0.4, -depth * 0.15);
+    tower.position.set(width * 0.3, height + 0.4, -depth * 0.32);
     group.add(tower);
 
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, height * 1.1, 8), poleMat);
-    pole.position.set(width * 0.4, height * 0.55, depth / 2 + 0.5);
-    group.add(pole);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshStandardMaterial({ color: 0xba1522, side: THREE.DoubleSide }));
-    flag.position.set(width * 0.4 + 0.3, height * 1.0, depth / 2 + 0.5);
-    group.add(flag);
+    // Flaggstang på TAKET (ikke veggfasaden som før) - motsatt hjørne av tårnet, unna både gaten midt på
+    // taket og tårnets eget footprint. Se buildTownHallFlag for selve duken (norsk flagg, vindpåvirket).
+    const flagPole = buildTownHallFlag(height * 0.9, width * 0.16, width * 0.11);
+    flagPole.position.set(-width * 0.32, height + 0.4, -depth * 0.3);
+    group.add(flagPole);
 
     return group;
 }
@@ -2348,6 +2428,42 @@ function buildSimpleHouse2(width, height, depth, wallColor, roofColor) {
     win.position.set(0, height * 0.55, depth / 2 + 0.03);
     win.receiveShadow = true;
     group.add(win);
+    return group;
+}
+
+// En liten bro å fly under - rent landskapselement (ingen SOLID_COLLIDERS-registrering, se kommentaren
+// ved plasseringen i buildGateCourse2) langs returleggen av racingbane 2, for variasjon i en ellers
+// nokså rett strekning. "deckClearance" er høyden fra bakken til undersiden av dekket - selve
+// gjennomflygingshøyden. Bygget flatt langs lokal X (spennet) med gjennomflyging langs lokal Z, akkurat
+// som gate-rammene - roter hele gruppen med rotation.y for å rette den på tvers av banens retning.
+function buildBridge(spanWidth, deckClearance, deckDepth) {
+    const group = new THREE.Group();
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x8a7a68, roughness: 0.85 });
+    const pierMat = new THREE.MeshStandardMaterial({ color: 0x6e6e6e, roughness: 0.9 });
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x4a4a48 });
+    const deckThickness = 0.7;
+
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(spanWidth, deckThickness, deckDepth), deckMat);
+    deck.position.y = deckClearance + deckThickness / 2;
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    group.add(deck);
+
+    [-1, 1].forEach(function (side) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(spanWidth, 0.35, 0.1), railMat);
+        rail.position.set(0, deckClearance + deckThickness + 0.2, side * deckDepth / 2);
+        rail.castShadow = true;
+        group.add(rail);
+    });
+
+    [-1, 1].forEach(function (side) {
+        const pier = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, deckClearance, 10), pierMat);
+        pier.position.set(side * (spanWidth / 2 - 1.2), deckClearance / 2, 0);
+        pier.castShadow = true;
+        pier.receiveShadow = true;
+        group.add(pier);
+    });
+
     return group;
 }
 
@@ -2422,6 +2538,19 @@ function buildRiver(points, widths, pondRadius) {
         group.add(pond);
     }
     return group;
+}
+// Bygger OG registrerer et racingbane-2-tre i ett kall - både det visuelle treet (med vind-svaiing, se
+// treeSwayManager) og en kollider (se treeToCollider, delt med DECORATIVE_TREES/FOREST_TREES). De
+// statiske listene TREE_COLLIDERS bygges fra er ferdig regnet ut ved MODUL-lasting, lenge før course-2s
+// trær i det hele tatt eksisterer (de bygges her, ved scene-oppbygging via buildGateCourse2) - uten
+// dette hjelpefunksjon-kallet ville ALLE course-2-trærne vært usynlige for kollisjonssystemet, og
+// droneen ville flydd rett gjennom dem alle sammen. Samme "push rett inn i den allerede-levende
+// SOLID_COLLIDERS-arrayen"-mønster som rådhuset/husene bruker.
+function addCourse2Tree(group, x, z, height) {
+    const tree = Sim.buildRandomTree(height);
+    tree.position.set(x, 0, z);
+    group.add(treeSwayManager.addSwayingTree(tree));
+    SOLID_COLLIDERS.push(treeToCollider({ x: x, z: z, h: height }));
 }
 // Langs banen (se GATE_COURSE_2_CENTER) - rent landskapselement for variasjon, ligger klart utenfor
 // selve portrekka. Starter som en liten bekk oppe ved foten av fjellet nord for banen (se
@@ -2512,18 +2641,45 @@ function buildGateCourse2() {
     // Registreres i SOLID_COLLIDERS (definert lenger opp i filen, men fortsatt bare en vanlig mutert
     // array på dette tidspunktet - buildGateCourse2 kjøres først ved scene-oppbygging, godt etter at
     // hele filen er lest inn) slik at droneen faktisk kolliderer med veggene og kan lande på taket, i
-    // stedet for å fly rett gjennom - samme AABB-mot-toppflate-modell som bygningen/bilen ved
-    // avgangsplassen. Halve DIAGONALEN (ikke halve bredden/dybden) brukes som halv boksstørrelse i
-    // begge retninger - garanterer at boksen dekker hele det roterte footprinten uansett hvilken vei
-    // rådhuset vender (samme tilnærming som bilens kollider lenger opp - "litt større boks").
-    const townHallHalfDiag = Math.hypot(TOWNHALL_WIDTH / 2, TOWNHALL_DEPTH / 2);
+    // stedet for å fly rett gjennom. ORIENTERT boks (cx/cz/halfW/halfD/yaw), ikke akse-rettet - rådhuset
+    // er rotert (roofGatePlacement.yaw over), og en akse-rettet boks stor nok til å garantert dekke hele
+    // det roterte footprinten (halve diagonalen i begge retninger) hadde trigget kollisjon lenge før
+    // droneen faktisk nådde veggene. Se orientedBoxLocalXZ/pushOutOfSolidWalls for selve testen.
     SOLID_COLLIDERS.push({
-        minX: townHallX - townHallHalfDiag, maxX: townHallX + townHallHalfDiag,
-        minZ: townHallZ - townHallHalfDiag, maxZ: townHallZ + townHallHalfDiag,
-        topY: TOWNHALL_ROOF_Y
+        cx: townHallX, cz: townHallZ, halfW: TOWNHALL_WIDTH / 2, halfD: TOWNHALL_DEPTH / 2,
+        yaw: roofGatePlacement.yaw, topY: TOWNHALL_ROOF_Y
+    });
+    // Klokketårnet (se tower.position.set/buildClockTower i buildTownHall) stikker godt over selve taket
+    // - kollideren over dekker kun opp til takhøyden, så uten en EGEN, mindre kollider for tårnet ville
+    // droneen fløyet rett gjennom hele spiret. Samme lokale offset/formel som buildTownHall bruker for
+    // selve tårnet (width*0.3, -depth*0.32), transformert til verdensrom med samme rotasjon/senter som
+    // rådhuset over - de to kolliderne overlapper med vilje der tårnet står (Math.max av topY-verdiene
+    // i solidSurfaceHeightAt/resolveGroundContact velger automatisk den høyeste, altså tårnets tak, kun
+    // innenfor tårnets eget, mindre footprint).
+    const towerLocal = { x: TOWNHALL_WIDTH * 0.3, z: -TOWNHALL_DEPTH * 0.32 };
+    const towerWorld = orientedBoxWorldFromLocal(towerLocal.x, towerLocal.z, {
+        cx: townHallX, cz: townHallZ, yaw: roofGatePlacement.yaw
+    });
+    const towerBoxSize = TOWNHALL_WIDTH * 0.32; // se buildClockTower(width*0.32, ...) i buildTownHall
+    const towerHeight = TOWNHALL_HEIGHT * 1.6;
+    const towerCapHeight = towerHeight * 0.35;
+    SOLID_COLLIDERS.push({
+        cx: towerWorld.x, cz: towerWorld.z, halfW: towerBoxSize / 2, halfD: towerBoxSize / 2,
+        yaw: roofGatePlacement.yaw, topY: TOWNHALL_ROOF_Y + towerHeight + towerCapHeight
     });
 
     group.add(buildRiver(RIVER_POINTS, RIVER_WIDTHS, RIVER_POND_RADIUS));
+
+    // Liten bro å fly under, midt i den ellers nokså rette/kjedelige returleggen (mellom gate-elementene
+    // like etter chikanen og rådhustaket) - ren landskapsvariasjon, samme prinsipp som fjellene i
+    // bakgrunnen: dekorativ, ikke en obligatorisk del av løypa, og uten SOLID_COLLIDERS-registrering (den
+    // eksisterende kollider-modellen antar en solid søyle fra bakken og opp til toppen - en bro med åpning
+    // UNDER dekket hadde krevd en egen "hul boks"-variant resten av banen ikke bruker).
+    const bridgeOffset = { x: -97, z: -55 };
+    const bridge = buildBridge(16, 6, 3.5);
+    bridge.position.set(GATE_COURSE_2_CENTER.x + bridgeOffset.x, 0, GATE_COURSE_2_CENTER.z + bridgeOffset.z);
+    bridge.rotation.y = Math.atan2(-5, 50); // samme retning som banen flyr her (fra gate -95/-80 mot -100/-30)
+    group.add(bridge);
 
     // "Ledelinjer" langs banen - referansepunkter for å bedømme fart/høyde/retning i høy fart, samme
     // begrunnelse som selve porthjørnene. Alle punktene holder minst ~20 m klaring til nærmeste port
@@ -2536,9 +2692,7 @@ function buildGateCourse2() {
         { x: -105, z: 45 }, { x: 35, z: 130 }, { x: 20, z: -60 }, { x: 10, z: -95 },
         { x: 60, z: -70 }, { x: 15, z: -130 }, { x: -25, z: -145 }
     ].forEach(function (t) {
-        const tree = Sim.buildRandomTree(6 + Math.random() * 3);
-        tree.position.set(GATE_COURSE_2_CENTER.x + t.x, 0, GATE_COURSE_2_CENTER.z + t.z);
-        group.add(treeSwayManager.addSwayingTree(tree));
+        addCourse2Tree(group, GATE_COURSE_2_CENTER.x + t.x, GATE_COURSE_2_CENTER.z + t.z, 6 + Math.random() * 3);
     });
     // Liten skog midt i "infield"-området, godt unna alle portene i begge retninger (ut langs
     // østsiden, tilbake langs vestsiden) - gir banen et landskapsinnslag midt i, ikke bare i kantene.
@@ -2547,12 +2701,12 @@ function buildGateCourse2() {
             const idx = r * 3 + c;
             const jitterX = Math.sin(idx * 12.9) * 3;
             const jitterZ = Math.cos(idx * 7.3) * 3;
-            const tree = Sim.buildRandomTree(7 + Math.abs(Math.sin(idx * 3.7)) * 4);
-            tree.position.set(
-                GATE_COURSE_2_CENTER.x + (c - 1) * 9 + jitterX, 0,
-                GATE_COURSE_2_CENTER.z - 40 + (r - 1) * 9 + jitterZ
+            addCourse2Tree(
+                group,
+                GATE_COURSE_2_CENTER.x + (c - 1) * 9 + jitterX,
+                GATE_COURSE_2_CENTER.z - 40 + (r - 1) * 9 + jitterZ,
+                7 + Math.abs(Math.sin(idx * 3.7)) * 4
             );
-            group.add(treeSwayManager.addSwayingTree(tree));
         }
     }
     [
@@ -2564,13 +2718,48 @@ function buildGateCourse2() {
         house.position.set(houseX, 0, houseZ);
         house.rotation.y = h.ry;
         group.add(house);
-        // Samme registrering som rådhuset over - ellers ville droneen flydd rett gjennom husene også.
-        const halfDiag = Math.hypot(h.w / 2, h.d / 2);
-        SOLID_COLLIDERS.push({
-            minX: houseX - halfDiag, maxX: houseX + halfDiag,
-            minZ: houseZ - halfDiag, maxZ: houseZ + halfDiag,
-            topY: h.h
-        });
+        // Samme orienterte registrering som rådhuset over - ellers ville droneen flydd rett gjennom
+        // husene også, og en akse-rettet tilnærming hadde igjen gitt en for løs kollisjonsboks siden
+        // husene også er rotert (h.ry).
+        SOLID_COLLIDERS.push({ cx: houseX, cz: houseZ, halfW: h.w / 2, halfD: h.d / 2, yaw: h.ry, topY: h.h });
+    });
+
+    // Tett skogstripe langs vestsiden av siste strekket (etter brua, fram til mål) - godt UTENFOR selve
+    // porten-linjen (gate-elementene her ligger på x mellom -100 og -25, se GATE_WAYPOINTS_2), rent
+    // bakgrunnslandskap for å gjøre den ellers ganske stille avslutningen mindre tom, ikke noe droneen
+    // skal fly nær. Jitret rutenett, samme prinsipp som "infield"-skogen over.
+    for (let r = 0; r < 7; r++) {
+        for (let c = 0; c < 4; c++) {
+            const idx = r * 4 + c;
+            const jitterX = Math.sin(idx * 9.1) * 4;
+            const jitterZ = Math.cos(idx * 5.7) * 4;
+            addCourse2Tree(
+                group,
+                GATE_COURSE_2_CENTER.x - 125 - c * 14 + jitterX,
+                GATE_COURSE_2_CENTER.z - 20 + r * 18 + jitterZ,
+                6 + Math.abs(Math.sin(idx * 2.9)) * 5
+            );
+        }
+    }
+
+    // Tettere trær nær selve svingene på siste strekket (etter brua, fram til mål) - på BEGGE sider av
+    // banen her (både innsiden/øst mot senter og utsiden/vest mot skogstripen over), i motsetning til
+    // skogstripen over som bevisst holdt god avstand som ren bakgrunn. Disse skal oppleves som en del av
+    // selve svingen, ikke bare landskap - fortsatt trygg klaring til gate-fangstradiusene (se
+    // RACE_GATE_CENTERS_2, ~1-1.5 m), 10+ m er rikelig.
+    // OBS: de fire siste (nær gatene (-55,55)/(-25,75), rett før mål) sto opprinnelig som
+    // {-40,60}/{-40,68}/{-10,80} - regnet ut på nytt med faktisk vinkelrett avstand fra flylinja mellom
+    // nabogatene, det viste seg å være så lite som 0.9-4 m til rett-linja mellom portene (praktisk talt
+    // MIDT i banen) i stedet for den tiltenkte 10+ m klaringen. Erstattet med punkter 14 m vinkelrett ut
+    // fra midtpunktet på hvert av de to siste segmentene (gate->gate->mål).
+    [
+        { x: -113, z: -35 }, { x: -88, z: -22 }, // rundt gate (-100,-30)
+        { x: -100, z: 8 }, { x: -70, z: 20 },     // rundt gate (-85,15)
+        { x: -70, z: 48 }, { x: -32, z: 53 },     // rundt gate (-55,55)
+        { x: -48, z: 77 }, { x: -7, z: 67 }, { x: -18, z: 93 }, // rundt gate (-25,75) og siste strekk til mål
+        { x: -108, z: -58 }, { x: -85, z: -52 }   // rundt brua
+    ].forEach(function (t, i) {
+        addCourse2Tree(group, GATE_COURSE_2_CENTER.x + t.x, GATE_COURSE_2_CENTER.z + t.z, 6 + Math.abs(Math.sin(i * 3.3)) * 4);
     });
 
     return group;
@@ -3413,6 +3602,33 @@ function resolveGroundContact(dt, wasGrounded) {
         let embeddedInWall = false;
         let colliderTop = 0;
         SOLID_COLLIDERS.forEach(function (c) {
+            // Orienterte (roterte) kollidere - se orientedBoxLocalXZ-kommentaren lenger opp. MÅ ha egen
+            // gren her: uten den ville c.minX/maxX/minZ/maxZ vært undefined for disse, og
+            // "f.x < undefined"-sjekkene under ville alltid vært false - dvs. HELE kartet ville lest som
+            // "innenfor" boksen (aldri hoppet ut via early return), med NaN-dytting som resultat overalt
+            // under takhøyden. Det viste seg som usynlig "kollisjon i løse lufta" langt fra selve bygget.
+            if (c.yaw !== undefined) {
+                const loc = orientedBoxLocalXZ(f.x, f.z, c);
+                if (Math.abs(loc.lx) > c.halfW || Math.abs(loc.lz) > c.halfD) return;
+                if (f.y >= c.topY - GROUND_CLEARANCE) {
+                    colliderTop = Math.max(colliderTop, c.topY);
+                    return;
+                }
+                embeddedInWall = true;
+                const distMinX = loc.lx + c.halfW, distMaxX = c.halfW - loc.lx;
+                const distMinZ = loc.lz + c.halfD, distMaxZ = c.halfD - loc.lz;
+                const minDist = Math.min(distMinX, distMaxX, distMinZ, distMaxZ);
+                if (!wallPush || minDist < wallPush.dist) {
+                    let newLx = loc.lx, newLz = loc.lz;
+                    if (minDist === distMinX) newLx = -c.halfW;
+                    else if (minDist === distMaxX) newLx = c.halfW;
+                    else if (minDist === distMinZ) newLz = -c.halfD;
+                    else newLz = c.halfD;
+                    const w = orientedBoxWorldFromLocal(newLx, newLz, c);
+                    wallPush = { dist: minDist, deltaX: w.x - f.x, deltaZ: w.z - f.z };
+                }
+                return;
+            }
             if (f.x < c.minX || f.x > c.maxX || f.z < c.minZ || f.z > c.maxZ) return;
             if (f.y >= c.topY - GROUND_CLEARANCE) {
                 colliderTop = Math.max(colliderTop, c.topY);
@@ -3422,10 +3638,10 @@ function resolveGroundContact(dt, wasGrounded) {
             const distMinX = f.x - c.minX, distMaxX = c.maxX - f.x, distMinZ = f.z - c.minZ, distMaxZ = c.maxZ - f.z;
             const minDist = Math.min(distMinX, distMaxX, distMinZ, distMaxZ);
             if (!wallPush || minDist < wallPush.dist) {
-                if (minDist === distMinX) wallPush = { dist: minDist, axis: "x", delta: c.minX - f.x };
-                else if (minDist === distMaxX) wallPush = { dist: minDist, axis: "x", delta: c.maxX - f.x };
-                else if (minDist === distMinZ) wallPush = { dist: minDist, axis: "z", delta: c.minZ - f.z };
-                else wallPush = { dist: minDist, axis: "z", delta: c.maxZ - f.z };
+                if (minDist === distMinX) wallPush = { dist: minDist, deltaX: c.minX - f.x, deltaZ: 0 };
+                else if (minDist === distMaxX) wallPush = { dist: minDist, deltaX: c.maxX - f.x, deltaZ: 0 };
+                else if (minDist === distMinZ) wallPush = { dist: minDist, deltaX: 0, deltaZ: c.minZ - f.z };
+                else wallPush = { dist: minDist, deltaX: 0, deltaZ: c.maxZ - f.z };
             }
         });
         if (embeddedInWall) return false;
@@ -3436,12 +3652,20 @@ function resolveGroundContact(dt, wasGrounded) {
     });
 
     if (wallPush) {
-        if (wallPush.axis === "x") {
-            droneState.position.x += wallPush.delta;
-            if ((wallPush.delta > 0 && droneState.velocity.x < 0) || (wallPush.delta < 0 && droneState.velocity.x > 0)) droneState.velocity.x = 0;
-        } else {
-            droneState.position.z += wallPush.delta;
-            if ((wallPush.delta > 0 && droneState.velocity.z < 0) || (wallPush.delta < 0 && droneState.velocity.z > 0)) droneState.velocity.z = 0;
+        // Generalisert (verdens-vektor, ikke "x eller z") for å dekke orienterte kollidere, som kan
+        // trenge en dytt-retning som ikke er akse-rettet. For de gamle akse-rettede kolliderne er
+        // deltaX/deltaZ alltid rene enkelt-akse-verdier, så dette reduserer til nøyaktig samme oppførsel
+        // som før (kun nullstiller hastighetskomponenten som driver PUNKTET dypere inn i veggen).
+        droneState.position.x += wallPush.deltaX;
+        droneState.position.z += wallPush.deltaZ;
+        const len = Math.hypot(wallPush.deltaX, wallPush.deltaZ);
+        if (len > 1e-6) {
+            const dirX = wallPush.deltaX / len, dirZ = wallPush.deltaZ / len;
+            const vAlong = droneState.velocity.x * dirX + droneState.velocity.z * dirZ;
+            if (vAlong < 0) {
+                droneState.velocity.x -= vAlong * dirX;
+                droneState.velocity.z -= vAlong * dirZ;
+            }
         }
     }
 
@@ -5178,6 +5402,7 @@ function updateRacingStage(stage, dt, now) {
             // oppleves akkurat idet streken krysses, som i ekte racing.
             exerciseState.engaged = true;
             exerciseState.raceStartTime = now;
+            exerciseState.warningUntil = 0; // fjern start-hintet med det samme - ikke la det henge igjen
         } else {
             // Runde fullført - alle porter truffet i rekkefølge for å komme hit igjen.
             const elapsedSec = (now - exerciseState.raceStartTime) / 1000;
@@ -5241,11 +5466,41 @@ function renderRacingLeaderboard() {
         const time = document.createElement("span");
         time.className = "sim-racing-lb-time";
         time.textContent = formatExerciseTime(entry.timeSec);
+        // Endre-knapp for en allerede lagret tid (ikke feltet øverst - det setter kun navnet på
+        // FREMTIDIGE runder) - for å rette et feilskrevet navn i etterkant, se renameRacingLeaderboardEntry.
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "sim-racing-lb-edit";
+        editBtn.title = "Endre navn på denne tiden";
+        editBtn.innerHTML = '<i class="fa-solid fa-pen"></i>';
+        editBtn.addEventListener("click", function () { renameRacingLeaderboardEntry(i); });
         row.appendChild(rank);
         row.appendChild(name);
         row.appendChild(time);
+        row.appendChild(editBtn);
         listEl.appendChild(row);
     });
+}
+// Endrer navnet på en ALLEREDE lagret tid (i motsetning til navnefeltet øverst, som kun gjelder
+// runder man fullfører etter at man har endret det) - typisk for å rette et feilskrevet navn.
+// Bevisst en "er du sikker"-bekreftelse først (ikke bare et rett-frem endre-felt): listen er felles for
+// alle som bruker denne nettleseren/maskinen, og uten friksjon her hadde det vært for lett å stille
+// endre navnet på ANDRES tid og "jukse" til seg æren for en runde man ikke selv fløy.
+function renameRacingLeaderboardEntry(i) {
+    const entry = racingLeaderboard.entries[i];
+    if (!entry) return;
+    const ok = window.confirm(
+        "Endre navnet på denne tiden (" + formatExerciseTime(entry.timeSec) + ", satt av \"" + entry.name +
+        "\")?\n\nBruk dette kun til å rette DITT EGET feilskrevne navn - ikke for å jukse til deg æren for andres runder!"
+    );
+    if (!ok) return;
+    const newName = window.prompt("Nytt navn:", entry.name);
+    if (newName === null) return; // avbrutt
+    const trimmed = newName.trim().slice(0, 16);
+    if (!trimmed) return;
+    entry.name = trimmed;
+    saveRacingLeaderboard();
+    renderRacingLeaderboard();
 }
 function racingBestTimeSec() {
     return racingLeaderboard.entries.length > 0 ? racingLeaderboard.entries[0].timeSec : null;
@@ -5472,6 +5727,7 @@ function animate(now) {
     updateWindsockVisual(now);
     treeSwayManager.update(now, currentWindVector);
     updateClockTower(Date.now());
+    updateFlags(now);
     updateShadowCamera();
     updateExerciseGuideVisual(now);
     updateHud();
@@ -5528,9 +5784,11 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     document.getElementById("toggleExercisesBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("exercisesPanel"));
-        // Vis fremgangen for en øvelse som allerede er i gang, ellers listen.
+        // Vis fremgangen for en øvelse som allerede er i gang, ellers øverste nivå (kategorivalget) -
+        // samme oppførsel som M-snarveien under (var tidligere showExerciseListView() her, som hoppet
+        // rett forbi kategorivalget og inn i den sist viste listen).
         if (exerciseState.active) showExerciseDetail(exerciseState.exerciseId);
-        else showExerciseListView();
+        else showExerciseCategoryView();
     });
     document.getElementById("exerciseBackToListBtn").addEventListener("click", function () {
         showExerciseListView(currentExerciseCategory);
