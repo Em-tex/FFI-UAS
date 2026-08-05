@@ -295,15 +295,54 @@
         return rawFirstGamepad();
     }
 
+    // scale (default 1, se DEFAULT_GAMEPAD_MAP/createAxisCalibrationManager) - noen sendere rapporterer
+    // ikke ±1.0 ved fysisk fullt utslag (f.eks. bare ±0.61), som uten denne ville gitt permanent
+    // redusert kontrollmyndighet uansett hvor langt spaken faktisk føres. Ganges inn FØR reverse/clamp.
     function readStickAxis(gp, channelMap) {
-        const raw = gp.axes[channelMap.axis] || 0;
+        const raw = (gp.axes[channelMap.axis] || 0) * (channelMap.scale || 1);
         return clamp(raw * (channelMap.reverse ? -1 : 1), -1, 1);
     }
 
     function readThrottleAxis(gp, channelMap) {
-        const raw = gp.axes[channelMap.axis] || 0;
+        const raw = (gp.axes[channelMap.axis] || 0) * (channelMap.scale || 1);
         const signed = raw * (channelMap.reverse ? -1 : 1);
         return clamp((signed + 1) / 2, 0, 1);
+    }
+
+    // Full-utslag-kalibrering: fanger opp maks observert |akseverdi| PER KANAL over et kort tidsvindu
+    // mens brukeren beveger alle spakene til ytterpunktene, og lagrer 1/maxObservert som skalering (se
+    // readStickAxis/readThrottleAxis over) - IKKE en full min/max/senter-kalibrering (det hadde også
+    // krevd å fange senterverdi/dødsone), bare den vanligste feilen (sendere som skalerer utslaget).
+    function createAxisCalibrationManager(channelMap, channels, onDone, durationMs) {
+        let active = false;
+        let endAt = 0;
+        let observed = {}; // akse-indeks -> maks |verdi| sett i vinduet
+        function start() {
+            active = true;
+            endAt = performance.now() + (durationMs || 4000);
+            observed = {};
+        }
+        function isActive() { return active; }
+        function remainingMs() { return active ? Math.max(0, endAt - performance.now()) : 0; }
+        function poll(gp) {
+            if (!active || !gp) return;
+            for (let i = 0; i < gp.axes.length; i++) {
+                observed[i] = Math.max(observed[i] || 0, Math.abs(gp.axes[i]));
+            }
+            if (performance.now() >= endAt) {
+                active = false;
+                channels.forEach(function (ch) {
+                    const maxSeen = observed[channelMap[ch].axis] || 0;
+                    // Justerer kun hvis spaken faktisk ble beveget markert (>0.2, ellers vet vi ikke noe
+                    // reelt om denne kanalen) OG ikke allerede er nesten helt ute (>0.97) - unngår både
+                    // å dele på nesten-null (urimelig stor skalering) og å "forsterke" en sender som
+                    // allerede er fint kalibrert (ren støy i input-lesingen ville da blitt skalert opp).
+                    if (maxSeen > 0.2 && maxSeen < 0.97) channelMap[ch].scale = clamp(1 / maxSeen, 1, 3);
+                });
+                if (onDone) onDone();
+            }
+        }
+        return { start: start, isActive: isActive, remainingMs: remainingMs, poll: poll };
     }
 
     // Sjekker om en lagret binding ({type:"button",index} eller {type:"axis",index,onValue,offValue})
@@ -514,7 +553,16 @@
         });
     }
 
-    function updateGamepadAxesReadout(readoutEl, gp, minChannels) {
+    // Viser BÅDE akser ("Kanal") og knapper - noen sendere/USB-adaptere legger enkelte brytere/kanaler
+    // på gamepad-API-ets buttons[] i stedet for axes[] (typisk høyere kanalnumre på større sendere), og
+    // uten knappe-listen her ville de brytene vært helt usynlige i denne visningen selv om de faktisk
+    // registreres av nettleseren - så det så ut som "ingenting skjer" når man trykket dem.
+    // outputByAxis (valgfri, kun quad-simulatoren bruker den p.t. - fixed-wing kaller uten): { akse-
+    // indeks: {label, value} }, en ekstra kolonne som viser hva den kanalen faktisk gir som utgangsverdi
+    // TIL SPILLET (etter reverse/skalering, se readStickAxis/readThrottleAxis) for kanaler som er mappet
+    // til roll/pitch/yaw/gass - uten denne kunne man se rå kanalverdien endre seg, men ikke om/hvordan
+    // f.eks. "Kalibrer fullt utslag" faktisk endret det programmet mottar.
+    function updateGamepadAxesReadout(readoutEl, gp, minChannels, outputByAxis) {
         if (!gp) {
             readoutEl.textContent = "Ingen fjernkontroll/gamepad tilkoblet.";
             return;
@@ -524,8 +572,37 @@
         for (let i = 0; i < channelCount; i++) {
             const v = gp.axes[i];
             const line = document.createElement("div");
-            line.textContent = "Kanal " + (i + 1) + ": " + (v === undefined ? "–" : v.toFixed(2));
+            line.style.cssText = "display:flex; gap:8px; align-items:baseline;";
+            const chSpan = document.createElement("span");
+            chSpan.style.cssText = "flex:0 0 62px;";
+            chSpan.textContent = "Kanal " + (i + 1) + ":";
+            const rawSpan = document.createElement("span");
+            rawSpan.style.cssText = "flex:0 0 48px;";
+            rawSpan.textContent = v === undefined ? "–" : v.toFixed(2);
+            line.appendChild(chSpan);
+            line.appendChild(rawSpan);
+            const mapped = outputByAxis && outputByAxis[i];
+            if (mapped) {
+                const outSpan = document.createElement("span");
+                outSpan.style.cssText = "color:var(--ffi-blue); font-weight:700;";
+                outSpan.textContent = "→ " + mapped.label + ": " + mapped.value.toFixed(2);
+                line.appendChild(outSpan);
+            }
             readoutEl.appendChild(line);
+        }
+        if (gp.buttons.length > 0) {
+            const heading = document.createElement("div");
+            heading.style.cssText = "margin-top:6px; font-weight:700;";
+            heading.textContent = "Knapper";
+            readoutEl.appendChild(heading);
+            for (let i = 0; i < gp.buttons.length; i++) {
+                const btn = gp.buttons[i];
+                const active = btn.pressed || btn.value > 0.05;
+                const line = document.createElement("div");
+                if (active) line.style.color = "#ffd76b";
+                line.textContent = "Knapp " + i + ": " + btn.value.toFixed(2) + (active ? " (aktiv)" : "");
+                readoutEl.appendChild(line);
+            }
         }
     }
 
@@ -1054,6 +1131,7 @@
         getActiveGamepad: getActiveGamepad,
         readStickAxis: readStickAxis,
         readThrottleAxis: readThrottleAxis,
+        createAxisCalibrationManager: createAxisCalibrationManager,
         isBindingActive: isBindingActive,
         createButtonBindingManager: createButtonBindingManager,
         populateInputSourceSelect: populateInputSourceSelect,

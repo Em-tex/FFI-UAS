@@ -1101,6 +1101,20 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     border-radius: 4px;
 }
 .sim-racing-lb-edit:hover { color: #ffd76b; background: rgba(255,255,255,0.12); }
+/* Klikkbar tid (race3 - har rundetider bak seg, se addRacingLapResult/renderRacingLeaderboard) - egen
+   understrekning som eneste hint om at den er klikkbar, i motsetning til vanlige (race1) tider. */
+.sim-racing-lb-time-expandable {
+    cursor: pointer;
+    text-decoration: underline dotted;
+}
+.sim-racing-lb-splits {
+    padding: 2px 8px 6px 34px; /* venstre innrykk matcher rank+navn-kolonnen over */
+    font-size: 0.76rem;
+    color: rgba(255,255,255,0.8);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
 .sim-racing-lb-empty {
     font-size: 0.8rem;
     color: rgba(255,255,255,0.7);

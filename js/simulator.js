@@ -185,14 +185,19 @@ const DEFAULT_RATES = {
 
 // TAER-rekkefølge (Throttle/Aileron/Elevator/Rudder) - standard kanalrekkefølge på TBS Crossfire/Tango-
 // sendere i USB-joystick-modus. Justerbart i kalibreringspanelet for andre sendere/rekkefølger.
+// scale: 1 er default (ingen justering) - satt av "Kalibrer fullt utslag" (se
+// Sim.createAxisCalibrationManager) for sendere som ikke rapporterer ±1.0 ved fysisk fullt utslag.
 const DEFAULT_GAMEPAD_MAP = {
-    throttle: { axis: 0, reverse: false },
-    roll: { axis: 1, reverse: false },
-    pitch: { axis: 2, reverse: false },
-    yaw: { axis: 3, reverse: false },
-    buttons: { kill: null, modeAcro: null, modeStabilized: null, modeAltHold: null }
+    throttle: { axis: 0, reverse: false, scale: 1 },
+    roll: { axis: 1, reverse: false, scale: 1 },
+    pitch: { axis: 2, reverse: false, scale: 1 },
+    yaw: { axis: 3, reverse: false, scale: 1 },
+    buttons: { kill: null, modeAcro: null, modeStabilized: null, modeAltHold: null, reset: null }
 };
-const BUTTON_ACTION_LABELS = { kill: "Kill/Arm", modeAcro: "Modus: Acro", modeStabilized: "Modus: Stabilized", modeAltHold: "Modus: Alt Hold" };
+const BUTTON_ACTION_LABELS = {
+    kill: "Kill/Arm", modeAcro: "Modus: Acro", modeStabilized: "Modus: Stabilized", modeAltHold: "Modus: Alt Hold",
+    reset: "Reset (R)"
+};
 
 const DEFAULT_WIND = { enabled: false, speed: 5, directionDeg: 0, gust: 0.3 };
 
@@ -609,7 +614,7 @@ const EXERCISES = {
     race1: {
         id: "race1",
         icon: "fa-flag-checkered",
-        label: "Racingbane",
+        label: "Racingbane - enkeltrunde",
         droneClass: "racing",
         forceCameraMode: "fpv",
         forceFlightMode: "acro",
@@ -626,14 +631,39 @@ const EXERCISES = {
             "merke dine egne tider.\n\nSpawner i Racing-klasse, Acro-modus og FPV-kamera.",
         // Ikke noTiming (ex11 sin variant) - racing har en helt egen, løpende klokke (se
         // updateExerciseHud/raceStartTime), bare vist annerledes enn de vanlige øvelsenes tidtaking.
-        stages: [{ id: "race-lap", label: "Racingbane", type: "racing" }]
+        stages: [{ id: "race-lap", label: "Racingbane", type: "racing", lapsRequired: 1 }]
+    },
+    // Samme bane/spawn/porter som race1, men totaltiden for 3 SAMMENHENGENDE runder telles i stedet for
+    // én runde av gangen - se lapsRequired i updateRacingStage. Egen ledertavle (racingLeaderboard.entries3,
+    // ikke sammenlignbar med enkeltrunde-tidene) der hver oppføring også lagrer de tre enkeltrundetidene
+    // (se addRacingLapResult/renderRacingLeaderboard - klikk på tiden for å se dem). Dronen resettes
+    // automatisk til start/mål idet tredje runde fullføres (se updateRacingStage), i stedet for å fortsette
+    // en løpende runde-etter-runde-klokke slik race1 gjør.
+    race3: {
+        id: "race3",
+        icon: "fa-flag-checkered",
+        label: "Racingbane - 3 runder",
+        droneClass: "racing",
+        forceCameraMode: "fpv",
+        forceFlightMode: "acro",
+        forceFpvTiltDeg: 30,
+        freeCameraToggle: true,
+        shortDescription: "Fullfør 3 sammenhengende runder så fort du kan - totaltiden (og hver rundetid) telles.",
+        startHint: "Fly gjennom porten for å starte tiden. 3 runder på rad.",
+        fullDescription: "Samme racingbane som enkeltrunde-øvelsen, men her teller totaltiden for TRE " +
+            "sammenhengende runder i stedet for én - klokken starter idet du krysser start/mål første " +
+            "gang, og fortsetter gjennom alle tre rundene uten stopp.\n\nEtter tredje runde stopper " +
+            "klokken automatisk og dronen resettes til start. Totaltiden havner i en egen ledertavle " +
+            "(ikke sammenlignbar med enkeltrunde-tidene) - klikk på en tid i ledertavlen for å se de tre " +
+            "enkeltrundetidene den består av.\n\nSpawner i Racing-klasse, Acro-modus og FPV-kamera.",
+        stages: [{ id: "race-3lap", label: "Racingbane - 3 runder", type: "racing", lapsRequired: 3 }]
     }
 };
 const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "ex10", "ex11"];
 // Kategorisering for øvelsesmenyens undermenyer (Stabilized/Acro) - se showExerciseCategoryView. Racing
 // (race1) er bevisst IKKE i EXERCISE_ORDER (som styrer bekreftelsen/diplomet) - det er et åpent
 // tidsforsøk med egen ledertavle, ikke en engangs bestått/ikke-bestått-øvelse.
-const ACRO_EXERCISE_ORDER = ["race1"];
+const ACRO_EXERCISE_ORDER = ["race1", "race3"];
 
 // Kun sluttresultat (bestått + beste tid) lagres - all fremdrift underveis (steg/runde/tid/varsler)
 // lever kun i minnet og forsvinner ved sideinnlasting, se exerciseState lenger ned.
@@ -3286,15 +3316,24 @@ const BUTTON_ACTIONS = {
     kill: function () { toggleKill("gamepad"); },
     modeAcro: function () { droneState.flightMode = "acro"; },
     modeStabilized: function () { droneState.flightMode = "stabilized"; },
-    modeAltHold: function () { droneState.flightMode = "althold"; }
+    modeAltHold: function () { droneState.flightMode = "althold"; },
+    // handleResetRequest er en function-DECLARATION lenger ned i filen - fullt hoistet, så referansen
+    // her (i en funksjonskropp som først kjører når bryteren faktisk trigges) er trygg selv om den
+    // tekstuelt står før definisjonen. Samme funksjon som R-tasten kaller.
+    reset: function () { handleResetRequest(); }
 };
 const buttonManager = Sim.createButtonBindingManager(gamepadMap.buttons, BUTTON_ACTIONS, saveGamepadMap);
+// Se Sim.createAxisCalibrationManager - fanger opp maks utslag per kanal over et kort tidsvindu
+// ("Kalibrer fullt utslag" i fjernkontroll-panelet, se buildGamepadPanel) for sendere som ikke
+// rapporterer ±1.0 ved fysisk fullt utslag.
+const axisCalibrationManager = Sim.createAxisCalibrationManager(gamepadMap, ["throttle", "roll", "pitch", "yaw"], saveGamepadMap);
 
 function updateInput(dt) {
     updateLinkAndBattery(dt);
 
     const gp = getActiveGamepad();
     if (gp) buttonManager.poll(gp);
+    if (gp) axisCalibrationManager.poll(gp);
 
     const dropChance = settings.realisticMode ? (1 - linkQuality) : 0;
     const packetDropped = dropChance > 0 && Math.random() < dropChance;
@@ -4179,7 +4218,18 @@ const gamepadAxesReadoutEl = document.getElementById("gamepadAxesReadout");
 function updateGamepadAxesReadout(gp) {
     if (gamepadPanelEl.style.display === "none") return;
     const activeGp = gp || getActiveGamepad();
-    Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
+    let outputByAxis = null;
+    if (activeGp) {
+        // Hvilken FYSISK kanal-indeks som er mappet til hver av de fire spillkanalene, med det den
+        // faktisk gir spillet AKKURAT NÅ (etter reverse/skalering) - se kommentaren ved
+        // Sim.updateGamepadAxesReadout.
+        outputByAxis = {};
+        outputByAxis[gamepadMap.throttle.axis] = { label: "Gass", value: readThrottleAxis(activeGp, gamepadMap.throttle) };
+        outputByAxis[gamepadMap.roll.axis] = { label: "Roll", value: readStickAxis(activeGp, gamepadMap.roll) };
+        outputByAxis[gamepadMap.pitch.axis] = { label: "Pitch", value: readStickAxis(activeGp, gamepadMap.pitch) };
+        outputByAxis[gamepadMap.yaw.axis] = { label: "Yaw", value: readStickAxis(activeGp, gamepadMap.yaw) };
+    }
+    Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS, outputByAxis);
 }
 
 function setGamepadButtonVisible(visible) {
@@ -5071,7 +5121,15 @@ function startExercise(id) {
     document.getElementById("exercisesPanel").style.display = "none";
     // Racingbanens ledertavle vises i stedet for menyen mens den flys (se stopExercise for skjuling) -
     // delvis gjennomsiktig, se CSS, så den ikke sperrer sikten helt slik selve menyen ville gjort.
-    document.getElementById("racingLeaderboardOverlay").style.display = (id === "race1") ? "" : "none";
+    document.getElementById("racingLeaderboardOverlay").style.display = (id === "race1" || id === "race3") ? "" : "none";
+    // race1/race3 har HVER SIN ledertavle (ikke sammenlignbare tider, se racingLeaderboard.entries/
+    // entries3) - må tegnes på nytt her, ikke bare når en ny tid legges til, ellers ville man se forrige
+    // øvelses liste et øyeblikk før man i det hele tatt har fullført en runde i DENNE.
+    if (id === "race1" || id === "race3") {
+        document.getElementById("racingLeaderboardTitle").textContent = "Ledertavle - " +
+            (id === "race3" ? "3 runder" : "Enkeltrunde");
+        renderRacingLeaderboard();
+    }
 }
 
 // Idempotent opprydning - kalles både fra "Avbryt" og fra starten av startExercise (dekker "bytt til
@@ -5458,22 +5516,43 @@ function updateKillswitchVisuals(now, dt) {
    umiddelbart uten å måtte krysse start på nytt. wpIndex/engaged gjenbrukes fra det generelle
    øvelsessystemet (samme felt som løype-øvelsene bruker); racing-spesifikt er kun raceStartTime.
 */
-// captureRadius: romslig nok til å dekke det meste av selve åpningen (ikke bare et lite punkt midt i)
-// - en drone som flyr gjennom nær kanten i høy fart skal fortsatt registreres, ikke bare et perfekt
-// sentrert gjennomtreff. 0.55 * størrelsen dekker godt over halve åpningsbredden på hver kant.
+// Åpningen registreres som en boks (halfW/halfH, lokalt X/Y i gatens eget rotererte plan - se
+// isDroneInGateOpening) i stedet for en KULE rundt sentrum (den gamle captureRadius-modellen) - en kule
+// kunne trigges ved å passere et stykke UTENFOR selve rammen også, så lenge man var nær nok senterpunktet
+// i luftlinje (f.eks. rett over eller til siden av portsøylene). 0.92 av halve størrelsen gir fortsatt
+// god klaring nær kantene for en drone i høy fart, uten å telle en tydelig utenfor-passering.
 const RACE_GATE_CENTERS_2 = GATE_PLACEMENTS_2.map(function (placement) {
     const wp = placement.wp;
     if (wp.type === "barn") {
         return {
             x: placement.x, y: BARN_DIMENSIONS.sillY + BARN_DIMENSIONS.windowH / 2, z: placement.z,
-            captureRadius: Math.min(BARN_DIMENSIONS.windowW, BARN_DIMENSIONS.windowH) * 0.55
+            yaw: placement.yaw,
+            halfW: BARN_DIMENSIONS.windowW / 2 * 0.92, halfH: BARN_DIMENSIONS.windowH / 2 * 0.92
         };
     }
     return {
         x: placement.x, y: placement.y + wp.gap + wp.size / 2, z: placement.z,
-        captureRadius: wp.size * 0.55
+        yaw: placement.yaw,
+        halfW: wp.size / 2 * 0.92, halfH: wp.size / 2 * 0.92
     };
 });
+// Hvor nær selve gate-/vindusplanet (lokal Z, langs flyretningen gjennom åpningen) droneen må være for
+// at en kryssing skal telle - romslig nok til å ikke miste registreringer mellom to bilder ved høy fart
+// (updateRacingStage kjører én gang per RENDRET bilde, ikke per fysikk-tikk), men fortsatt tett nok til
+// at det faktisk betyr "var akkurat her", ikke "et stykke unna langs banen".
+const RACE_GATE_DEPTH_TOLERANCE = 1.2;
+// Krever at droneen er INNENFOR selve åpningen (lokal X/Y, se over) OG nær planet (lokal Z) SAMTIDIG -
+// se kommentaren ved RACE_GATE_CENTERS_2 for hvorfor dette erstattet den gamle kule-modellen. Samme
+// lokal-transform-prinsipp som orientedBoxLocalXZ (rotasjon om Y med gate.yaw), for ett enkelt punkt
+// (droneposisjonen) i stedet for et bokshjørne.
+function isDroneInGateOpening(gate) {
+    const dx = droneState.position.x - gate.x, dz = droneState.position.z - gate.z;
+    const cosA = Math.cos(gate.yaw), sinA = Math.sin(gate.yaw);
+    const localX = dx * cosA - dz * sinA;
+    const localZ = dx * sinA + dz * cosA;
+    const localY = droneState.position.y - gate.y;
+    return Math.abs(localX) <= gate.halfW && Math.abs(localY) <= gate.halfH && Math.abs(localZ) <= RACE_GATE_DEPTH_TOLERANCE;
+}
 const RACE_START_PLACEMENT = GATE_PLACEMENTS_2[0]; // start/mål-porten, se GATE_WAYPOINTS_2
 // meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner. Økt videre fra 15 til 18 for enda
 // mer fartsoppbygging-strekk før start/mål - klaringen mot forrige gate i løypa (den siste før man runder
@@ -5500,6 +5579,8 @@ function spawnRacingStage(stage) {
     exerciseState.wpIndex = 0;
     exerciseState.engaged = false;
     exerciseState.raceStartTime = 0;
+    exerciseState.raceLapStartTime = 0;
+    exerciseState.raceLapSplits = [];
 }
 
 // Racing-spesifikk: automatisk omstart et gitt antall sekunder etter et krasj (droneState.crashed) -
@@ -5508,7 +5589,7 @@ function spawnRacingStage(stage) {
 // kreve en manuell tastetrykk-pause hver gang. IKKE for personskade (droneState.injured, treffer
 // publikum/pilot) - det er bevisst utenfor scope her (bare "krasj", se brukerens ordlyd), og en slik
 // hendelse bør uansett kreve et bevisst R-trykk, ikke stille forsvinne etter 2 sekunder.
-const RACE_CRASH_AUTO_RESET_SEC = 2;
+const RACE_CRASH_AUTO_RESET_SEC = 1.5;
 function updateRacingCrashAutoReset(now) {
     if (!droneState.crashed) {
         exerciseState.raceCrashDetectedAt = null;
@@ -5528,25 +5609,54 @@ function updateRacingStage(stage, dt, now) {
     exerciseState.headingErrorDeg = null; // ingen nese-krav i racing - fri stil, bare gjennom portene
     const gates = RACE_GATE_CENTERS_2;
     const wp = gates[exerciseState.wpIndex];
-    const dist = Math.hypot(droneState.position.x - wp.x, droneState.position.y - wp.y, droneState.position.z - wp.z);
-    if (dist >= wp.captureRadius) return;
+    if (!isDroneInGateOpening(wp)) return;
 
     if (exerciseState.wpIndex === 0) {
+        const lapsRequired = stage.lapsRequired || 1;
         if (!exerciseState.engaged) {
-            // Første kryssing av start/mål - klokken starter. Bevisst ingen forhåndsvarsel om NÅR dette
-            // skjer (kun det generelle exercise.startHint ved spawn) - selve klokkestarten skal
-            // oppleves akkurat idet streken krysses, som i ekte racing.
+            // Første kryssing av start/mål - klokken starter (for HELE forsøket, alle rundene). Bevisst
+            // ingen forhåndsvarsel om NÅR dette skjer (kun det generelle exercise.startHint ved spawn) -
+            // selve klokkestarten skal oppleves akkurat idet streken krysses, som i ekte racing.
             exerciseState.engaged = true;
             exerciseState.raceStartTime = now;
+            exerciseState.raceLapStartTime = now; // starten på DENNE ene runden (splitt-tid, se under)
+            exerciseState.raceLapSplits = [];
             exerciseState.warningUntil = 0; // fjern start-hintet med det samme - ikke la det henge igjen
         } else {
-            // Runde fullført - alle porter truffet i rekkefølge for å komme hit igjen.
-            const elapsedSec = (now - exerciseState.raceStartTime) / 1000;
-            addRacingLapResult(elapsedSec);
-            exerciseState.warningMessage = "Runde fullført: " + formatExerciseTime(elapsedSec, 2) + "!";
-            exerciseState.warningUntil = now + 3500;
-            exerciseState.warningIsSuccess = true;
-            exerciseState.raceStartTime = now; // ny runde starter umiddelbart - løpende tidsforsøk
+            // Én runde fullført - alle porter truffet i rekkefølge for å komme hit igjen.
+            const lapSec = (now - exerciseState.raceLapStartTime) / 1000;
+            exerciseState.raceLapSplits.push(lapSec);
+            exerciseState.raceLapStartTime = now;
+            if (exerciseState.raceLapSplits.length >= lapsRequired) {
+                // Nok runder for DETTE forsøket - lagre totaltiden (+ rundetidene hvis mer enn én, se
+                // addRacingLapResult) og avslutt forsøket. race1 (lapsRequired=1) treffer denne grenen
+                // på HVER kryssing (siden 1 alltid er >= 1) - engaged settes til false her, men det
+                // gjenåpnes umiddelbart av den ELSE-grenen over neste gang start krysses, så det er
+                // ingen observerbar forskjell fra den gamle "evig løpende klokke"-oppførselen for
+                // enkeltrunde: hver kryssing gir fortsatt et resultat OG starter neste runde med det
+                // samme.
+                const totalSec = (now - exerciseState.raceStartTime) / 1000;
+                addRacingLapResult(totalSec, lapsRequired > 1 ? exerciseState.raceLapSplits : null);
+                exerciseState.warningMessage = (lapsRequired > 1 ? "Løp fullført: " : "Runde fullført: ") +
+                    formatExerciseTime(totalSec, 2) + "!";
+                exerciseState.warningUntil = now + 3500;
+                exerciseState.warningIsSuccess = true;
+                exerciseState.engaged = false;
+                exerciseState.raceLapSplits = [];
+                if (lapsRequired > 1) {
+                    // "Etter 3 runder resettes dronen" - samme kodesti som R-tasten/handleResetRequest,
+                    // som selv kaller spawnForExercise -> spawnRacingStage og nullstiller wpIndex/engaged
+                    // der. MÅ returnere med det samme etterpå - ellers ville linjen under (som ALLTID
+                    // kjører) overskrevet den nettopp nullstilte wpIndex=0 med 1.
+                    handleResetRequest();
+                    return;
+                }
+            } else {
+                exerciseState.warningMessage = "Runde " + exerciseState.raceLapSplits.length + "/" + lapsRequired +
+                    ": " + formatExerciseTime(lapSec, 2);
+                exerciseState.warningUntil = now + 2000;
+                exerciseState.warningIsSuccess = true;
+            }
         }
     }
     exerciseState.wpIndex = (exerciseState.wpIndex + 1) % gates.length;
@@ -5563,7 +5673,10 @@ function updateRacingStage(stage, dt, now) {
 // baneendringer som gjør gamle tider usammenlignbare kan bumpe denne på nytt samme måte.
 const RACING_LEADERBOARD_KEY = "ffi-uas:racing-leaderboard-v2";
 const RACING_LEADERBOARD_MAX_ENTRIES = 20;
-const DEFAULT_RACING_LEADERBOARD = { playerName: "Pilot", entries: [] };
+// entries3 lagt til her (samme lagringsnøkkel/versjon fortsatt - Sim.loadJSON fyller inn manglende felt
+// fra denne default-strukturen, se defaults-merge-mønsteret, så et EKSISTERENDE v2-lagret objekt uten
+// entries3 fra før race3 fantes får den tom i stedet for undefined, uten behov for en ny nøkkel/versjon).
+const DEFAULT_RACING_LEADERBOARD = { playerName: "Pilot", entries: [], entries3: [] };
 function loadRacingLeaderboard() {
     return Sim.loadJSON(RACING_LEADERBOARD_KEY, DEFAULT_RACING_LEADERBOARD);
 }
@@ -5572,31 +5685,40 @@ function saveRacingLeaderboard() {
 }
 const racingLeaderboard = loadRacingLeaderboard();
 
-// Manuell nullstilling av HELE ledertavlen (navnet i feltet øverst beholdes - kun tidene fjernes) - egen
-// "er du sikker"-bekreftelse siden dette er permanent og rammer ALLE tider, ikke bare én. Samme mønster
-// som renameRacingLeaderboardEntry.
+// race1 (enkeltrunde) og race3 (3 runder) har HVER SIN liste - totaltiden for tre runder er ikke
+// sammenlignbar med én enkelt runde. id (default: den aktive øvelsen) avgjør hvilken.
+function racingEntriesFor(id) {
+    return (id || exerciseState.exerciseId) === "race3" ? racingLeaderboard.entries3 : racingLeaderboard.entries;
+}
+
+// Manuell nullstilling av HELE (aktive) ledertavlen (navnet i feltet øverst beholdes - kun tidene
+// fjernes) - egen "er du sikker"-bekreftelse siden dette er permanent og rammer ALLE tider, ikke bare
+// én. Samme mønster som renameRacingLeaderboardEntry. Rammer kun listen for øvelsen som faktisk vises
+// akkurat nå (se racingEntriesFor) - ikke begge lister på én gang.
 function resetRacingLeaderboard() {
-    if (racingLeaderboard.entries.length === 0) return;
+    const entries = racingEntriesFor();
+    if (entries.length === 0) return;
     const ok = window.confirm(
-        "Nullstille HELE ledertavlen? Dette sletter alle " + racingLeaderboard.entries.length +
-        " lagrede tid(er) permanent - dette kan ikke angres."
+        "Nullstille HELE ledertavlen for " + EXERCISES[exerciseState.exerciseId].label + "? Dette sletter alle " +
+        entries.length + " lagrede tid(er) permanent - dette kan ikke angres."
     );
     if (!ok) return;
-    racingLeaderboard.entries = [];
+    entries.length = 0;
     saveRacingLeaderboard();
     renderRacingLeaderboard();
 }
 
-function addRacingLapResult(timeSec) {
-    racingLeaderboard.entries.push({
-        name: racingLeaderboard.playerName || "Pilot", timeSec: timeSec, dateISO: new Date().toISOString()
-    });
+// lapSplits: kun for race3 (de tre enkeltrundetidene bak totaltiden, se updateRacingStage) - udefinert/
+// utelatt for race1, som kun har én rundetid (= selve timeSec, ingen egen splitt-liste å vise).
+function addRacingLapResult(timeSec, lapSplits) {
+    const entries = racingEntriesFor();
+    const entry = { name: racingLeaderboard.playerName || "Pilot", timeSec: timeSec, dateISO: new Date().toISOString() };
+    if (lapSplits && lapSplits.length > 0) entry.lapSplits = lapSplits;
+    entries.push(entry);
     // Beste tid øverst - kappes til RACING_LEADERBOARD_MAX_ENTRIES for at listen ikke skal vokse i det
     // uendelige (bare de beste rundene er interessante uansett).
-    racingLeaderboard.entries.sort(function (a, b) { return a.timeSec - b.timeSec; });
-    if (racingLeaderboard.entries.length > RACING_LEADERBOARD_MAX_ENTRIES) {
-        racingLeaderboard.entries.length = RACING_LEADERBOARD_MAX_ENTRIES;
-    }
+    entries.sort(function (a, b) { return a.timeSec - b.timeSec; });
+    if (entries.length > RACING_LEADERBOARD_MAX_ENTRIES) entries.length = RACING_LEADERBOARD_MAX_ENTRIES;
     saveRacingLeaderboard();
     renderRacingLeaderboard();
 }
@@ -5604,14 +5726,15 @@ function renderRacingLeaderboard() {
     const listEl = document.getElementById("racingLeaderboardList");
     if (!listEl) return;
     listEl.innerHTML = "";
-    if (racingLeaderboard.entries.length === 0) {
+    const entries = racingEntriesFor();
+    if (entries.length === 0) {
         const empty = document.createElement("div");
         empty.className = "sim-racing-lb-empty";
         empty.textContent = "Ingen tider ennå - fullfør en runde!";
         listEl.appendChild(empty);
         return;
     }
-    racingLeaderboard.entries.forEach(function (entry, i) {
+    entries.forEach(function (entry, i) {
         const row = document.createElement("div");
         row.className = "sim-racing-lb-row" + (i === 0 ? " sim-racing-lb-best" : "");
         const rank = document.createElement("span");
@@ -5623,6 +5746,26 @@ function renderRacingLeaderboard() {
         const time = document.createElement("span");
         time.className = "sim-racing-lb-time";
         time.textContent = formatExerciseTime(entry.timeSec, 2);
+        const hasSplits = entry.lapSplits && entry.lapSplits.length > 0;
+        // Klikk på TIDEN (ikke hele raden - navnet/rangen skal ikke reagere) åpner en rullegardin med
+        // hver enkelt rundetid som utgjør totaltiden (kun race3 - race1-oppføringer har ingen splitt-
+        // liste å vise, se addRacingLapResult).
+        let splitsEl = null;
+        if (hasSplits) {
+            time.classList.add("sim-racing-lb-time-expandable");
+            time.title = "Vis rundetider";
+            splitsEl = document.createElement("div");
+            splitsEl.className = "sim-racing-lb-splits";
+            splitsEl.style.display = "none";
+            entry.lapSplits.forEach(function (lapSec, li) {
+                const line = document.createElement("div");
+                line.textContent = "Runde " + (li + 1) + ": " + formatExerciseTime(lapSec, 2);
+                splitsEl.appendChild(line);
+            });
+            time.addEventListener("click", function () {
+                splitsEl.style.display = splitsEl.style.display === "none" ? "" : "none";
+            });
+        }
         // Endre-knapp for en allerede lagret tid (ikke feltet øverst - det setter kun navnet på
         // FREMTIDIGE runder) - for å rette et feilskrevet navn i etterkant, se renameRacingLeaderboardEntry.
         const editBtn = document.createElement("button");
@@ -5636,6 +5779,7 @@ function renderRacingLeaderboard() {
         row.appendChild(time);
         row.appendChild(editBtn);
         listEl.appendChild(row);
+        if (splitsEl) listEl.appendChild(splitsEl);
     });
 }
 // Endrer navnet på en ALLEREDE lagret tid (i motsetning til navnefeltet øverst, som kun gjelder
@@ -5644,7 +5788,7 @@ function renderRacingLeaderboard() {
 // alle som bruker denne nettleseren/maskinen, og uten friksjon her hadde det vært for lett å stille
 // endre navnet på ANDRES tid og "jukse" til seg æren for en runde man ikke selv fløy.
 function renameRacingLeaderboardEntry(i) {
-    const entry = racingLeaderboard.entries[i];
+    const entry = racingEntriesFor()[i];
     if (!entry) return;
     const ok = window.confirm(
         "Endre navnet på denne tiden (" + formatExerciseTime(entry.timeSec, 2) + ", satt av \"" + entry.name +
@@ -5659,8 +5803,9 @@ function renameRacingLeaderboardEntry(i) {
     saveRacingLeaderboard();
     renderRacingLeaderboard();
 }
-function racingBestTimeSec() {
-    return racingLeaderboard.entries.length > 0 ? racingLeaderboard.entries[0].timeSec : null;
+function racingBestTimeSec(id) {
+    const entries = racingEntriesFor(id);
+    return entries.length > 0 ? entries[0].timeSec : null;
 }
 
 /* ---------- Øvelser: panel-UI (liste + detaljvisning) ---------- */
@@ -5671,7 +5816,7 @@ function renderExerciseList(category) {
     if (category === "acro") {
         ACRO_EXERCISE_ORDER.forEach(function (id) {
             const exercise = EXERCISES[id];
-            const bestSec = racingBestTimeSec();
+            const bestSec = racingBestTimeSec(id);
             const row = document.createElement("button");
             row.type = "button";
             row.className = "sim-exercise-row";
@@ -5841,7 +5986,7 @@ function showExerciseDetail(id) {
             progressEl.textContent = "Krever at Kill/Arm-knappen er bundet til en fysisk fjernkontroll i " +
                 "Fjernkontroll-kalibrering (Innstillinger) - tastatur og skjermknappen virker ikke i denne øvelsen.";
         } else if (exercise.stages[0].type === "racing") {
-            const bestSec = racingBestTimeSec();
+            const bestSec = racingBestTimeSec(id);
             progressEl.style.display = bestSec !== null ? "" : "none";
             if (bestSec !== null) progressEl.textContent = "Beste rundetid: " + formatExerciseTime(bestSec, 2);
         } else if (progress.passed) {
@@ -5904,6 +6049,40 @@ document.addEventListener("DOMContentLoaded", function () {
     buildRatesPanel();
     renderExerciseList();
 
+    document.getElementById("resetRatesBtn").addEventListener("click", function () {
+        ["roll", "pitch", "yaw"].forEach(function (axis) { rates[axis] = Object.assign({}, DEFAULT_RATES[axis]); });
+        rates.throttle = Object.assign({}, DEFAULT_RATES.throttle);
+        saveRates();
+        buildRatesPanel();
+    });
+
+    const calibrateAxesStatusEl = document.getElementById("calibrateAxesStatus");
+    document.getElementById("calibrateAxesBtn").addEventListener("click", function () {
+        const gp = getActiveGamepad();
+        if (!gp) { calibrateAxesStatusEl.textContent = "Ingen fjernkontroll tilkoblet."; return; }
+        const btn = document.getElementById("calibrateAxesBtn");
+        btn.disabled = true;
+        axisCalibrationManager.start();
+        const tick = setInterval(function () {
+            if (axisCalibrationManager.isActive()) {
+                calibrateAxesStatusEl.textContent =
+                    "Beveg alle spaker til ytterpunktene... " + Math.ceil(axisCalibrationManager.remainingMs() / 1000) + " s";
+            } else {
+                calibrateAxesStatusEl.textContent = "Kalibrert!";
+                btn.disabled = false;
+                clearInterval(tick);
+            }
+        }, 150);
+    });
+    document.getElementById("resetGamepadMapBtn").addEventListener("click", function () {
+        ["throttle", "roll", "pitch", "yaw"].forEach(function (ch) { gamepadMap[ch] = Object.assign({}, DEFAULT_GAMEPAD_MAP[ch]); });
+        gamepadMap.buttons = Object.assign({}, DEFAULT_GAMEPAD_MAP.buttons);
+        saveGamepadMap();
+        const pad = getActiveGamepad() || rawFirstGamepad();
+        if (pad) buildGamepadPanel(pad); else buildGamepadButtonsPanel();
+        calibrateAxesStatusEl.textContent = "";
+    });
+
     document.getElementById("resetBtn").addEventListener("click", handleResetRequest);
     document.getElementById("armToggleBtn").addEventListener("click", function () { toggleKill("button"); });
 
@@ -5956,6 +6135,18 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     document.getElementById("categoryAcroBtn").addEventListener("click", function () {
         showExerciseListView("acro");
+    });
+    // "Fri flyging" - eneste veien ut av en aktiv øvelse/racingbane tilbake til vanlig flyging UTEN å gå
+    // via en spesifikk øvelses "Avbryt"-knapp (som krever at man først vet/husker hvilken øvelse som er
+    // aktiv og åpner nettopp DEN sin detaljvisning) - viktigst for racing, som overstyrer kamera/
+    // dronemodus/spawn helt til man aktivt avslutter den.
+    document.getElementById("categoryFreeFlightBtn").addEventListener("click", function () {
+        if (exerciseState.active) stopExercise();
+        // stopExercise() teleporterer bevisst IKKE droneen tilbake (se kommentaren der - respekterer det
+        // man holder på med midt i en øvelse) - men "Fri flyging" skal oppleves som en ren retur til
+        // vanlig flyging, ikke bare "stopp der du er" et sted langt inne på racingbanen i Racing-klasse.
+        resetDrone();
+        document.getElementById("exercisesPanel").style.display = "none";
     });
 
     // Ledertavlens navnefelt - lagres fortløpende (samme Sim.saveJSON-mønster som resten), brukes som

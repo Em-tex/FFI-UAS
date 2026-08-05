@@ -122,6 +122,9 @@
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="sim-rate-grid" id="ratesGrid"></div>
+            <div class="sim-rate-row">
+                <button type="button" class="sim-btn sim-btn-primary" id="resetRatesBtn">Tilbakestill til standard</button>
+            </div>
         </div>
 
         <div class="sim-panel" id="droneCameraPanel" style="display:none;">
@@ -201,11 +204,21 @@
             </div>
             <p class="sim-panel-hint" style="margin-top:0;">Velg tastatur, en spesifikk tilkoblet enhet, eller automatisk (bruker første tilgjengelige gamepad).</p>
             <div class="sim-rate-grid" id="gamepadGrid"></div>
-            <p class="sim-panel-hint">Beveg en spak for å se hvilken kanal som endrer seg i tabellen under.</p>
+            <p class="sim-panel-hint" style="margin-top:0;">Beveg en spak for å se hvilken kanal som endrer seg i tabellen under. Pilen (→) viser hva kanalen faktisk gir spillet akkurat nå for de fire mappede kanalene.</p>
             <div id="gamepadAxesReadout" class="sim-axes-readout"></div>
+            <div class="sim-rate-row">
+                <button type="button" class="sim-btn sim-btn-primary" id="calibrateAxesBtn"
+                    title="For sendere som ikke når helt ut til ±1.0 selv ved fysisk fullt utslag. Trykk, før så ALLE spaker (inkl. gass) helt til alle ytterpunkter noen ganger i løpet av de neste sekundene.">
+                    Kalibrer fullt utslag
+                </button>
+                <span class="sim-rate-value" id="calibrateAxesStatus" style="flex:1; text-align:left;"></span>
+            </div>
             <h3 style="margin-top:16px;">Knappemapping (brytere)</h3>
             <div class="sim-rate-grid" id="gamepadButtonsGrid"></div>
             <p class="sim-panel-hint">Trykk "Sett" og bruk deretter bryteren på senderen - fungerer enten bryteren kommer som en knapp eller som en kanal (f.eks. TBS Tango, Taranis, RadioMaster i USB-joystick-modus).</p>
+            <div class="sim-rate-row">
+                <button type="button" class="sim-btn sim-btn-primary" id="resetGamepadMapBtn">Tilbakestill til standard</button>
+            </div>
         </div>
 
         <div class="sim-panel" id="helpPanel" style="display:none;">
@@ -265,6 +278,13 @@
                         <span class="sim-exercise-row-desc">Racingbanen - full manuell kontroll, FPV-kamera og en ledertavle med bestetider.</span>
                     </span>
                 </button>
+                <button type="button" class="sim-exercise-row" id="categoryFreeFlightBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-plane-up"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">Fri flyging</span>
+                        <span class="sim-exercise-row-desc">Avslutter en aktiv øvelse/racingbane og går tilbake til vanlig flyging.</span>
+                    </span>
+                </button>
             </div>
             <div id="exerciseListView" style="display:none;">
                 <button type="button" class="sim-exercise-back-btn" id="exerciseBackToCategoryBtn">
@@ -289,7 +309,7 @@
         <div class="sim-racing-leaderboard" id="racingLeaderboardOverlay" style="display:none;">
             <div class="sim-racing-lb-header">
                 <i class="fa-solid fa-trophy"></i>
-                <span>Ledertavle</span>
+                <span id="racingLeaderboardTitle">Ledertavle</span>
                 <button type="button" class="sim-racing-lb-reset" id="racingLeaderboardResetBtn" title="Nullstill alle tider">
                     <i class="fa-solid fa-trash"></i>
                 </button>
