@@ -5554,13 +5554,17 @@ function isDroneInGateOpening(gate) {
     return Math.abs(localX) <= gate.halfW && Math.abs(localY) <= gate.halfH && Math.abs(localZ) <= RACE_GATE_DEPTH_TOLERANCE;
 }
 const RACE_START_PLACEMENT = GATE_PLACEMENTS_2[0]; // start/mål-porten, se GATE_WAYPOINTS_2
-// meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner. Økt videre fra 15 til 18 for enda
-// mer fartsoppbygging-strekk før start/mål - klaringen mot forrige gate i løypa (den siste før man runder
-// tilbake til start, se GATE_WAYPOINTS_2 sitt nest siste element) krymper RASKT jo lenger tilbake man
-// spawner (kun ~7 m igjen ved 20 m tilbake), så 18 er nær grensa for hvor langt dette trygt kan økes uten
-// å risikere å spawne overlappende med den gaten - IKKE øk dette videre uten å sjekke den avstanden på
-// nytt (se distansen fra RACE_SPAWN_POINT til GATE_PLACEMENTS_2 sitt nest siste element).
-const RACE_SPAWN_BACK_DIST = 18;
+// meter "bak" start/mål-porten (mot ankomstretningen) droneen spawner. Økt videre fra 18 til 20 for enda
+// mer fartsoppbygging-strekk før start/mål (brukeren ba om +10, men se regnestykket under for hvorfor det
+// ikke var trygt) - klaringen mot forrige gate i løypa (den siste før man runder tilbake til start - se
+// GATE_WAYPOINTS_2 sitt SISTE element, dx:-25/dz:-135->faktisk dx:-25/dz:75 - IKKE nest siste, det
+// elementet ligger langt unna) krymper RASKT jo lenger tilbake man spawner: regnet ut fra
+// GATE_COURSE_2_CENTER+GATE_WAYPOINTS_2 sine faktiske dx/dz-verdier er klaringen ved 18 m tilbake ~8.9 m,
+// og ved 28 m tilbake (18+10, det opprinnelig forespurte hoppet) kun ~1.2 m - praktisk talt oppå selve
+// porten. 20 er derfor satt som et forsiktig, trygt maksimum (~7 m klaring igjen) - IKKE øk dette videre
+// uten å regne ut den avstanden på nytt (se distansen fra RACE_SPAWN_POINT til GATE_PLACEMENTS_2 sitt
+// siste element - dx:-25, dz:75 relativt GATE_COURSE_2_CENTER).
+const RACE_SPAWN_BACK_DIST = 20;
 const RACE_SPAWN_POINT = new THREE.Vector3(
     RACE_START_PLACEMENT.x - Math.sin(RACE_START_PLACEMENT.yaw) * RACE_SPAWN_BACK_DIST,
     0,

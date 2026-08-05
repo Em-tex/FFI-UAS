@@ -247,7 +247,9 @@ const MC_ALT_GAIN_PER_KG = 6;       // N per kg per (m/s) avvik i klatrerate (Q_
 // asfalt/gress, IKKE en hjul-rullemotstandsverdi. Brukt som ren Coulomb-friksjon (konstant
 // retardasjon inntil stopp, se GROUND_SKID_FRICTION_COEFF-bruken i resolveGroundContact) i stedet for
 // det gamle hjul-rullemotstand+eget-bremse-konseptet - et fast ben har ingen egen bremse, kun friksjon.
-const GROUND_SKID_FRICTION_COEFF = 0.4;
+// Økt fra 0.4 til 0.55 (brukeren understreket "kraftig friksjon" flere ganger) - nærmere en reell,
+// grov/urban μ for metall eller kompositt mot asfalt/betong (0.5-0.6) enn et glatt/polert underlag.
+const GROUND_SKID_FRICTION_COEFF = 0.55;
 const GROUND_YAW_FRICTION = 3;  // eksponentiell demping (1/s) av gir-rotasjon fra bena mot bakken
 // Statisk (Coulomb-lignende) motstand mot vindkantring mens flyet står/ruller på bakken - se
 // yawTorqueF0 i stepPhysics. Skalert med vekt (mass*GRAVITY), som normalkraften på bena i
@@ -257,8 +259,9 @@ const GROUND_YAW_FRICTION_TORQUE_COEFF = 0.15;
 // resolveGroundContact sin egen lateralSpeed-demping er kun RATE-basert (bremser en eksisterende
 // sidebevegelse) og motstår aldri en VEDVARENDE sidekraft (f.eks. vind-drag i kryssvind), som ellers gir
 // en nullforskjellig likevektsfart der flyet sakte men uendelig driver sidelengs. Kansellerer små/
-// moderate sidekrefter helt, reduserer bare (ikke fjerner) sterkere kast.
-const GROUND_LATERAL_FRICTION_COEFF = 0.4;
+// moderate sidekrefter helt, reduserer bare (ikke fjerner) sterkere kast. Samme økning (0.4->0.55) og
+// begrunnelse som GROUND_SKID_FRICTION_COEFF over.
+const GROUND_LATERAL_FRICTION_COEFF = 0.55;
 // (Tidligere fantes en GROUND_ROLL_PITCH_RESISTANCE_COEFF her - et forsøk på å klippe SUMMEN av
 // aerodynamisk+løftemotor rull-/stigningsmoment mens flyet stod på bena, for å hindre at det "lett tiltet
 // rundt". Fjernet igjen: den klippet OGSÅ selve den korrigerende selvnivellerings-torque'en, som lot små
@@ -3298,8 +3301,10 @@ const _groundContactInvQuat = new THREE.Quaternion();
 // sin egen (~10-15 rad/s² ved full kommandert avbøyning), IKKE en fysisk korrekt fjærstivhet - inertiaRoll/
 // -Pitch/-Yaw er (som resten av filens dreiemoment-formler) tunede spillverdier, ikke ekte kg·m²-treghet,
 // så en "fysisk riktig" fjærkonstant ville gitt en helt urealistisk voldsom respons (se utregningen i
-// kommentaren ved bruken). Første forsøk uten live-testing - juster om landinger føles for slappe/voldsomme.
-const GROUND_CONTACT_SPRING_GAIN = 25;
+// kommentaren ved bruken). Økt fra 25 til 35 - brukeren gjentok ønsket om en tydelig, merkbar
+// velteeffekt ved en skjev/ujevn landing, ikke bare en teoretisk mulighet. Fortsatt uten live-testing -
+// juster videre om landinger føles for slappe/voldsomme.
+const GROUND_CONTACT_SPRING_GAIN = 35;
 
 // Understellet er TRE "ben" (se referansebildene brukeren la ved) - to landingsben på det FREMRE
 // motorparet (ett per side) pluss bukfinnen som et tredje, bakre ben - IKKE hjul, og IKKE ben på det
