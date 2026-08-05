@@ -294,16 +294,20 @@ const RUNWAY_SPAWN_Z = 8;   // spawn litt bak terskelen, klar for avgang nedover
 // batterikapasitet for hover) - massen er derfor bevisst økt (~+55%) i forhold til de opprinnelige
 // PLANE_CLASSES-tallene den er avledet fra, IKKE bare kopiert rett over. pusherMaxThrust erstatter
 // den gamle nesepropellens maxThrust (samme rolle, se thrustForce i stepPhysics - kun trekkraft for
-// FORWARD flight, ikke løft), og er lavere enn en ren fastvinges motor ville trengt (trenger kun å
-// akselerere INN i marsjfart etter en vertikal takeoff, ikke selv dra flyet opp fra stillstand på hjul).
+// FORWARD flight, ikke løft). Satt LIK den tilsvarende klassens maxThrust i fastvinge-simmen (samme
+// trekkraft/vekt-forhold) - et tidligere forsøk på å gi pusheren LAVERE trekkraft enn en ren fastvinge
+// (begrunnet med at den "kun trenger å akselerere INN i marsjfart etter en vertikal takeoff, ikke selv
+// dra flyet opp fra stillstand på hjul") viste seg fortsatt "undermotorisert" i praksis - en VTOL i
+// FBWA/MANUAL må jo fortsatt klatre/akselerere/holde fart mot medvind akkurat som en ren fastvinge gjør,
+// uavhengig av HVORDAN den kom seg opp i luften i utgangspunktet.
 // liftThrustTotal er den SAMLEDE (alle fire motorer) maks vertikale trekkraften - satt til en typisk
-// multirotor-thrust/vekt-margin (~1.7-1.8x egenvekt i Newton) slik at flyet kan svelve OG fortsatt
+// multirotor-thrust/vekt-margin (~1.8-2.0x egenvekt i Newton) slik at flyet kan svelve OG fortsatt
 // klatre/manøvrere med margin til overs, akkurat som en ekte quadcopter.
 const VTOL_CLASSES = {
     small: {
         label: "Liten (trener-VTOL)",
         mass: 3.4, wingArea: 0.4, wingSpan: 1.9,
-        pusherMaxThrust: 14, cd0: 0.05, inducedDragK: 0.95, clSlope: 0.11, stallAngleDeg: 14, propPitchSpeed: 30,
+        pusherMaxThrust: 18, cd0: 0.05, inducedDragK: 0.95, clSlope: 0.11, stallAngleDeg: 14, propPitchSpeed: 30,
         liftThrustTotal: 3.4 * GRAVITY * 1.8,
         inertiaRoll: 0.16, inertiaPitch: 0.5, inertiaYaw: 0.5,
         gearOffsetY: -0.22, visualScale: 1.0, armLen: 0.62
@@ -311,11 +315,11 @@ const VTOL_CLASSES = {
     medium: {
         label: "Middels",
         mass: 12, wingArea: 0.68, wingSpan: 2.5,
-        // pusherMaxThrust/liftThrustTotal-marginen (T/W) økt fra hhv. 18N/1.7x - brukeren rapporterte at
-        // middels og stor virket "veldig undermotorisert" (18N trekkraft på en 12kg maskin ga urealistisk
-        // slapp akselerasjon inn i marsjfart, og 1.7x hover-margin er i tynneste laget for reell klatre-/
-        // manøvreringsmargin på en så mye tyngre maskin enn Liten sin egen 1.8x).
-        pusherMaxThrust: 26, cd0: 0.045, inducedDragK: 1.05, clSlope: 0.105, stallAngleDeg: 13, propPitchSpeed: 32,
+        // pusherMaxThrust satt LIK fastvinge-simmens egen Middels-klasse (36N, se VTOL_CLASSES-
+        // toppkommentaren) - et første forsøk (26N) var fortsatt "undermotorisert" i fastvinget modus
+        // ifølge brukeren, siden pusheren da hadde vesentlig lavere trekkraft/vekt enn tilsvarende
+        // fastvinge-klasse, selv om selve luftrammen (vekt/vingeareal/drag) er nesten identisk.
+        pusherMaxThrust: 36, cd0: 0.045, inducedDragK: 1.05, clSlope: 0.105, stallAngleDeg: 13, propPitchSpeed: 32,
         liftThrustTotal: 12 * GRAVITY * 2.0,
         inertiaRoll: 1.1, inertiaPitch: 1.6, inertiaYaw: 1.8,
         gearOffsetY: -0.28, visualScale: 1.4, armLen: 0.85
@@ -323,8 +327,9 @@ const VTOL_CLASSES = {
     large: {
         label: "Stor",
         mass: 32, wingArea: 1.25, wingSpan: 3.5,
-        // Se samme begrunnelse som Middels sin egen pusherMaxThrust/liftThrustTotal-kommentar over.
-        pusherMaxThrust: 48, cd0: 0.04, inducedDragK: 1.15, clSlope: 0.1, stallAngleDeg: 12, propPitchSpeed: 34,
+        // pusherMaxThrust satt LIK fastvinge-simmens egen Stor-klasse (80N) - se Middels sin egen
+        // pusherMaxThrust-kommentar over for begrunnelsen.
+        pusherMaxThrust: 80, cd0: 0.04, inducedDragK: 1.15, clSlope: 0.1, stallAngleDeg: 12, propPitchSpeed: 34,
         liftThrustTotal: 32 * GRAVITY * 1.9,
         inertiaRoll: 3.2, inertiaPitch: 4.4, inertiaYaw: 4.8,
         gearOffsetY: -0.35, visualScale: 2.0, armLen: 1.15
