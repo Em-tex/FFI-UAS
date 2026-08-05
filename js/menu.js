@@ -10,7 +10,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 {
                     name: "Simulator", icon: "fa-gamepad", children: [
                         { name: "Quadcopter", link: "simulator.html", icon: "fa-helicopter" },
-                        { name: "Fixed-wing", link: "simulator-fixedwing.html", icon: "fa-plane" }
+                        { name: "Fixed-wing", link: "simulator-fixedwing.html", icon: "fa-plane" },
+                        { name: "VTOL", link: "simulator-vtol.html", icon: "fa-plane-up" }
                     ]
                 }
             ]

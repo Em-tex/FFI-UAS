@@ -1,12 +1,18 @@
-/* js/simulator-fixedwing.js
-   Fixed-wing simulator - gjenbruker matte/kontroll/gamepad/scene-hjelpere fra js/simulator-common.js
-   (window.Sim). Fysikkmodellen her er en forenklet, men AoA/steile-basert aerodynamikk-modell
-   (løft/drag per vinge, venstre/høyre beregnet separat for realistisk vingedypp/spinn-tendens ved
-   steiling i sving), ikke bare en kraft-vektor slik quadcopter-simulatoren bruker. Stigemomentet (pitch)
-   er en ekte vekt-og-balanse-modell (se tailArm/tailLift i stepPhysics): halen har sin egen moment-arm
-   bak tyngdepunktet og produserer stigemoment fra sitt EGET løft, i stedet for et flatt, håndjustert
-   kontrolleffektivitet-tall - dette gir høyderor-effekt, pitch-demping OG fart-avhengig trimbehov som
-   alle emergerer fra samme, ene geometriske modell. */
+/* js/simulator-vtol.js
+   VTOL (QuadPlane) simulator - startet som en kopi av js/simulator-fixedwing.js og bygger videre PÅ
+   nøyaktig samme AoA/steile-baserte vinge-/hale-aerodynamikk (se den filens toppkommentar for
+   begrunnelsen for selve fastvinge-modellen - uendret her). Flyet er en fastvinget kropp med FIRE faste
+   (IKKE vippbare) løftemotorer (quad-oppsett, som quadcopter-simulatoren) for vertikal/svevende flyging,
+   PLUSS en egen trekkmotor ("pusher") bak V-halen for forover-flyging - en "QuadPlane" i ArduPilot/
+   Mission Planner-terminologi (se MODE_LABELS-kommentaren for hele modus-oversikten: QSTABILIZE/QHOVER/
+   QLOITER/QACRO for svevemodus, MANUAL/FBWA for fastvinget marsjflyging - AUTO/RTL/QLAND/QRTL er bevisst
+   utelatt, se samme kommentar). To flyregimer (multirotor/svevende og fastvinget/marsjerende) deler den
+   samme skrog-/vinge-/hale-fysikken fra fastvinge-simmen, men har HVER SIN kilde til dreiemoment:
+   fastvinge-modellens rorflater (skalerer med dynamisk trykk, ~null ved lav fart) og de fire
+   løftemotorene (fast autoritet i Q-moduser, trappet ned/av i FBWA/MANUAL) - se computeMcAuthority i
+   stepPhysics for selve overgangslogikken (ArduPilot sine Q_*-parametre, se DEFAULT_VTOL_PARAMS), og
+   computeWeathervaneYawRateRad for vindkantrings-kompensasjonen i QLOITER (se ArduPilot sin "Active
+   Weathervaning" - flyet dreier nesen inn mot vinden mens det holder posisjon). */
 
 /* ---------- Konstanter: fysikk ---------- */
 const GRAVITY = 9.81;
@@ -24,6 +30,25 @@ const TAIL_TIP_RADIUS_RATIO = 0.16;
 // beregningen i stepPhysics, siden bakkeeffekt virker fra VINGEN, ikke fra CG/planeState.position.y
 // direkte (denne er høyvinget - vingen sitter tydelig høyere enn CG).
 const WING_MOUNT_HEIGHT_RATIO = 1.3;
+// Understellet er FIRE BEN som henger ned fra løftemotor-bommene (IKKE hjul, se referansebildene
+// brukeren la ved) - DELT mellom buildPlane (visuell mesh, se addLiftBoom-kommentaren der) og
+// resolveGroundContact (fysikkens bakkekontaktpunkter), slik at de aldri kan drifte ut av synk (samme
+// prinsipp som FUSELAGE_LENGTH_BUILD-gruppen over). GEAR_BOOM_X_FRAC (andel av vingespennet) MÅ holde
+// seg innenfor vingens faste midtseksjon (under 0.28 - se aileronSpan/centerSpan i buildWing), ellers
+// stikker bom/ben rett gjennom balanserorets utsparing på vingetuppen.
+const GEAR_BOOM_X_FRAC = 0.22;
+const BOOM_CENTER_Z_BUILD = 0.02; // samme Z som vingefestet i buildPlane (bygge-rom)
+// Selve BENA henger RETT NED fra bom-posisjonen (GEAR_BOOM_X_FRAC) i X - altså rett under vingen, ikke
+// vinklet sideveis innover (brukeren rapporterte at et sideveis-skrått ben "så feil ut" / ikke "under
+// vingen"). Eneste vinkling er en LITEN forover-lene (-Z, se GEAR_LEG_FORWARD_LEAN_BUILD) ned mot
+// bakkeplanet, jf. referansebildene.
+const GEAR_LEG_FORWARD_LEAN_BUILD = 0.05; // bygge-rom - hvor mye benas bunn er forskjøvet forover (-Z)
+// Benas TOPP-feste langs selve bommen (Z) er IKKE rett under fremre motor (m.z) - brukeren påpekte at
+// det så feil ut ("landingsbena foran skal ikke være under motorene foran"). I stedet interpoleres
+// festepunktet et stykke TILBAKE langs bommen, mot bom-/vingefestets senter (BOOM_CENTER_Z_BUILD, se
+// merknaden over - "litt lengre bak langs det staget. mer under vingene"). 0 = rett under fremre motor,
+// 1 = rett i bom-/vingefestets senter.
+const GEAR_LEG_BOOM_Z_FRAC = 0.55;
 
 // I motsetning til quad-simulatorens Acro-modus (som setter ønsket vinkelhastighet direkte) styres et
 // ekte fly ALDRI ved å kommandere en rate - pinnen avbøyer en rorflate, og rorflaten skaper et
@@ -56,6 +81,15 @@ const DIHEDRAL_EFFECT = 0.02 / 88.2;
 // finnen alene ALL sidekraft/-drag i sideslip, som ga en for lett/svak slip-effekt.
 const FUSELAGE_SIDE_AREA_RATIO = 0.3;  // skrogets sideprofil-areal, som andel av vingearealet
 const FUSELAGE_SIDE_CD = 1.2;          // typisk normalkraft-koeffisient for et butt/flatt legeme på tvers
+// VINGENS eget sideveis-drag i sideslip/kryssvind (se wingCrossflowDrag i stepPhysics) - brukeren påpekte
+// at en stor, flat flate (HELE vingen, ikke bare skroget) legger seg opp mot vinden i sidevind, spesielt
+// tydelig i QLOITER-hover der nesen ikke nødvendigvis peker inn mot vinden: vingens EGET plan-areal
+// (spec.wingArea, ALLEREDE hele arealet - ingen ratio-konstant trengs slik skroget sin egen, mindre
+// sideprofil trenger) møter da vinden nesten flatt-på, akkurat som skroget sin FUSELAGE_SIDE_CD over
+// (samme størrelsesorden Cd for et butt/flatt legeme på tvers av strømmen - vingen er tynn, men BRED).
+// UAVHENGIG av vingens EGEN løft-/AoA-modell (liftCoefficient/aoaDeg), som kun ser vertikal+forover-fart
+// (localAirVel.y/.z) og dermed er blind for ren LATERAL (sideveis) luftstrøm.
+const WING_CROSSFLOW_CD = 1.15;
 // Stigemomentet (pitch) er IKKE lenger et flatt, håndjustert "kontrolleffektivitet"-tall - se
 // beregningen av tailArm/tailLift i stepPhysics, som modellerer et ekte vekt-og-balanse-prinsipp:
 // halen henger et stykke bak tyngdepunktet og produserer selve stigemomentet fra sitt EGET løft, akkurat
@@ -114,13 +148,13 @@ const GROUND_EFFECT_HEIGHT_FACTOR = 2; // høyere tall = bakkeeffekten forsvinne
 const GROUND_EFFECT_LIFT_BOOST_MAX = 0.08;
 const PASSIVE_ANGULAR_DAMPING = 0.995;
 
-const MAX_BANK_ANGLE = 50;      // grader, Stabilized: pinne-utslag -> ønsket krengevinkel
+const MAX_BANK_ANGLE = 50;      // grader, FBWA (fastvinget marsjfart): pinne-utslag -> ønsket krengevinkel
 // Økt videre (10 -> 12 -> 15) - brukeren rapporterte at tailstrike-geometrien (halelengden), ikke
 // steilevinkelen, er den reelle begrensningen på rotasjon ved avgang, så "godt under laveste
 // steilevinkel"-marginen (opprinnelig hensikt her) er ikke lenger den bindende bekymringen. Ved lav
 // fart vil steiling naturlig gi redusert løft/nese-fall lenge før Stabilized når helt fram til et
 // kommandert 15°-mål uansett (P-loopen bruker tid på å nå målet), så risikoen holdes akseptabel.
-const MAX_PITCH_ANGLE = 15;     // grader, Stabilized: pinne-utslag -> ønsket stigningsvinkel
+const MAX_PITCH_ANGLE = 15;     // grader, FBWA (fastvinget marsjfart): pinne-utslag -> ønsket stigningsvinkel
 // Stabilized er en enkel autopilot som styrer AKKURAT DE SAMME rorflatene som Manual (samme
 // torque-modell) - den kommanderer bare en ror-avbøyning proporsjonal med vinkelavviket i stedet for
 // direkte fra pinnen. Disse gradtallene er "full ror-avbøyning oppnås ved dette vinkelavviket".
@@ -155,19 +189,83 @@ const AUTO_TRIM_FILTER_TAU = 2.5;
 // Bred nok overgangssone (11°) til at løftet ikke faller brått/rykkete idet flyet krysser inn i steiling.
 const STALL_POST_RANGE_DEG = 11; // bredde på overgangssonen rett etter kritisk vinkel før dyp steiling
 
-const ROLLING_FRICTION = 0.045; // rullemotstand (hjul mot asfalt) ved normal rulling/taxi
-const BRAKE_DECELERATION = 2.5; // m/s^2 ekstra oppbremsing fra hjulbrems - kun ved gass i tomgang
-const GROUND_YAW_FRICTION = 3;  // eksponentiell demping (1/s) av gir-rotasjon fra hjul mot bakken
+/* ---------- VTOL: multirotor-kontroll (løftemotorer) og weathervane ---------- */
+// Maks kommandert krengning/stigning i Q-modus (QSTABILIZE/QHOVER/QLOITER, MED multirotor-myndighet) -
+// vesentlig lavere enn fastvinge-FBWA sin egen MAX_BANK_ANGLE/MAX_PITCH_ANGLE (50°/15° under, ment for
+// marsjflyging). targetBankDeg/-PitchDeg i stepPhysics blander lineært mellom denne og fastvinge-
+// vinklene etter mcAuthority (se computeMcAuthority), slik at selve MÅLVINKELEN glir naturlig fra
+// "hover-aktig" til "fly-aktig" akkurat som selve kontrollmyndigheten gjør.
+const MC_MAX_LEAN_ANGLE = 30;
+// Gulv for girets EGEN aerodynamiske autoritet i Q-modus (se yawAeroAuthority-kommentaren i stepPhysics) -
+// lar finnen/halepartiet fortsatt værhane merkbart inn mot en kryssvind selv med løftemotorene i full
+// rull-/stigningskontroll, i motsetning til rull/stigning som fortsatt kuttes helt (aeroAuthority).
+const YAW_AERO_MIN_AUTHORITY_QMODE = 0.5;
+// mcXxxTorqueGain/-DampGain: samme "torque = kommando*autoritet - demping*rate"-struktur som
+// fastvinge-rorflatenes egne ROLL_CONTROL_EFFECTIVENESS/-DAMPING (se lenger ned), men UAVHENGIG av
+// dynamisk trykk - løftemotorenes dreiemoment kommer fra differensial-TREKKRAFT, ikke luftstrøm mot en
+// rorflate, og virker derfor like godt ved null fart som i marsjfart (dette ER selve grunnen til at en
+// VTOL trenger dem - fastvinge-rorflatene alene har ~ingen myndighet ved lav/null luftfart siden
+// qDynControl går mot null der). Skalert med spec.inertiaRoll/-Pitch/-Yaw i stepPhysics akkurat som
+// fastvinge-leddene - selve GAIN-tallet er dermed en ren vinkelakselerasjon (rad/s²), uavhengig av
+// flyklasse (kun responsHASTIGHET, ikke -styrke, skal variere med inertia - samme designfilosofi som
+// resten av filen).
+const MC_ROLL_TORQUE_GAIN = 14;
+const MC_ROLL_DAMP_GAIN = 5;
+const MC_PITCH_TORQUE_GAIN = 14;
+const MC_PITCH_DAMP_GAIN = 5;
+// Yaw i Q-modus er en RATE-kommando (som QACRO/quad-simulatorens egen Acro), ikke en vinkel-P(D) slik
+// rull/stigning er over - en multirotor har ingen naturlig "nullpunkt" å nivellere nesen mot i seg selv,
+// kun en ønsket dreiehastighet fra spak (pluss et eventuelt weathervane-bidrag i QLOITER, se
+// computeWeathervaneYawRateRad - de to legges sammen til én mål-girrate før samme rate-feil-struktur).
+const MC_MAX_YAW_RATE_DEG = 90;
+const MC_YAW_RATE_GAIN = 6;
+// Q_LOIT_SPEED_MS: maks horisontal fart (m/s) i QLOITER - spaken kommanderer horisontal FART (kropp-
+// relativt forover/sideveis) i stedet for en vinkel direkte, se stepPhysics. 5 m/s er ArduPilot sin
+// egen standardverdi (sitert av brukeren).
+const QLOITER_MAX_SPEED = 5;
+// Hvor mange grader kommandert lenevinkel 1 m/s fartsavvik oversettes til i QLOITER (se stepPhysics) -
+// klemmes uansett til MC_MAX_LEAN_ANGLE (tilsvarer Q_LOIT_ANG_MAX). Økt fra 3.5 til 6 - ved 3.5 nådde et
+// fullt pinneutslag fra stillstand (QLOITER_MAX_SPEED*3.5 = 5*3.5 = 17.5°) ALDRI det faktiske
+// MC_MAX_LEAN_ANGLE-taket (30°) - flyet kunne rett og slett ikke tilte mer enn 17.5° uansett hvor hardt
+// piloten dyttet pinnen, og den vinkelen krympet raskt videre mot 0° idet farten nærmet seg 5 m/s (en
+// ren P-kontroller mot mål-FART, ikke mål-vinkel - se targetPitchDeg/targetBankDeg i stepPhysics).
+// Brukeren rapporterte nettopp dette ("nesten umulig å tilte noe særlig fremover"). 6 gir nøyaktig 30°
+// (=taket) ved fullt utslag fra stillstand, uten å endre selve QLOITER_MAX_SPEED (fortsatt ArduPilot sin
+// egen 5 m/s-standardverdi, kun selve OVERSETTELSEN fart->vinkel er gjort mer aggressiv/responsiv).
+const QLOITER_VEL_TO_LEAN_DEG = 6;
+// QHOVER/QLOITER/FBWA(assistert) sin Alt Hold - se stepPhysics. Samme "sentrert gasspak holder høyde,
+// avvik gir ønsket klatrerate"-prinsipp som ArduPilot (og quad-simulatorens egen Alt Hold-modus, se
+// der), men per-kilo (ikke et flatt Newton-tall) siden VTOL_CLASSES spenner et mye bredere masseområde.
+// Dødsonen matcher ArduPilot sin egen RCn_DZ-standardverdi (±6%, sitert av brukeren).
+const MC_ALT_HOLD_DEADBAND = 0.06;
+const MC_MAX_CLIMB_RATE = 3.5;      // m/s ved fullt gassutslag fra midten (Q_PILOT_SPD_UP/-DN)
+const MC_ALT_GAIN_PER_KG = 6;       // N per kg per (m/s) avvik i klatrerate (Q_P_POSZ_P-lignende)
+
+// Denne VTOL-en har INGEN hjul (se GEAR_BOOM_X_FRAC-kommentaren og referansebildene brukeren la ved) -
+// tre faste ben/en kufert mot bakken, ikke rullende hjul. Et fast ben har mye høyere friksjon enn et
+// hjul (som er designet nettopp for å rulle med lite motstand) - en typisk μ for metall/kompositt mot
+// asfalt/gress, IKKE en hjul-rullemotstandsverdi. Brukt som ren Coulomb-friksjon (konstant
+// retardasjon inntil stopp, se GROUND_SKID_FRICTION_COEFF-bruken i resolveGroundContact) i stedet for
+// det gamle hjul-rullemotstand+eget-bremse-konseptet - et fast ben har ingen egen bremse, kun friksjon.
+const GROUND_SKID_FRICTION_COEFF = 0.4;
+const GROUND_YAW_FRICTION = 3;  // eksponentiell demping (1/s) av gir-rotasjon fra bena mot bakken
 // Statisk (Coulomb-lignende) motstand mot vindkantring mens flyet står/ruller på bakken - se
-// yawTorqueF0 i stepPhysics. Skalert med vekt (mass*GRAVITY), som normalkraften på dekkene i
-// virkeligheten - et tyngre fly har mer dekk-grep og er dermed mer motstandsdyktig mot vindkantring.
+// yawTorqueF0 i stepPhysics. Skalert med vekt (mass*GRAVITY), som normalkraften på bena i
+// virkeligheten - et tyngre fly har mer grep og er dermed mer motstandsdyktig mot vindkantring.
 const GROUND_YAW_FRICTION_TORQUE_COEFF = 0.15;
 // Samme statiske-friksjon-prinsipp som over, men for LATERAL (sideveis) kraft i stedet for gir-moment -
 // resolveGroundContact sin egen lateralSpeed-demping er kun RATE-basert (bremser en eksisterende
 // sidebevegelse) og motstår aldri en VEDVARENDE sidekraft (f.eks. vind-drag i kryssvind), som ellers gir
 // en nullforskjellig likevektsfart der flyet sakte men uendelig driver sidelengs. Kansellerer små/
 // moderate sidekrefter helt, reduserer bare (ikke fjerner) sterkere kast.
-const GROUND_LATERAL_FRICTION_COEFF = 0.25;
+const GROUND_LATERAL_FRICTION_COEFF = 0.4;
+// (Tidligere fantes en GROUND_ROLL_PITCH_RESISTANCE_COEFF her - et forsøk på å klippe SUMMEN av
+// aerodynamisk+løftemotor rull-/stigningsmoment mens flyet stod på bena, for å hindre at det "lett tiltet
+// rundt". Fjernet igjen: den klippet OGSÅ selve den korrigerende selvnivellerings-torque'en, som lot små
+// avvik bygge seg helt ukorrigert opp mens flyet stod på bakken - de "løste seg ut" i et brått,
+// ukontrollert tipp idet flyet endelig løftet fra bakken. Se targetBankDeg/targetPitchDeg-kommentaren i
+// stepPhysics for den riktige fiksen: MÅLET tvinges til null mens flyet er på bakken i en Q-modus, slik
+// at selvnivelleringen har FULL, ukuttet autoritet til å faktisk holde flyet flatt hele bakke-fasen.)
 const GROUND_CLEARANCE_FW = 0.05;
 const CRASH_SINK_RATE = 6;      // m/s synkefart ved berøring som teller som hard landing
 const CRASH_BANK_DEG = 45;      // krengevinkel ved berøring som teller som hard landing
@@ -189,57 +287,70 @@ const RUNWAY_WIDTH = 14;
 const RUNWAY_NEAR_Z = 20;   // verdens-Z for nærmeste terskel (nærmest spawn)
 const RUNWAY_SPAWN_Z = 8;   // spawn litt bak terskelen, klar for avgang nedover -Z
 
-/* ---------- Flystørrelser ---------- */
-// Kontrolleffektivitet/-demping (ROLL_CONTROL_EFFECTIVENESS/-DAMPING, samt hale-/finne-geometrien som gir
-// stigning og gir sin effektivitet/demping) er felles for alle størrelser, akkurat som TORQUE_GAIN er
-// felles i quad-simulatoren - det er inertia/masse under som gir et større fly en tregere, mer
-// "sluggish" respons ved samme fart, ikke en egen per-klasse ro-styrke.
-const PLANE_CLASSES = {
+/* ---------- VTOL-klasser ---------- */
+// Samme prinsipp som fastvinge-simmens PLANE_CLASSES (delt kontrolleffektivitet/-demping, kun
+// inertia/masse skiller klassene i respons-TREGHET, ikke -STYRKE) - se den filens tilsvarende
+// kommentar. Tyngre enn en ren glider av samme vingeareal (motorarmer + fire løftemotorer + ekstra
+// batterikapasitet for hover) - massen er derfor bevisst økt (~+55%) i forhold til de opprinnelige
+// PLANE_CLASSES-tallene den er avledet fra, IKKE bare kopiert rett over. pusherMaxThrust erstatter
+// den gamle nesepropellens maxThrust (samme rolle, se thrustForce i stepPhysics - kun trekkraft for
+// FORWARD flight, ikke løft), og er lavere enn en ren fastvinges motor ville trengt (trenger kun å
+// akselerere INN i marsjfart etter en vertikal takeoff, ikke selv dra flyet opp fra stillstand på hjul).
+// liftThrustTotal er den SAMLEDE (alle fire motorer) maks vertikale trekkraften - satt til en typisk
+// multirotor-thrust/vekt-margin (~1.7-1.8x egenvekt i Newton) slik at flyet kan svelve OG fortsatt
+// klatre/manøvrere med margin til overs, akkurat som en ekte quadcopter.
+const VTOL_CLASSES = {
     small: {
-        label: "Liten (trener)",
-        // Lett og godt motorisert (trekkraft/vekt ≈ 0.83) - skal føles nimbel og lettflydd. wingArea gir
-        // strekkforhold ~8.5 (et fly-aktig silhuett, ikke en "låvedør"-vinge), på bekostning av noe høyere
-        // steilefart (~9.2 m/s).
-        mass: 2.2, wingArea: 0.38, wingSpan: 1.8,
-        // propPitchSpeed: farten der en fastpitch-propell teoretisk gir null trekkraft (se thrustForce i
-        // stepPhysics) - godt over normal marsjfart så cruise ikke strupes, men lavt nok til å begrense
-        // den gamle, drag-begrensede toppfarten (~41 m/s) til noe mer troverdig for en liten trener.
-        maxThrust: 18, cd0: 0.045, inducedDragK: 0.9, clSlope: 0.11, stallAngleDeg: 14, propPitchSpeed: 32,
-        // Lav inertiaRoll gir kun RASKERE respons, ikke sterkere - selve toppraten styres av det delte
-        // ROLL_CONTROL_EFFECTIVENESS/-DAMPING-forholdet over, uavhengig av inertia.
-        inertiaRoll: 0.12, inertiaPitch: 0.42, inertiaYaw: 0.42,
-        gearOffsetY: -0.22, visualScale: 1.0
+        label: "Liten (trener-VTOL)",
+        mass: 3.4, wingArea: 0.4, wingSpan: 1.9,
+        pusherMaxThrust: 14, cd0: 0.05, inducedDragK: 0.95, clSlope: 0.11, stallAngleDeg: 14, propPitchSpeed: 30,
+        liftThrustTotal: 3.4 * GRAVITY * 1.8,
+        inertiaRoll: 0.16, inertiaPitch: 0.5, inertiaYaw: 0.5,
+        gearOffsetY: -0.22, visualScale: 1.0, armLen: 0.62
     },
     medium: {
         label: "Middels",
-        mass: 8, wingArea: 0.65, wingSpan: 2.4,
-        // maxThrust økt (fra 22, trekkraft/vekt ≈0.28) - brukeren rapporterte Middels/Stor som "veldig
-        // undermotorisert" sammenlignet med Liten sin egen ≈0.83-margin (se kommentaren der). 36N gir
-        // ≈0.46 - fortsatt lavere enn Liten (realistisk at en tyngre maskin har noe mindre marginal
-        // trekkraft/vekt), men en tydelig mindre "slapp" akselerasjon/stigeevne enn før.
-        maxThrust: 36, cd0: 0.04, inducedDragK: 1.0, clSlope: 0.105, stallAngleDeg: 13, propPitchSpeed: 34,
-        inertiaRoll: 0.9, inertiaPitch: 1.3, inertiaYaw: 1.5,
-        gearOffsetY: -0.28, visualScale: 1.4
+        mass: 12, wingArea: 0.68, wingSpan: 2.5,
+        // pusherMaxThrust/liftThrustTotal-marginen (T/W) økt fra hhv. 18N/1.7x - brukeren rapporterte at
+        // middels og stor virket "veldig undermotorisert" (18N trekkraft på en 12kg maskin ga urealistisk
+        // slapp akselerasjon inn i marsjfart, og 1.7x hover-margin er i tynneste laget for reell klatre-/
+        // manøvreringsmargin på en så mye tyngre maskin enn Liten sin egen 1.8x).
+        pusherMaxThrust: 26, cd0: 0.045, inducedDragK: 1.05, clSlope: 0.105, stallAngleDeg: 13, propPitchSpeed: 32,
+        liftThrustTotal: 12 * GRAVITY * 2.0,
+        inertiaRoll: 1.1, inertiaPitch: 1.6, inertiaYaw: 1.8,
+        gearOffsetY: -0.28, visualScale: 1.4, armLen: 0.85
     },
     large: {
         label: "Stor",
-        mass: 22, wingArea: 1.2, wingSpan: 3.4,
-        // Se Middels sin egen maxThrust-kommentar over - samme begrunnelse. 80N gir ≈0.37 trekkraft/vekt
-        // (opp fra ≈0.195).
-        maxThrust: 80, cd0: 0.035, inducedDragK: 1.1, clSlope: 0.1, stallAngleDeg: 12, propPitchSpeed: 36,
-        inertiaRoll: 2.6, inertiaPitch: 3.6, inertiaYaw: 4.0,
-        gearOffsetY: -0.35, visualScale: 2.0
+        mass: 32, wingArea: 1.25, wingSpan: 3.5,
+        // Se samme begrunnelse som Middels sin egen pusherMaxThrust/liftThrustTotal-kommentar over.
+        pusherMaxThrust: 48, cd0: 0.04, inducedDragK: 1.15, clSlope: 0.1, stallAngleDeg: 12, propPitchSpeed: 34,
+        liftThrustTotal: 32 * GRAVITY * 1.9,
+        inertiaRoll: 3.2, inertiaPitch: 4.4, inertiaYaw: 4.8,
+        gearOffsetY: -0.35, visualScale: 2.0, armLen: 1.15
     }
 };
 const DEFAULT_PLANE_CLASS = "small";
 
-const MODE_LABELS = { stabilized: "Stabilized", manual: "Manual" };
+// Flightmode-navn og -sett følger ArduPilot/Mission Planner sin QuadPlane-terminologi direkte (brukeren
+// ba spesifikt om dette) i stedet for et eget oppfunnet navnesett. QSTABILIZE/QHOVER/QLOITER/QACRO er
+// Q-moduser (svevemodus, alltid full myndighet på løftemotorene, se computeMcAuthority) - MANUAL/FBWA er
+// "Plane"-moduser (fastvinget marsjflyging, kun FBWA får assistanse av løftemotorene ved lav fart, se
+// samme funksjon). Det finnes IKKE en egen "transisjonsbryter" som i PX4 - selve MODUSVALGET er
+// transisjonen (bytt til en Q-modus for umiddelbar svevemyndighet, bytt til MANUAL/FBWA for å fly videre
+// som fastvinget), akkurat som i ekte ArduPilot. AUTO/RTL/QLAND/QRTL (oppdragsbaserte/autonome moduser)
+// er bevisst UTELATT - denne simmen har ingen oppdrags-/rutepunkt-system, kun manuell flyging.
+const MODE_LABELS = {
+    qstabilize: "QSTABILIZE", qhover: "QHOVER", qloiter: "QLOITER", qacro: "QACRO",
+    manual: "MANUAL", fbwa: "FBWA"
+};
 const AXIS_LABELS = { aileron: "Aileron", elevator: "Elevator", rudder: "Rudder" };
 const CHANNEL_LABELS = { aileron: "Aileron", elevator: "Elevator", rudder: "Rudder", throttle: "Gass" };
 
-const RATE_STORAGE_KEY = "ffi-uas:fixedwing-rates";
-const GAMEPAD_STORAGE_KEY = "ffi-uas:fixedwing-gamepad-map";
-const SETTINGS_STORAGE_KEY = "ffi-uas:fixedwing-settings";
+const RATE_STORAGE_KEY = "ffi-uas:vtol-rates";
+const GAMEPAD_STORAGE_KEY = "ffi-uas:vtol-gamepad-map";
+const SETTINGS_STORAGE_KEY = "ffi-uas:vtol-settings";
+const VTOL_PARAMS_STORAGE_KEY = "ffi-uas:vtol-transition-params";
 
 const DEFAULT_RATES = {
     aileron: { centerSensitivity: 80, maxRate: 260, expo: 0.25 },
@@ -256,12 +367,20 @@ const DEFAULT_GAMEPAD_MAP = {
     aileron: { axis: 1, reverse: false },
     elevator: { axis: 2, reverse: false },
     rudder: { axis: 3, reverse: false },
-    buttons: { kill: null, modeStabilized: null, modeManual: null, trimUp: null, trimDown: null }
+    buttons: {
+        // To DISKRÉ knapper (ikke én toggle, se setEngine-kommentaren) - én som alltid slår motoren PÅ,
+        // én som alltid slår den AV, entydig uansett gjeldende tilstand.
+        engineOn: null, engineOff: null, modeQStabilize: null, modeQHover: null, modeQLoiter: null, modeQAcro: null,
+        modeManual: null, modeFbwa: null, trimUp: null, trimDown: null
+    }
 };
 // trimUp/trimDown er IKKE med i BUTTON_ACTIONS/buttonManager under - de er kontinuerlige "hold inne"-
-// handlinger (se adjustTrim), ikke enkelt-trigget på stigende kant slik kill/modus-bryterne er.
+// handlinger (se adjustTrim), ikke enkelt-trigget på stigende kant slik engineOn/-Off/modus-knappene er.
+// Ingen egen "transisjonsbryter" her (se MODE_LABELS-kommentaren) - modusknappene ER transisjonen.
 const BUTTON_ACTION_LABELS = {
-    kill: "Motor av/på", modeStabilized: "Modus: Stabilized", modeManual: "Modus: Manual",
+    engineOn: "Motor PÅ", engineOff: "Motor AV",
+    modeQStabilize: "Modus: QSTABILIZE", modeQHover: "Modus: QHOVER", modeQLoiter: "Modus: QLOITER",
+    modeQAcro: "Modus: QACRO", modeManual: "Modus: MANUAL", modeFbwa: "Modus: FBWA",
     trimUp: "Trim opp", trimDown: "Trim ned"
 };
 
@@ -315,27 +434,142 @@ const planeState = {
     crashed: false,
     onGround: true,
     hasBeenAirborne: false,
-    flightMode: "stabilized",
-    planeClass: PLANE_CLASSES[settings.planeClass] ? settings.planeClass : DEFAULT_PLANE_CLASS,
+    flightMode: "qhover",
+    planeClass: VTOL_CLASSES[settings.planeClass] ? settings.planeClass : DEFAULT_PLANE_CLASS,
     elevatorTrimDeg: 0,
     autoTrimFilteredDeflection: 0,
     lastRollDeflection: 0, lastPitchDeflection: 0, lastYawDeflection: 0,
     prevBankDeg: 0, prevPitchDegForD: 0,
-    filteredBankRateDeg: 0, filteredPitchRateDeg: 0
+    filteredBankRateDeg: 0, filteredPitchRateDeg: 0,
+    // VTOL-spesifikke - lagres i stepPhysics for bruk i updatePlaneVisual (propellanimasjon) og
+    // updateHud (samme "siste beregnede verdi fra fysikk-tick"-mønster som lastRollDeflection over).
+    lastPusherThrottle: 0, lastCollectiveFrac: 0, lastMcAuthority: 1
 };
 
 let lastAirspeed = 0;
 
 function currentPlaneSpec() {
-    return PLANE_CLASSES[planeState.planeClass];
+    return VTOL_CLASSES[planeState.planeClass];
 }
 
 function setPlaneClass(className) {
-    if (!PLANE_CLASSES[className]) return;
+    if (!VTOL_CLASSES[className]) return;
     planeState.planeClass = className;
     settings.planeClass = className;
     saveSettings();
     if (scene) rebuildPlaneMesh();
+}
+
+/* ---------- VTOL: Q-modus/Plane-modus-myndighet og weathervane ----------
+   Navngivningen på DEFAULT_VTOL_PARAMS følger ArduPilot/Mission Planner sine ekte Q_*-parameternavn
+   (se kommentarene på hvert felt) - brukeren ba spesifikt om ArduPilot-terminologi siden det er det som
+   faktisk skal brukes, IKKE PX4 (som en tidligere versjon av denne filen brukte - se git-historikk).
+   ArduPilot har INGEN egen "transisjonsbryter": selve FLIGHTMODE-valget ER transisjonen - å bytte til en
+   Q-modus gir øyeblikkelig full svevemyndighet ("quad motors will immediately engage"), å bytte til
+   MANUAL/FBWA går tilbake til fastvinget flyging (med eller uten assistanse, se computeMcAuthority) -
+   se MODE_LABELS-kommentaren for hele modus-oversikten. */
+const DEFAULT_VTOL_PARAMS = {
+    // Q_ASSIST_SPEED / AIRSPEED_MIN: luftfart (m/s) flyet må nå i FBWA før løftemotor-assistansen
+    // begynner å trappes ned (se computeMcAuthority) - under denne farten er assistansen alltid full.
+    assistSpeed: 12,
+    // Antall sekunder assistansen bruker på å trappes helt ned ETTER at assistSpeed nås første gang (se
+    // ArduPilot-dokumentasjonen sitert av brukeren: "the amount of assistance...will decrease over 5
+    // seconds. After that time the aircraft will be flying purely as a fixed wing").
+    assistFadeSec: 5,
+    // Q_WVANE_ENABLE: aktiver weathervaning (nesen dreier inn mot vinden) i QLOITER - ArduPilot støtter
+    // fem retnings-varianter (nese/hale/side inn mot vind); forenklet til av/på her, kun standardverdien
+    // "Nese inn mot vind" (se computeWeathervaneYawRateRad).
+    wvaneEnabled: true,
+    // Q_WVANE_GAIN: konverterer kommandert lenevinkel (grader) til girrate (grader/sekund) - "1 grad
+    // krengning gir 1 grad/s gir" ved standardverdien 1.
+    wvaneGain: 1,
+    // Q_WVANE_ANG_MIN: minste kommanderte lenevinkel (grader) før weathervaning begynner å virke - unngår
+    // unødig dreiing i (nesten) vindstille/med litt trim.
+    wvaneAngMin: 1
+};
+function loadVtolParams() { return Sim.loadJSON(VTOL_PARAMS_STORAGE_KEY, DEFAULT_VTOL_PARAMS); }
+function saveVtolParams() { Sim.saveJSON(VTOL_PARAMS_STORAGE_KEY, vtolParams); }
+const vtolParams = loadVtolParams();
+
+// assistFadeStartTime: tidspunktet FBWA-assistansen begynte å trappes ned (satt av computeMcAuthority
+// første gang luftfarten når assistSpeed i FBWA, nullstilt idet farten faller under den igjen eller
+// flightMode forlater FBWA) - eneste stykke VTOL-spesifikk TILSTAND simmen trenger nå (i motsetning til
+// den forrige PX4-modellens egne switchOn/phase/pusherThrottle - se toppkommentaren).
+const vtolState = { assistFadeStartTime: null };
+function resetVtolState() { vtolState.assistFadeStartTime = null; }
+function isQMode(mode) { return mode === "qstabilize" || mode === "qhover" || mode === "qloiter" || mode === "qacro"; }
+
+// Multirotor-kontrollmyndighet (0-1) - se toppkommentaren for selve modellen. Q-moduser: ALLTID full
+// myndighet, uansett fart (ArduPilot: "the quad motors will immediately engage"). MANUAL: ALDRI noen
+// myndighet, uansett fart (ArduPilot: "the quad motors are disabled [i MANUAL mode]"). FBWA: full
+// myndighet til assistSpeed nås, deretter en tidsbasert nedtrapping over assistFadeSec sekunder (se
+// DEFAULT_VTOL_PARAMS) - IKKE en ren funksjon av øyeblikkelig fart slik en glattere modell ville gitt,
+// siden ArduPilot selv beskriver dette som en tids-rampe som først STARTER idet terskelen krysses.
+function computeMcAuthority(mode, airspeed, now) {
+    if (mode === "manual") return 0;
+    if (isQMode(mode)) {
+        vtolState.assistFadeStartTime = null; // neste gang FBWA krysser terskelen skal telle fra 0 igjen
+        return 1;
+    }
+    const p = vtolParams;
+    if (airspeed < p.assistSpeed) {
+        vtolState.assistFadeStartTime = null;
+        return 1;
+    }
+    if (vtolState.assistFadeStartTime === null) vtolState.assistFadeStartTime = now;
+    const elapsedSec = (now - vtolState.assistFadeStartTime) / 1000;
+    return clamp(1 - elapsedSec / Math.max(0.1, p.assistFadeSec), 0, 1);
+}
+
+// Failsafe mot å hoppe rett i MANUAL uten nok luftfart: MANUAL gir (se computeMcAuthority over) ALLTID
+// 0% løftemotor-myndighet MOMENTANT, uansett fart - i motsetning til FBWA, som alltid beholder full
+// myndighet under assistSpeed (se samme funksjon), og derfor allerede er trygg å bytte til når som helst.
+// Et ekte QuadPlane har ingen tilsvarende automatisk beskyttelse INNI selve MANUAL-modusen (motoren er
+// og blir av der - derfor advarer ArduPilot pilotene selv mot å bruke MANUAL/ACRO for svevemotor-assistert
+// flukt), men en ekte pilot/GCS ville heller aldri KOMMANDERT det bryteren uten fart i utgangspunktet -
+// det er nettopp DEN beskyttelsen (mot selve bryteromslaget, ikke mot fysikken etter omslaget) som
+// simuleres her, ved å AVVISE selve modusbyttet i stedet for å endre hva MANUAL faktisk gjør når du er i
+// den. Bruker samme terskel (vtolParams.assistSpeed) som FBWA sin egen overgang - én kilde til sannhet,
+// justerbar i samme VTOL-panel.
+let modeBlockedUntil = 0;
+function trySetFlightMode(mode) {
+    if (mode === "manual" && lastAirspeed < vtolParams.assistSpeed) {
+        modeBlockedUntil = performance.now() + 3000;
+        if (modeBlockedReasonEl) {
+            modeBlockedReasonEl.textContent = "For lav luftfart (" + lastAirspeed.toFixed(1) + " < "
+                + vtolParams.assistSpeed.toFixed(0) + " m/s) - løftemotorene ville kuttet momentant i MANUAL";
+        }
+        return false;
+    }
+    planeState.flightMode = mode;
+    return true;
+}
+
+// Se ArduPilot "Active Weathervaning" (sitert av brukeren): flyet dreier nesen inn MOT vinden mens det
+// posisjonsholder i QLOITER (IKKE i QSTABILIZE/QHOVER - "not active in QSTABILIZE and QHOVER modes as
+// those are not position controlled modes"), som reduserer vingens angrepsflate mot vinden. Bruker her
+// den EKTE, simulerte vindvektoren direkte (currentWindVector) i stedet for å estimere den fra egen
+// krengevinkel slik en ekte ArduPilot-kontroller må (den har ingen fasit å sammenligne mot) - "yaw inn i
+// roll/pitch"-PRINSIPPET (se Q_WVANE_GAIN-kommentaren) er likevel det samme. leanMagDeg er gjeldende
+// (allerede beregnede) kommandert lenevinkel i QLOITER, brukt til Q_WVANE_ANG_MIN-terskelen.
+function computeWeathervaneYawRateRad(forwardWorld, leanMagDeg) {
+    if (!vtolParams.wvaneEnabled) return 0;
+    const windSpeed = currentWindVector.length();
+    if (windSpeed < 0.5 || leanMagDeg < vtolParams.wvaneAngMin) return 0;
+    // Nesen skal peke MOT der vinden kommer FRA, altså motsatt av vindens egen bevegelsesretning.
+    const targetX = -currentWindVector.x / windSpeed, targetZ = -currentWindVector.z / windSpeed;
+    const cross = forwardWorld.x * targetZ - forwardWorld.z * targetX;
+    const dot = forwardWorld.x * targetX + forwardWorld.z * targetZ;
+    const headingErrorRad = Math.atan2(cross, dot);
+    // Q_WVANE_GAIN er offisielt "grader lenevinkel -> grader/s girrate" (et ÅPENT, ikke-konvergerende
+    // ledd - se ArduPilot-dokumentasjonen: "yaw into the roll/pitch"). Brukt her i stedet som selve
+    // P-FORSTERKNINGEN (rad/s girrate per rad retningsAVVIK, samme tallverdi/standard 1) - et rent
+    // lenevinkel-proporsjonalt (ikke retnings-tilbakekoblet) moment ville aldri KONVERGERT mot faktisk å
+    // peke inn i vinden, kun dreie proporsjonalt med hvor mye flyet lener. headingErrorRad går derimot
+    // naturlig mot 0 idet nesen når målretningen - en ekte, konvergerende P-kontroller med samme
+    // brukerjusterbare gain-tall.
+    const maxRateRad = THREE.MathUtils.degToRad(MC_MAX_YAW_RATE_DEG);
+    return clamp(headingErrorRad * vtolParams.wvaneGain, -maxRateRad, maxRateRad);
 }
 
 /* ---------- Vind ---------- */
@@ -347,14 +581,24 @@ function updateWind(dt) {
 
 const inputState = {
     source: "keyboard",
-    stick: { roll: 0, pitch: 0, yaw: 0, throttle: 0 }
+    // throttle starter SENTRERT (0.5), IKKE i bunn (0) som fastvinge-simmens tomgangs-konvensjon - default
+    // flightMode er qhover (se planeState under), et Alt Hold-regime der 0.5 betyr "hold nåværende høyde/
+    // sveve i ro" (se MC_ALT_HOLD_DEADBAND-bruken i stepPhysics). Med pinnen i bunn ville Alt Hold i stedet
+    // tolket det som et kommandert MAKS synk, som klemmer kollektiv trekkraft til 0 - løftemotorene ville
+    // dermed aldri synlig spinne opp ved oppstart, og flyet ville stå der helt kraftløst på bakken (ingen
+    // reell sveve-trekkraft til å holde det stødig) i stedet for å hvile rolig på hover-trekkraft.
+    stick: { roll: 0, pitch: 0, yaw: 0, throttle: 0.5 }
 };
 const keys = new Set();
 
 let renderer, scene, chaseCamera, fpvCamera, vlosCamera, activeCamera;
-let planeGroup, planePropeller;
-let planeAileronLeft, planeAileronRight, planeElevator, planeRudder;
+let planeGroup, planePropeller, planeLiftProps = [];
+let planeAileronLeft, planeAileronRight, planeVtailLeft, planeVtailRight;
 let propSpinSpeed = 0;
+let liftPropSpinSpeed = 0;
+// Rent visuelt differensial-tillegg (rad/s per full deflection) på løftemotorenes spinn ved kommandert
+// rull/stigning - se bruken i updatePlaneVisual.
+const LIFT_PROP_DIFFERENTIAL_GAIN = 60;
 let cameraModeIndex = 0;
 let windsockHandles = [];
 // Trebygging (bjørk/furu) og vind-svai er delt med quad-simulatoren - se Sim.buildBirch/buildPine/
@@ -1679,20 +1923,42 @@ function buildWing(spec, wingMat, darkMat) {
         navLight.position.set(side * (spec.wingSpan / 2 - 0.02), 0, -wingChord / 2);
         group.add(navLight);
 
-        // Vingestrebe ned til skroget (typisk for en høyvinget trener) - tykk nok til faktisk å synes.
-        const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1, 8), darkMat);
-        strut.position.set(side * spec.wingSpan * 0.22, 0, 0);
-        group.add(strut);
-        group.userData["strut" + side] = strut;
+        // INGEN vingestrebe her (i motsetning til fastvinge-simmens skoletrener-vinge denne ble kopiert
+        // fra) - en VTOL-vinge av denne typen er selvbærende, uten diagonale strebepinner ned til skroget
+        // (se referansebildene brukeren la ved - løftemotor-bommene, ikke strebepinner, er det synlige
+        // under vingen, se addLiftBoom i buildPlane).
     });
 
     return group;
 }
 
+// Ett propellblad med en tapret silhuett (bredest nær navet, avsmalnende mot en avrundet tupp) i stedet
+// for et rett rektangel (BoxGeometry), som brukeren rapporterte så ut som "flate rektangler". Bladet
+// bygges FLATT i lokal XY (span langs X fra navet, korde langs Y, sentrert om 0), tynt i Z - riktig
+// orientering for EN rotor som spinner om sin egen lokale Z-akse (se buildPlane sin pusherGroup, som
+// roterer med rotation.z i updatePlaneVisual). For løftemotor-rotorene (som spinner om lokal Y i stedet,
+// se liftPropGroup) roterer buildPlane hvert blad -90° om X etter kallet, som bytter om Y/Z og dermed gir
+// riktig orientering for DEN rotasjonsaksen uten en egen kopi av selve bladformen.
+function buildPropBlade(length, rootChord, tipChord, thickness, mat) {
+    const shape = new THREE.Shape();
+    const tipTaperStart = length * 0.78;
+    shape.moveTo(0, -rootChord / 2);
+    shape.quadraticCurveTo(length * 0.4, -rootChord * 0.5, tipTaperStart, -tipChord * 0.6);
+    shape.quadraticCurveTo(length, -tipChord * 0.25, length, 0);
+    shape.quadraticCurveTo(length, tipChord * 0.25, tipTaperStart, tipChord * 0.6);
+    shape.quadraticCurveTo(length * 0.4, rootChord * 0.5, 0, rootChord / 2);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 6 });
+    geo.translate(0, 0, -thickness / 2);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    return mesh;
+}
+
 // Bygger flyet prosedyralt (avrundet, konisk skrog, høyvinge, hale, understell, spinner/propell) -
-// ingen eksterne modellfiler. Vingespenn/-areal skaleres etter PLANE_CLASSES.
+// ingen eksterne modellfiler. Vingespenn/-areal skaleres etter VTOL_CLASSES.
 function buildPlane(classKey) {
-    const spec = PLANE_CLASSES[classKey];
+    const spec = VTOL_CLASSES[classKey];
     const group = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8 });
     const accentMat = new THREE.MeshStandardMaterial({ color: 0xd23c3c });
@@ -1727,17 +1993,13 @@ function buildPlane(classKey) {
     tailSection.castShadow = true;
     group.add(tailSection);
 
-    // Motorpanser + spinner - markerer overgangen mellom nesekjegle og propell tydeligere enn en bar spiss.
-    const cowl = new THREE.Mesh(new THREE.CylinderGeometry(cabinRadius * 0.42, cabinRadius * 0.3, 0.05, 14), accentMat);
-    cowl.rotation.x = Math.PI / 2;
-    cowl.position.z = -(cabinLen / 2 + noseLen + 0.02);
-    cowl.castShadow = true;
-    group.add(cowl);
-    const spinner = new THREE.Mesh(new THREE.ConeGeometry(cabinRadius * 0.28, 0.09, 12), darkMat);
-    spinner.rotation.x = -Math.PI / 2;
-    spinner.position.z = -(cabinLen / 2 + noseLen + 0.09);
-    spinner.castShadow = true;
-    group.add(spinner);
+    // Ingen nesemotor på en pusher-VTOL (trekkraften kommer fra halepropellen, se pusherGroup lenger
+    // ned) - nesen bærer i stedet en enkel sensor-/kamerakule, typisk for denne typen kartleggings-VTOL
+    // (se referansebildene brukeren la ved).
+    const sensorBall = new THREE.Mesh(new THREE.SphereGeometry(cabinRadius * 0.3, 10, 8), darkMat);
+    sensorBall.position.z = -(cabinLen / 2 + noseLen + 0.02);
+    sensorBall.castShadow = true;
+    group.add(sensorBall);
 
     // Kabinvindu (cockpit) - avlang glassboble over kabinseksjonen. Mindre og flatere enn første forsøk
     // (som leste som en stor sort ball/hull oppå skroget).
@@ -1760,118 +2022,271 @@ function buildPlane(classKey) {
     const wing = buildWing({ wingArea: buildWingArea, wingSpan: buildWingSpan }, wingMat, darkMat);
     wing.position.set(0, wingMountY, 0.02);
     group.add(wing);
-    [-1, 1].forEach(function (side) {
-        const strut = wing.userData["strut" + side];
-        const strutLen = wingMountY - cabinRadius * 0.25;
-        strut.scale.y = strutLen;
-        strut.position.y = -strutLen / 2;
-    });
 
-    // Hale: fast stabilisator/finne + hengslede rorflater (høyderor/sideror) bakerst - se
-    // updatePlaneVisual() for animasjonen. tailFrontZ er forkanten av hele haleflaten.
-    const tailSpan = buildWingSpan * 0.28, tailChord = wingChord * 0.7;
+    // Hale: V-hale (to vinklede flater, hver med en hengslet "ruddervator" - en kombinert høyderor-/
+    // sideror-flate, se bildene brukeren la ved) + en liten, fast bukfinne rett ned (KUN retningsstabilitet
+    // - ingen egen rorflate, se ventralFin under). tailFrontZ er forkanten av haleflatene.
+    const tailChord = wingChord * 0.7;
     const tailFrontZ = fuselageLength / 2 - tailChord;
+    // Tynnere enn fastvinge-simmens opprinnelige haleflater (0.09) - en V-hale/bukfinne av denne typen
+    // (se referansebildene) er slankere/mer aerodynamisk formet enn en tradisjonell trener-hale.
+    const TAIL_SURFACE_THICKNESS_RATIO = 0.06;
 
-    // Hale-/finneflater bruker samme profil-generator som vingen (buildAirfoilProfileShape/
-    // buildWingProfileMesh), men med flatBottom=false - ekte hale-/finneflater er nesten alltid
-    // SYMMETRISKE profiler (må virke like godt begge veier: høyderor opp/ned, sideror høyre/venstre).
-    // "chordLen" her er den fast+hengslede delens SAMLEDE lengde (stab+elevator, hhv. fin+rudder) -
-    // xStart/xEnd deler denne i to konturmessig sammenhengende biter akkurat som vingens
-    // hoveddel/balanseror, med hengslelinjen (chordZOffset) beregnet av samme grunn.
-    const stabChord = tailChord * 0.6, elevatorChord = tailChord * 0.45;
-    const tailCombinedChord = stabChord + elevatorChord;
-    const tailMainFrac = stabChord / tailCombinedChord;
-    const tailHingeChordZ = tailMainFrac * tailCombinedChord - tailCombinedChord / 2;
-    const TAIL_SURFACE_THICKNESS_RATIO = 0.09;
-
-    const hStab = buildWingProfileMesh(tailCombinedChord, 0, tailMainFrac, TAIL_SURFACE_THICKNESS_RATIO, tailSpan, wingMat, 0, false);
-    hStab.position.set(0, cabinRadius * 0.3, tailFrontZ + tailCombinedChord / 2);
-    group.add(hStab);
-
-    const elevatorPivot = new THREE.Group();
-    elevatorPivot.position.set(0, cabinRadius * 0.3, tailFrontZ + stabChord);
-    const elevatorMesh = buildWingProfileMesh(tailCombinedChord, tailMainFrac, 1, TAIL_SURFACE_THICKNESS_RATIO, tailSpan * 0.9, darkMat, -tailHingeChordZ, false);
-    elevatorPivot.add(elevatorMesh);
-    group.add(elevatorPivot);
-
-    // Finnen er hvit/nøytral (samme som resten av skroget) - først forsøkt i aksentrødt, men det leste
-    // som en løsrevet, skarpt fargede kloss i skjermbildet i stedet for et naturlig halefinne.
-    const finHeight = cabinRadius * 2.3, finChord = tailChord * 0.65, rudderChord = tailChord * 0.5;
-    const finBaseY = cabinRadius * 0.55;
-    const finCombinedChord = finChord + rudderChord;
-    const finMainFrac = finChord / finCombinedChord;
-    const finHingeChordZ = finMainFrac * finCombinedChord - finCombinedChord / 2;
-
-    const finFixed = buildWingProfileMesh(finCombinedChord, 0, finMainFrac, TAIL_SURFACE_THICKNESS_RATIO, finHeight, wingMat, 0, false, true);
-    finFixed.position.set(0, finBaseY + finHeight / 2, tailFrontZ + finCombinedChord / 2);
-    group.add(finFixed);
-
-    const rudderPivot = new THREE.Group();
-    rudderPivot.position.set(0, finBaseY + finHeight / 2, tailFrontZ + finChord);
-    const rudderMesh = buildWingProfileMesh(finCombinedChord, finMainFrac, 1, TAIL_SURFACE_THICKNESS_RATIO, finHeight * 0.85, darkMat, -finHingeChordZ, false, true);
-    rudderPivot.add(rudderMesh);
-    group.add(rudderPivot);
-
-    // Understellet må gi nok bakkeklaring til propellsveipet (se bladeLen under). gearHeight avledes
-    // direkte av spec.gearOffsetY (fysikkens faktiske bakkekontaktpunkt) delt på visualScale, slik at det
-    // visuelle understellet stemmer nøyaktig med fysikkens bakkekontakt for alle tre flystørrelsene.
-    // Hjulets BUNNPUNKT (senter minus radius), ikke hjulsenteret, må lande på -gearHeight - derfor stopper
-    // strebene ved hjulaksling-høyde (gearHeight - hjulradius), ikke ved selve bakkekontaktpunktet.
-    const wheelRadius = 0.04, noseWheelRadius = 0.03;
-    const gearHeight = -spec.gearOffsetY / spec.visualScale;
-    // Samme bygge-rom-prinsipp som vingen (se buildWingSpan over) - koeffisienten (0.25) er også identisk
-    // med resolveGroundContact sin egen gearTrack-formel, slik at de visuelle hjulene sitter nøyaktig der
-    // fysikken faktisk registrerer bakkekontakt.
-    const gearTrack = buildWingSpan * 0.25;
-    const strutLenMain = gearHeight - wheelRadius;
-    // Strebene går DIAGONALT fra et festepunkt på skrogets buk og skrår utover til hjulet, som en ekte
-    // "cantilever"-fjærbein (typisk høyvinget trener, f.eks. Cessna 152/172-stil) - ikke loddrett rett
-    // under hjulsporet, som ville latt streben sveve fritt utenfor det smale skroget uten synlig feste.
-    // setFromUnitVectors orienterer sylinderen langs den faktiske retningen mellom de to punktene.
-    const gearAttachPoint = new THREE.Vector3(0, -cabinRadius * 0.9, 0.02);
+    // V-halens vinkel fra vannrett (se referansebildene) - hver flate bygges FØRST som et rett,
+    // loddrett panel (samme "verticalFin"-profilgenerator som en konvensjonell finne, se
+    // buildWingProfileMesh), og VIPPES SÅ utover til riktig vinkel av tiltGroup sin egen rotation.z -
+    // nøyaktig samme "bygg flatt, roter gruppen etterpå"-idiom som resten av filen allerede bruker
+    // (se f.eks. streberne/aileronPivot i buildWing). Fortegnet på rotation.z (-side*vinkel) er
+    // verifisert til å vippe høyre panel (side=1) mot +X og venstre (side=-1) mot -X.
+    const VTAIL_ANGLE_DEG = 48; // brukeren ba om litt mer vinkel mellom flatene (opp fra 38)
+    // Bakoverpil ("sweep"): en EKSTRA rotasjon om lokal X, lagt OVENPÅ V-vinkelen (rotation.z) på samme
+    // tiltGroup, slik at hele panelet (rot OG tupp) vipper likt, ikke bare tuppen alene - gir et mer
+    // aerodynamisk, bakovervinklet silhuett i stedet for et rett, loddrett panel (se referansebildene).
+    // Samme fortegn for BEGGE sider (i motsetning til V-vinkelen, som speiles - pilvinkelen skal peke
+    // samme vei, bakover, uansett hvilken side). ventralFin under bruker MOTSATT fortegn på nøyaktig
+    // samme vinkel - se kommentaren der for hvorfor (finnen henger NED i stedet for opp).
+    const TAIL_SWEEP_DEG = 18;
+    const vtailHeight = cabinRadius * 2.1;
+    const vFixedChord = tailChord * 0.62, vMovChord = tailChord * 0.46;
+    const vCombinedChord = vFixedChord + vMovChord;
+    const vMainFrac = vFixedChord / vCombinedChord;
+    const vHingeChordZ = vMainFrac * vCombinedChord - vCombinedChord / 2;
+    // Festepunktets høyde MÅ følge halekjeglens EGEN (avsmalnende) radius der panelet faktisk fester seg
+    // (tailFrontZ, forkanten av selve rot-korden - den BREDESTE, mest konservative Z-posisjonen langs
+    // panelets kordeutstrekning, siden kjeglen smalner videre bakover mot halespissen) - en FAST brøkdel
+    // av cabinRadius (som før) stemte kun tilfeldigvis for ÉN vinge-/haleklasse, og etterlot et synlig
+    // mellomrom mellom panelroten og skroget for andre kombinasjoner av VTAIL_ANGLE_DEG/TAIL_SWEEP_DEG/
+    // tailChord (brukeren rapporterte "rart vinklet og festet... ser noe mellomrom"). 0.85 (ikke 1.0) gir
+    // et lite, bevisst overlapp inn i kjeglen i stedet for kun å tangere overflaten - unngår en synlig
+    // sprekk fra avrundingsfeil, samme prinsipp som en ekte påsveiset finne stikker litt inn i skroget.
+    const tailConeRadiusAtFrontRoot = cabinRadius * THREE.MathUtils.lerp(
+        1, TAIL_TIP_RADIUS_RATIO, clamp((tailFrontZ - cabinLen / 2) / tailLen, 0, 1)
+    );
+    const vtailBaseY = tailConeRadiusAtFrontRoot * 0.85;
+    // Rundet hjørne der forkanten møter tuppen (se referansebildene) - en liten kule i samme materiale
+    // som panelet, midt i tykkelsen, plassert nøyaktig i det hjørnet (se fixedPanel sitt eget Z-område,
+    // beregnet i kommentaren ved ruddervatorPivot: forkanten ligger ved lokal Z=-vCombinedChord/2).
+    const tailTipFilletRadius = TAIL_SURFACE_THICKNESS_RATIO * vCombinedChord * 0.55;
+    // Ruddervatorens span som andel av HELE panelets høyde ("innfelt ror" - se ruddervatorMesh- OG
+    // vtailFrameMarginSpan-kommentarene under, som BEGGE MÅ bruke akkurat denne samme brøken for at
+    // ramme-fyllet skal møte rorflaten helt uten synlig sprekk).
+    const VTAIL_RUDDERVATOR_SPAN_FRAC = 0.72;
+    const vtailPivotBySide = {};
     [-1, 1].forEach(function (side) {
-        const wheelPoint = new THREE.Vector3(side * gearTrack / 2, -strutLenMain, 0.02);
-        const strutVec = wheelPoint.clone().sub(gearAttachPoint);
-        const strutLen = strutVec.length();
-        const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, strutLen, 6), darkMat);
-        strut.position.copy(gearAttachPoint).addScaledVector(strutVec, 0.5);
-        strut.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), strutVec.clone().normalize());
-        group.add(strut);
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 0.025, 14), darkMat);
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.copy(wheelPoint);
-        wheel.castShadow = true;
-        group.add(wheel);
-    });
-    const noseGearHeight = gearHeight * 0.85;
-    const strutLenNose = noseGearHeight - noseWheelRadius;
-    const noseStrut = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, strutLenNose, 6), darkMat);
-    noseStrut.position.set(0, -strutLenNose / 2, -fuselageLength / 2 + 0.1);
-    group.add(noseStrut);
-    const noseWheel = new THREE.Mesh(new THREE.CylinderGeometry(noseWheelRadius, noseWheelRadius, 0.02, 12), darkMat);
-    noseWheel.rotation.z = Math.PI / 2;
-    noseWheel.position.set(0, -strutLenNose, -fuselageLength / 2 + 0.1);
-    group.add(noseWheel);
+        const tiltGroup = new THREE.Group();
+        tiltGroup.position.set(0, vtailBaseY, tailFrontZ + vCombinedChord / 2);
+        tiltGroup.rotation.z = -side * THREE.MathUtils.degToRad(VTAIL_ANGLE_DEG);
+        tiltGroup.rotation.x = THREE.MathUtils.degToRad(TAIL_SWEEP_DEG);
+        group.add(tiltGroup);
 
-    // Propell: to enkle, slanke blad (den forrige "twist"-varianten med et bredere tupp-segment leste
-    // som to store, klossete firkanter ytterst i skjermbildene - fjernet til fordel for én enkel, tynn
-    // bjelke per blad). bladeLen er verifisert mot minste gearHeight (Stor-klassen) med god klaring.
-    const propGroup = new THREE.Group();
-    const propMat = new THREE.MeshStandardMaterial({ color: 0x151515 });
-    const bladeLen = cabinRadius * 2.0;
-    [-1, 1].forEach(function (dir) {
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLen, 0.012, 0.032), propMat);
-        blade.position.x = dir * bladeLen / 2;
-        propGroup.add(blade);
+        const fixedPanel = buildWingProfileMesh(vCombinedChord, 0, vMainFrac, TAIL_SURFACE_THICKNESS_RATIO, vtailHeight, wingMat, 0, false, true);
+        fixedPanel.position.set(0, vtailHeight / 2, 0);
+        tiltGroup.add(fixedPanel);
+
+        // "Innfelt ror"-rammen (se ruddervatorMesh-kommentaren under - spennet der er bevisst mindre enn
+        // fixedPanel sitt eget) trengte to små, FASTE fyllpaneler i BAKRE kordeområde (samme kordeområde
+        // som selve ruddervatoren, vMainFrac til 1) ved topp- OG bunnmarginen - uten dem var det bakre
+        // kordeområdet der ruddervatoren IKKE dekker (marginene over/under den) helt tomt/åpent (fixedPanel
+        // dekker kun det FREMRE kordeområdet, over hele spennet) - så ut som et hakk/hull i halen i stedet
+        // for en pent innfelt rorflate (se referansebildene brukeren la ved).
+        const vtailFrameMarginSpan = vtailHeight * (1 - VTAIL_RUDDERVATOR_SPAN_FRAC) / 2;
+        [0, 1].forEach(function (edge) {
+            const frame = buildWingProfileMesh(vCombinedChord, vMainFrac, 1, TAIL_SURFACE_THICKNESS_RATIO, vtailFrameMarginSpan, wingMat, 0, false, true);
+            frame.position.set(0, edge ? vtailHeight - vtailFrameMarginSpan / 2 : vtailFrameMarginSpan / 2, 0);
+            tiltGroup.add(frame);
+        });
+
+        const tipFillet = new THREE.Mesh(new THREE.SphereGeometry(tailTipFilletRadius, 8, 6), wingMat);
+        tipFillet.position.set(0, vtailHeight, -vCombinedChord / 2 + tailTipFilletRadius * 0.6);
+        tiltGroup.add(tipFillet);
+
+        // Ruddervator-pivoten: rotation.x av DENNE (i sin egen, allerede vippede lokale ramme - se
+        // updatePlaneVisual) gir samtidig et pitch- OG et yaw-bidrag i verdensrom, akkurat som en ekte
+        // V-hale - fysikken (tailTorqueAtPitchRate/finTorqueAtYawRate) modellerer denne mikset
+        // abstrakt/aerodynamisk og er UAVHENGIG av denne rent visuelle geometrien.
+        // MERK: posisjonen her er RELATIV TIL tiltGroup, IKKE en absolutt fuselage-Z slik den originale
+        // (ikke-vippede) hale-/finne-koden i fastvinge-simmen brukte direkte (tailFrontZ+stabChord) -
+        // tiltGroup bidrar allerede med sin egen (tailFrontZ+vCombinedChord/2)-forskyvning, så denne
+        // pivoten må trekke fra det samme leddet (vCombinedChord/2) for at hengslelinjen faktisk skal
+        // møte fixedPanel sin bakkant i stedet for å hoppe et helt halvt kordemål bakover i løse luften
+        // (den opprinnelige bugen brukeren rapporterte som "ser ut som to V-haler").
+        const ruddervatorPivot = new THREE.Group();
+        ruddervatorPivot.position.set(0, vtailHeight / 2, vFixedChord - vCombinedChord / 2);
+        // Innfelt: spennet (VTAIL_RUDDERVATOR_SPAN_FRAC, ned fra 0.9 opprinnelig) er bevisst mindre enn
+        // fixedPanel sitt eget, slik at det står igjen en synlig kant/ramme av fast panel øverst OG
+        // nederst rundt selve rorflaten - "innfelt ror" (se referansebildene), ikke en rorflate som dekker
+        // hele panelets høyde kant til kant. Selve rammefyllet (vtailFrameMarginSpan) som lukker igjen
+        // dette området i BAKRE kordeområde bygges over, sammen med fixedPanel.
+        const ruddervatorMesh = buildWingProfileMesh(vCombinedChord, vMainFrac, 1, TAIL_SURFACE_THICKNESS_RATIO, vtailHeight * VTAIL_RUDDERVATOR_SPAN_FRAC, darkMat, -vHingeChordZ, false, true);
+        ruddervatorPivot.add(ruddervatorMesh);
+        tiltGroup.add(ruddervatorPivot);
+        vtailPivotBySide[side] = ruddervatorPivot;
     });
-    propGroup.position.z = -(cabinLen / 2 + noseLen + 0.115);
-    group.add(propGroup);
+
+    // INGEN hjul (verken hovedhjul eller nesehjul) - se referansebildene brukeren la ved: dette
+    // understellet er fire rette BEN som henger ned fra løftemotor-bommene (se addLiftBoom under) pluss
+    // BUKFINNEN som en femte, bakre landingsmeie/-ski - ikke et hjulunderstell i det hele tatt.
+    // gearHeight er (som før) avledet direkte av spec.gearOffsetY (fysikkens faktiske bakkekontakthøyde)
+    // delt på visualScale, slik at ALLE ben+bukfinne stemmer nøyaktig med fysikkens bakkekontaktplan
+    // (se resolveGroundContact) for alle tre flystørrelsene - de skal alle nå ned til AKKURAT samme høyde,
+    // slik at flyet står plant på bakken.
+    const gearHeight = -spec.gearOffsetY / spec.visualScale;
+
+    // Bukfinne/landingsmeie: FAST (ingen hengslet rorflate) finne rett ned fra halepartiet - gir ekstra
+    // retningsstabilitet/-demping i luften (se ventralFinTorqueAtYawRate i stepPhysics) OG er samtidig
+    // halens landingspunkt på bakken (se referansebildene) - derfor strekker den seg HELT ned til
+    // gearHeight (samme høyde som beina under), ikke bare et lite stykke ned fra skroget.
+    const ventralFinHeight = gearHeight, ventralFinChord = tailChord * 0.5;
+    const ventralFin = buildWingProfileMesh(ventralFinChord, 0, 1, TAIL_SURFACE_THICKNESS_RATIO, ventralFinHeight, wingMat, 0, false, true);
+    ventralFin.position.set(0, -ventralFinHeight / 2, tailFrontZ + ventralFinChord / 2);
+    group.add(ventralFin);
+    // Rundet hjørne der forkanten møter den nedre tuppen (se referansebildene og samme tipFillet-idé ved
+    // V-halen over) - IKKE tilført pilvinkel/sweep her som V-halen fikk: bunnen av denne finnen ER
+    // samtidig et av landingsbeina (se resolveGroundContact sin tailSkidZWorld), og en sweep ville flyttet
+    // akkurat det kontaktpunktet ut av synk med fysikken - se GEAR_LEG_FORWARD_LEAN_BUILD-kommentaren for
+    // hvorfor de FRIE beina trygt kan vinkles, mens dette faste punktet ikke kan det uten videre.
+    const ventralTipFilletRadius = TAIL_SURFACE_THICKNESS_RATIO * ventralFinChord * 0.55;
+    const ventralTipFillet = new THREE.Mesh(new THREE.SphereGeometry(ventralTipFilletRadius, 8, 6), wingMat);
+    ventralTipFillet.position.set(0, -ventralFinHeight, tailFrontZ + ventralTipFilletRadius * 0.6);
+    group.add(ventralTipFillet);
+
+    // Trekkpropell (pusher) - montert bakerst på halekjeglen, IKKE på nesen (se sensorBall over) - to
+    // enkle, slanke blad, samme byggemønster som fastvinge-simmens nesepropell hadde. tailTipZ er
+    // halekjeglens FAKTISKE spiss (cabinLen/2+tailLen, IKKE den kun tilnærmede fuselageLength/2 - se
+    // samme utregning i checkTailStrike) - en motorgondol bygger bro mellom spissen og selve propellen,
+    // akkurat som cowl/spinner gjorde ved nesa, så propellen ikke henger synlig løsrevet i luften bak flyet.
+    const tailTipZ = cabinLen / 2 + tailLen;
+    const pusherMountLen = 0.09;
+    // Flush overgang: pusherMount sin FRONTRADIUS (radiusBottom - se samme "-Y/radiusBottom mot
+    // skroget"-mønster som tailSection over) matcher halekjeglens FAKTISKE tupp-radius nøyaktig
+    // (cabinRadius*TAIL_TIP_RADIUS_RATIO), i stedet for en mye BREDERE, løsrevet krage (0.3/0.42*
+    // cabinRadius, godt over tuppens egen ~0.16*cabinRadius) - det var derfor den "ikke var flush med
+    // resten av kroppen". bodyMat (ikke rød accentMat) lar den lese som en naturlig FORLENGELSE av
+    // skroget, ikke en påklistret del.
+    const pusherMount = new THREE.Mesh(
+        new THREE.CylinderGeometry(cabinRadius * TAIL_TIP_RADIUS_RATIO * 0.55, cabinRadius * TAIL_TIP_RADIUS_RATIO, pusherMountLen, 14),
+        bodyMat
+    );
+    pusherMount.rotation.x = Math.PI / 2;
+    pusherMount.position.z = tailTipZ + pusherMountLen / 2;
+    pusherMount.castShadow = true;
+    group.add(pusherMount);
+
+    const pusherGroup = new THREE.Group();
+    const propMat = new THREE.MeshStandardMaterial({ color: 0x151515 });
+    const pusherBladeLen = cabinRadius * 2.1;
+    [-1, 1].forEach(function (dir) {
+        const blade = buildPropBlade(pusherBladeLen, pusherBladeLen * 0.24, pusherBladeLen * 0.11, 0.008, propMat);
+        blade.rotation.z = dir > 0 ? 0 : Math.PI;
+        pusherGroup.add(blade);
+    });
+    pusherGroup.position.z = tailTipZ + pusherMountLen + 0.02;
+    group.add(pusherGroup);
+
+    // Fire faste løftemotorer, montert på RETTE bommer som går GJENNOM vingen langs vingens EGEN
+    // spennretning - IKKE en diagonal "X"-layout radiert ut fra skroget slik en ren quadcopter har (se
+    // referansebildene brukeren la ved: én bom per vingeside, festet TIL vingen, med én motor fremst og
+    // én bakerst på hver bom - fire motorer totalt, null skrog-monterte armer). boomX/boomHalfLen er (som
+    // buildWingSpan over) i BYGGE-rom, siden hele gruppen skaleres med spec.visualScale til slutt.
+    // boomX MÅ holde seg innenfor vingens FASTE midtseksjon (centerSpan i buildWing, dvs. innenfor
+    // wingSpan*0.28 fra senterlinjen - se aileronSpan/centerSpan der) - ellers stikker bommen rett
+    // gjennom balanserorets utsparing på vingetuppen, som brukeren rapporterte ("pinnene til
+    // quadpropellene går rett gjennom ailerons"). 0.22 gir trygg klaring til aileron-grensen (0.28), og
+    // MÅ matche GEAR_BOOM_X_FRAC i resolveGroundContact (se der - beina henger fra nøyaktig disse
+    // bom-posisjonene, se referansebildene: "pinner som stikker ned under vingen fra rørene som
+    // quadmotorene er montert på").
+    const boomX = buildWingSpan * GEAR_BOOM_X_FRAC;
+    const boomHalfLen = spec.armLen / spec.visualScale * 0.5;
+    const armMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
+    const liftMotorMat = new THREE.MeshStandardMaterial({ color: 0x151515 });
+    const liftPropGroups = [];
+    [-1, 1].forEach(function (side) {
+        const boomXPos = side * boomX;
+        // Sylinderens egen lengdeakse (lokal Y) roteres 90° om X til å peke langs lokal Z (fram/bak) -
+        // samme "bygg langs Y, roter til riktig akse etterpå"-idiom som resten av filen (se f.eks.
+        // buildWingProfileMesh).
+        const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, boomHalfLen * 2, 8), armMat);
+        boom.rotation.x = Math.PI / 2;
+        boom.position.set(boomXPos, wingMountY, BOOM_CENTER_Z_BUILD);
+        boom.castShadow = true;
+        group.add(boom);
+
+        // Motor + propell i hver ende av bommen - fremre farges rødlig (accentMat, samme konvensjon som
+        // quad-simulatorens frontArmMat) for å gjøre nese-retningen tydelig på avstand.
+        [
+            { z: BOOM_CENTER_Z_BUILD - boomHalfLen, front: true },
+            { z: BOOM_CENTER_Z_BUILD + boomHalfLen, front: false }
+        ].forEach(function (m) {
+            const motorPod = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.05, 10), m.front ? accentMat : liftMotorMat);
+            motorPod.position.set(boomXPos, wingMountY, m.z);
+            motorPod.castShadow = true;
+            group.add(motorPod);
+
+            // Landingsben: KUN på det FREMRE motorparet (se referansebildene brukeren la ved - "kun tre
+            // landingsben, to på midten og et bak der det bakerste er den vertikale stabben") - rett ned
+            // fra motoren til bakkeplanet (gearHeight, se over), IKKE hjul. legBottomY er ABSOLUTT
+            // (fuselage-Y, ikke relativt til motoren), siden gearHeight allerede er målt fra CG (Y=0),
+            // akkurat som bukfinnen (tredje/bakerste "ben") over.
+            if (m.front) {
+                // Benet festes IKKE rett under selve motoren (m.z) - se GEAR_LEG_BOOM_Z_FRAC-kommentaren -
+                // festepunktet flyttes et stykke TILBAKE langs bommen, mot bom-/vingefestets senter, slik
+                // at benet sitter mer under selve vingen enn under fremre motor. Henger ellers rett ned i
+                // X (samme boomXPos - IKKE vinklet sideveis innover mot senterlinjen) med kun en liten
+                // forover-lene (-Z) ned mot bakkeplanet (se GEAR_LEG_FORWARD_LEAN_BUILD-kommentaren og
+                // referansebildene brukeren la ved). Samme "punkt-til-punkt-sylinder via
+                // setFromUnitVectors"-mønster som understellet i fastvinge-simmen opprinnelig brukte for
+                // de diagonale hjulstrebene.
+                const legAttachZ = THREE.MathUtils.lerp(m.z, BOOM_CENTER_Z_BUILD, GEAR_LEG_BOOM_Z_FRAC);
+                const legTop = new THREE.Vector3(boomXPos, wingMountY, legAttachZ);
+                const legBottom = new THREE.Vector3(
+                    boomXPos,
+                    -gearHeight,
+                    legAttachZ - GEAR_LEG_FORWARD_LEAN_BUILD
+                );
+                const legVec = legBottom.clone().sub(legTop);
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, legVec.length(), 8), darkMat);
+                leg.position.copy(legTop).addScaledVector(legVec, 0.5);
+                leg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), legVec.clone().normalize());
+                leg.castShadow = true;
+                group.add(leg);
+            }
+
+            const liftPropGroup = new THREE.Group();
+            liftPropGroup.position.set(boomXPos, wingMountY + 0.03, m.z);
+            const liftBladeLen = 0.17;
+            [-1, 1].forEach(function (dir) {
+                const blade = buildPropBlade(liftBladeLen, liftBladeLen * 0.22, liftBladeLen * 0.1, 0.006, liftMotorMat);
+                blade.rotation.x = Math.PI / 2;
+                blade.rotation.y = dir > 0 ? 0 : Math.PI;
+                liftPropGroup.add(blade);
+            });
+            group.add(liftPropGroup);
+            // side/front lagres sammen med selve gruppen (ikke bare gruppen alene) - updatePlaneVisual
+            // trenger dem til å spinne motorene ULIKT etter kommandert rull/stigning (se
+            // LIFT_PROP_DIFFERENTIAL_GAIN-kommentaren der), ikke bare identisk kollektiv spinn for alle
+            // fire slik det var før (brukeren rapporterte at det så rart ut at flyet tiltet uten at NOEN
+            // motor så ut til å gå raskere).
+            liftPropGroups.push({ group: liftPropGroup, side: side, front: m.front });
+        });
+    });
+
+    // Pitot-rør: tynt, langt rør under høyre vinge, pekende forover inn i luftstrømmen (rent visuelt -
+    // ingen egen fysikk/luftfartsmåling knyttet til det, se referansebildene brukeren la ved).
+    const pitotLen = wingChord * 0.9;
+    const pitotTube = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, pitotLen, 8), darkMat);
+    pitotTube.rotation.x = Math.PI / 2;
+    pitotTube.position.set(boomX * 0.55, wingMountY - 0.05, -pitotLen / 2 + wingChord * 0.15);
+    pitotTube.castShadow = true;
+    group.add(pitotTube);
+    const pitotMount = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.06, 6), darkMat);
+    pitotMount.position.set(boomX * 0.55, wingMountY - 0.03, wingChord * 0.15);
+    group.add(pitotMount);
 
     group.scale.setScalar(spec.visualScale);
     return {
-        group: group, propeller: propGroup,
+        group: group, propeller: pusherGroup, liftProps: liftPropGroups,
         aileronLeft: wing.userData["aileron-1"], aileronRight: wing.userData["aileron1"],
-        elevator: elevatorPivot, rudder: rudderPivot
+        vtailLeft: vtailPivotBySide[-1], vtailRight: vtailPivotBySide[1]
     };
 }
 
@@ -2082,10 +2497,11 @@ function rebuildPlaneMesh() {
     const built = buildPlane(planeState.planeClass);
     planeGroup = built.group;
     planePropeller = built.propeller;
+    planeLiftProps = built.liftProps;
     planeAileronLeft = built.aileronLeft;
     planeAileronRight = built.aileronRight;
-    planeElevator = built.elevator;
-    planeRudder = built.rudder;
+    planeVtailLeft = built.vtailLeft;
+    planeVtailRight = built.vtailRight;
     planeGroup.add(fpvCamera);
     scene.add(planeGroup);
 }
@@ -2113,9 +2529,14 @@ const readStickAxis = Sim.readStickAxis;
 const readThrottleAxis = Sim.readThrottleAxis;
 
 const BUTTON_ACTIONS = {
-    kill: toggleEngine,
-    modeStabilized: function () { planeState.flightMode = "stabilized"; },
-    modeManual: function () { planeState.flightMode = "manual"; }
+    engineOn: function () { setEngine(true); },
+    engineOff: function () { setEngine(false); },
+    modeQStabilize: function () { trySetFlightMode("qstabilize"); },
+    modeQHover: function () { trySetFlightMode("qhover"); },
+    modeQLoiter: function () { trySetFlightMode("qloiter"); },
+    modeQAcro: function () { trySetFlightMode("qacro"); },
+    modeManual: function () { trySetFlightMode("manual"); },
+    modeFbwa: function () { trySetFlightMode("fbwa"); }
 };
 const buttonManager = Sim.createButtonBindingManager(gamepadMap.buttons, BUTTON_ACTIONS, saveGamepadMap);
 
@@ -2273,13 +2694,25 @@ function stepPhysics(dt) {
     const aoaDeg = airspeed > 0.3 ? THREE.MathUtils.radToDeg(Math.atan2(-localAirVel.y, -localAirVel.z)) : 0;
     const sideslipDeg = airspeed > 0.3 ? THREE.MathUtils.radToDeg(Math.atan2(localAirVel.x, -localAirVel.z)) : 0;
 
+    // Q-modus/Plane-modus-myndighet (0-1) - se computeMcAuthority-kommentaren. Beregnes tidlig siden BÅDE
+    // trekkmotor- og løftemotor-thrust, OG selve vinkel-P(D)-målet (targetBankDeg/-PitchDeg under),
+    // trenger den.
+    const mcAuthority = computeMcAuthority(planeState.flightMode, airspeed, performance.now());
+    planeState.lastMcAuthority = mcAuthority;
+    const liftMotorsActive = mcAuthority > 0.001;
+
     const forwardAirspeedIntoProp = Math.max(-localAirVel.z, 0);
+    // Trekkpropellen (pusher) styres av gasspaken KUN i MANUAL/FBWA (fastvinget-regimet) - i en Q-modus
+    // er den alltid av (ArduPilot har en egen, valgfri "manuell forover-gass i VTOL-moduser"-RC-kanal,
+    // RCx_OPTION 209, som vi ikke har implementert her - se toppkommentaren).
+    const pusherThrottleEff = isQMode(planeState.flightMode) ? 0 : throttleShaped;
+    planeState.lastPusherThrottle = pusherThrottleEff;
     // En ekte (særlig fastpitch) propell mister trekkraft omtrent lineært med farten, fra full statisk
     // trekkraft ved V=0 til ~null idet flyet nærmer seg propellens "pitch speed" (spec.propPitchSpeed) -
     // uten dette var toppfarten satt av drag alene (urealistisk høy for en liten trener), og gass av i
     // høy fart ga ikke den brattere glidebanen en vindmøllende propell faktisk gir.
     const thrustForce = planeState.engineOn
-        ? throttleShaped * spec.maxThrust * Math.max(0, 1 - forwardAirspeedIntoProp / spec.propPitchSpeed)
+        ? pusherThrottleEff * spec.pusherMaxThrust * Math.max(0, 1 - forwardAirspeedIntoProp / spec.propPitchSpeed)
         : 0;
 
     // Propellstrøm (propwash) - se PROP_DISK_AREA_RATIO-merknaden ved konstanten. Momentum-teori for en
@@ -2316,22 +2749,85 @@ function stepPhysics(dt) {
     // kommanderer en rotasjonshastighet direkte). Stabilized er en enkel autopilot som avbøyer AKKURAT DE
     // SAMME rorflatene proporsjonalt med vinkelavviket i stedet for direkte fra pinnen.
     let rollDeflection, pitchDeflection, yawDeflection;
-    if (planeState.flightMode === "manual") {
-        // Trim er IKKE lenger blandet inn i selve pinne-avbøyningen her - se tailAoaDeg under, der
+    let weathervaneYawRateRad = 0;
+    if (planeState.flightMode === "manual" || planeState.flightMode === "qacro") {
+        // Direkte fra pinnen (ingen selvnivellering) - MANUAL er fastvinget-ekvivalenten (ArduPilot:
+        // "Please use FBWA mode instead of STABILIZE for manual flight" - ren pinnestyring er kun ment
+        // for trim-sjekk/taksing, se MODE_LABELS-kommentaren). QACRO er samme prinsipp i Q-modus
+        // (rate-styrt svevemodus, som QACRO/quad-simulatorens Acro).
+        // Trim er IKKE blandet inn i selve pinne-avbøyningen her - se tailAoaDeg under, der
         // elevatorTrimDeg påvirker halens angrepsvinkel DIREKTE (som en ekte trim-fane), uavhengig av
         // rorutslaget. pitchDeflection er dermed et rent uttrykk for PINNENS egen posisjon.
         rollDeflection = clamp(computeRate(stick.roll, rates.aileron) / rates.aileron.maxRate, -1, 1);
         pitchDeflection = clamp(computeRate(stick.pitch, rates.elevator) / rates.elevator.maxRate, -1, 1);
         yawDeflection = clamp(computeRate(stick.yaw, rates.rudder) / rates.rudder.maxRate, -1, 1);
     } else {
+        // fbwa/qstabilize/qhover/qloiter: alle fire er selvnivellerende vinkel-P(D)-moduser - SAMME
+        // kontrollov (uendret nedenfor). Kun selve MÅLVINKELEN (targetBankDeg/-PitchDeg) beregnes ulikt:
+        // direkte fra pinnen for fbwa/qstabilize/qhover (skalert mellom fastvinget- og hover-vinkelmaks
+        // etter mcAuthority, se MC_MAX_LEAN_ANGLE-kommentaren), eller - i QLOITER - fra et horisontalt
+        // fartsavvik (posisjonsholding).
         const euler = new THREE.Euler().setFromQuaternion(q, "YXZ");
         const currentPitchDeg = -THREE.MathUtils.radToDeg(euler.x);
         const currentBankDeg = -THREE.MathUtils.radToDeg(euler.z);
-        const targetBankDeg = stick.roll * MAX_BANK_ANGLE;
-        // Trim er bevisst IKKE med her - Stabilized er en selvnivellerende autopilot og skal returnere
-        // til det KOMMANDERTE stigningsmålet uansett trim (auto-trim under kompenserer i stedet for at
-        // trim flytter selve nivelleringsmålet).
-        const targetPitchDeg = stick.pitch * MAX_PITCH_ANGLE;
+
+        let targetBankDeg, targetPitchDeg;
+        if (planeState.flightMode === "qloiter" && mcAuthority > 0.01) {
+            // QLOITER: pinnen kommanderer horisontal FART (kropp-relativt forover/sideveis, se
+            // QLOITER_MAX_SPEED - ArduPilot: "Horizontal location can be adjusted with the Roll and
+            // Pitch control sticks... When the pilot releases the sticks the QuadPlane will slow to a
+            // stop") i stedet for en vinkel direkte. bodyForwardFlat/bodyRightFlat er nesens/høyre-siden
+            // sin retning FLATET til horisontalplanet (ikke en full 3D-projeksjon via quaternion-
+            // invertering, som ville blandet inn gjeldende krengning/stigning i selve fartsMÅLINGEN).
+            const bodyForwardFlat = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+            bodyForwardFlat.y = 0;
+            if (bodyForwardFlat.lengthSq() < 1e-6) bodyForwardFlat.set(0, 0, -1); else bodyForwardFlat.normalize();
+            const bodyRightFlat = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+            bodyRightFlat.y = 0;
+            if (bodyRightFlat.lengthSq() < 1e-6) bodyRightFlat.set(1, 0, 0); else bodyRightFlat.normalize();
+
+            const groundVelFlat = new THREE.Vector3(planeState.velocity.x, 0, planeState.velocity.z);
+            const fwdSpeed = groundVelFlat.dot(bodyForwardFlat);
+            const rightSpeed = groundVelFlat.dot(bodyRightFlat);
+            const desiredFwdSpeed = stick.pitch * QLOITER_MAX_SPEED;
+            const desiredRightSpeed = stick.roll * QLOITER_MAX_SPEED;
+            // Samme FORTEGN som den direkte pinne->vinkel-kommandoen under (stick.pitch/roll -> target-
+            // Deg direkte) - dette ER akkurat den kommandoen, bare med et fartsAVVIK i stedet for selve
+            // pinneposisjonen som P-leddets inngang. Klemmes til MC_MAX_LEAN_ANGLE (Q_LOIT_ANG_MAX).
+            targetPitchDeg = clamp((desiredFwdSpeed - fwdSpeed) * QLOITER_VEL_TO_LEAN_DEG, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
+            targetBankDeg = clamp((desiredRightSpeed - rightSpeed) * QLOITER_VEL_TO_LEAN_DEG, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
+
+            // Weathervane (se computeWeathervaneYawRateRad) - KUN aktiv i QLOITER, matcher ArduPilot:
+            // "not active in QSTABILIZE and QHOVER modes as those are not position controlled modes...
+            // active in QLOITER".
+            const bodyForwardFull = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+            const leanMagDeg = Math.sqrt(targetBankDeg * targetBankDeg + targetPitchDeg * targetPitchDeg);
+            weathervaneYawRateRad = computeWeathervaneYawRateRad(bodyForwardFull, leanMagDeg);
+        } else {
+            targetBankDeg = stick.roll * THREE.MathUtils.lerp(MAX_BANK_ANGLE, MC_MAX_LEAN_ANGLE, mcAuthority);
+            // Trim er bevisst IKKE med her - dette er en selvnivellerende autopilot og skal returnere
+            // til det KOMMANDERTE stigningsmålet uansett trim (auto-trim under kompenserer i stedet for
+            // at trim flytter selve nivelleringsmålet).
+            targetPitchDeg = stick.pitch * THREE.MathUtils.lerp(MAX_PITCH_ANGLE, MC_MAX_LEAN_ANGLE, mcAuthority);
+        }
+        // Ignorerer pinnens eget krengings-/stigningsutslag mens flyet fortsatt hviler på bena, i en
+        // Q-modus (samme "landed"-idé som ArduPilot sin egen landingsdetektor, som sperrer krengings-/
+        // stigningskommandoer mens WoW/"weight on wheels" er sann) - MÅLET er alltid null (helt flatt)
+        // mens flyet er på bakken, uansett hva piloten kommanderer. Erstatter en tidligere
+        // GROUND_ROLL_PITCH_RESISTANCE_COEFF-basert dreiemoment-klipping (nå fjernet) som viste seg å
+        // ha feil effekt: den klippet BÅDE selve den korrigerende selvnivellerings-torque'en OG en
+        // eventuell forstyrrelse, altså nettopp den mekanismen som skulle HOLDE flyet flatt mens det stod
+        // - små avvik fikk dermed bygge seg opp helt ukorrigert mens flyet var på bakken, for så å
+        // "løses ut" i et brått, ukontrollert tipp idet det endelig løftet (brukeren rapporterte at
+        // VTOL-en "bikker over frem eller tilbake med en gang" rett etter avgang i QHOVER). Med MÅLET
+        // tvunget til null i stedet er selvnivellerings-loopen isteden AKTIVT og KONTINUERLIG med på å
+        // holde flyet flatt hele bakke-fasen (full P(D)-autoritet, ingen klipping), slik at det allerede
+        // er flatt i det øyeblikket det faktisk letter - pinnen får krengings-/stigningsautoritet
+        // tilbake umiddelbart idet onGround blir false.
+        if (planeState.onGround && isQMode(planeState.flightMode)) {
+            targetBankDeg = 0;
+            targetPitchDeg = 0;
+        }
         // D-ledd: dempet mot raten vinkelen FAKTISK endret seg med forrige tick (finite-difference på
         // currentBankDeg/currentPitchDeg selv, ikke via angularVelocity.roll/pitch sin egen
         // aksekonvensjon - unngår dermed enda en risikabel fortegns-utledning; denne er alltid riktig
@@ -2350,18 +2846,18 @@ function stepPhysics(dt) {
         pitchDeflection = clamp((targetPitchDeg - currentPitchDeg) / STABILIZED_PITCH_AUTHORITY_DEG - planeState.filteredPitchRateDeg * STABILIZED_PITCH_D_GAIN, -1, 1);
         // Ingen automatisk sideror-koordinering her - en tidligere åpen-løkke-versjon (proporsjonal med
         // kommandert krengning) fightet mot finnens ekte aerodynamiske respons (retningsstabilitet+demping)
-        // og vingenes adverse yaw, som ga periodisk sideror-oscillering i svinger. Sideroret i Stabilized
-        // er derfor rent pinnestyrt (som Manual) - koordineringen kommer naturlig fra aerodynamikken.
+        // og vingenes adverse yaw, som ga periodisk sideror-oscillering i svinger. Sideroret er derfor
+        // rent pinnestyrt (som Manual) - koordineringen kommer naturlig fra aerodynamikken i fbwa/FW-fart.
         yawDeflection = clamp(computeRate(stick.yaw, rates.rudder) / rates.rudder.maxRate, -1, 1);
 
         // Auto-trim: trim-hjulet "følger etter" sakte og avlaster roret mot null utslag, akkurat som en
         // ekte koblet autopilot med trim-servo. Kjører på et LAVPASSFILTRERT utslag (autoTrimFilteredDeflection),
         // ikke det momentane pitchDeflection-tallet direkte - ellers ville trimmen jaget hvert forbigående
         // pinneutslag (f.eks. midt i en sving) i stedet for kun å ta over den VEDVARENDE delen. Gir tre
-        // ting gratis: (1) Stabilized nivellerer nå nøyaktig i steady state (en ren P-regulator alene har
-        // et lite, fartsavhengig etterslep), (2) trim-verdien er allerede riktig innstilt idet du bytter
-        // til Manual, i stedet for et brått jerk ved bytte, og (3) trimmer ikke bort en forbigående
-        // manøver, kun en vedvarende ubalanse.
+        // ting gratis: (1) selvnivellerende moduser nivellerer nøyaktig i steady state (en ren P-regulator
+        // alene har et lite, fartsavhengig etterslep), (2) trim-verdien er allerede riktig innstilt idet du
+        // bytter til MANUAL/QACRO, i stedet for et brått jerk ved bytte, og (3) trimmer ikke bort en
+        // forbigående manøver, kun en vedvarende ubalanse.
         planeState.autoTrimFilteredDeflection += (pitchDeflection - planeState.autoTrimFilteredDeflection) * Math.min(1, dt / AUTO_TRIM_FILTER_TAU);
         // Fortegn: pitchDeflection>0 betyr halen for øyeblikket dyttes mot MER nese-ned (se tailAoaDeg
         // under) - trim skal da beveges i MOTSATT retning av utslaget for å overta den samme jobben og la
@@ -2458,9 +2954,34 @@ function stepPhysics(dt) {
     // dette bar KUN finnen sidekraften/-draget i sideslip, som ga en for svak/lett slip-effekt.
     const fuselageSideArea = spec.wingArea * FUSELAGE_SIDE_AREA_RATIO;
     const sideslipRad = THREE.MathUtils.degToRad(sideslipDeg);
-    const fuselageCrossflowDrag = 0.5 * AIR_DENSITY * airspeed * airspeed * fuselageSideArea * FUSELAGE_SIDE_CD
-        * Math.sin(sideslipRad) * Math.sin(sideslipRad);
-    const dragMag = qDynTotal * dragCoefficient(aoaDeg, spec, groundEffectFactor) + fuselageCrossflowDrag;
+    const sideslipSinSq = Math.sin(sideslipRad) * Math.sin(sideslipRad);
+    const fuselageCrossflowDrag = 0.5 * AIR_DENSITY * airspeed * airspeed * fuselageSideArea * FUSELAGE_SIDE_CD * sideslipSinSq;
+    // Vingens eget sideveis-drag (se WING_CROSSFLOW_CD-kommentaren) - IKKE skalert av aeroAuthority (denne
+    // er en ren TRANSLASJONS-kraft, som resten av dragVec/liftVec, ikke et dreiemoment - se
+    // aeroAuthority-merknaden lenger ned for hvorfor akkurat dreiemomentene måtte dempes i Q-modus, mens
+    // selve luftmotstands-KREFTENE alltid har vært upåvirket av det). sideslipSinSq går mot 1 (maks drag)
+    // idet vinden står tvers på nesen (ren sidevind i hover) og mot 0 (ingen ekstra drag utover vingens
+    // egen normale profildrag) idet nesen peker rett inn mot vinden - akkurat den "større flate/mer
+    // vindtak i sidevind"-oppførselen brukeren etterlyste.
+    const wingCrossflowDrag = 0.5 * AIR_DENSITY * airspeed * airspeed * spec.wingArea * WING_CROSSFLOW_CD * sideslipSinSq;
+    // bodyUpWorld flyttet hit (brukes videre nede ved liftDirWorld også, se der) - trengs allerede her av
+    // bankWindExposure rett under.
+    const bodyUpWorld = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    // Krengevinkelens EGEN bidrag til vindeksponering (uavhengig av sideslipSinSq over, som kun ser NESE-
+    // RETNING mot vinden) - brukeren påpekte at en BANKET vinge (rull vekk fra flatt) presenterer mer av
+    // sin store, flate underside/overside mot en HORISONTAL vind enn en flat, nivellert vinge gjør, uansett
+    // hvilken vei nesen peker. Et flatt, nivellert vingeplan (bodyUpWorld ~ verdens-Y) står nesten
+    // VINKELRETT på enhver horisontal vind (eksponerer kun kant-profilet, se WING_CROSSFLOW_CD-kommentaren)
+    // - jo mer flyet krenger, jo mer dreier vingeplanets EGEN normalvektor (bodyUpWorld) inn mot den
+    // horisontale vindretningen, og jo mer av selve FLATEN treffes. bankWindExposureSq (0 flatt/uberørt,
+    // opp mot 1 ved fullt sideveis-eksponert flate) er derfor et EKSTRA, additivt bidrag oppå
+    // sideslipSinSq - de to kombineres naturlig (mest drag når BÅDE broadside OG kraftig krenget).
+    const windHorizDirWorld = new THREE.Vector3(airVelWorld.x, 0, airVelWorld.z);
+    if (windHorizDirWorld.lengthSq() > 1e-6) windHorizDirWorld.normalize();
+    const bankWindExposure = Math.abs(bodyUpWorld.dot(windHorizDirWorld));
+    const wingBankExposureDrag = 0.5 * AIR_DENSITY * airspeed * airspeed * spec.wingArea * WING_CROSSFLOW_CD
+        * bankWindExposure * bankWindExposure;
+    const dragMag = qDynTotal * dragCoefficient(aoaDeg, spec, groundEffectFactor) + fuselageCrossflowDrag + wingCrossflowDrag + wingBankExposureDrag;
     // Dreiemoment (roll/yaw) = avbøyning * dynamisk trykk * kontrolleffektivitet, dempet av et moment
     // proporsjonalt med flyets egen vinkelhastighet (aerodynamisk demping). Begge ledd skalerer med V^2 -
     // svaret blir derfor naturlig trått/"mushy" ved lav fart og fast ved høy fart, uten noen kunstig
@@ -2479,7 +3000,6 @@ function stepPhysics(dt) {
     // Retninger i verdensrom via vektor-projeksjon (ikke lokal-akse trigonometri): løft står alltid
     // vinkelrett på luftfarten, i planet som inneholder kroppens "opp"-akse - robust mot fortegnsfeil.
     const airVelDirWorld = airspeed > 0.3 ? airVelWorld.clone().normalize() : new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-    const bodyUpWorld = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
     const liftDirWorld = bodyUpWorld.clone().sub(airVelDirWorld.clone().multiplyScalar(bodyUpWorld.dot(airVelDirWorld)));
     if (liftDirWorld.lengthSq() > 1e-6) liftDirWorld.normalize(); else liftDirWorld.set(0, 1, 0);
     const dragDirWorld = airVelDirWorld.clone().multiplyScalar(-1);
@@ -2489,7 +3009,41 @@ function stepPhysics(dt) {
     const liftVec = liftDirWorld.multiplyScalar(totalLiftMag);
     const dragVec = dragDirWorld.multiplyScalar(dragMag);
     const gravityVec = new THREE.Vector3(0, -spec.mass * GRAVITY, 0);
-    const accel = new THREE.Vector3().add(thrustVec).add(liftVec).add(dragVec).add(gravityVec).multiplyScalar(1 / spec.mass);
+
+    // Løftemotorenes samlede (kollektive) trekkraft - virker langs KROPPENS opp-akse (bodyUpWorld,
+    // beregnet over), ikke world-Y direkte, akkurat som en ekte multirotor: en krenget VTOL i svevemodus
+    // mister litt vertikal løft OG akselererer sidelengs, nøyaktig som den skal. liftMotorsActive (0/1,
+    // se mcAuthority-kommentaren over) - motorene stopper HELT idet assistansen faller til 0 i FBWA
+    // (ArduPilot: "After that time the aircraft will be flying purely as a fixed wing"), eller er alltid
+    // av i MANUAL.
+    let collectiveThrustMag = 0;
+    if (planeState.engineOn && liftMotorsActive) {
+        if (planeState.flightMode === "qhover" || planeState.flightMode === "qloiter") {
+            // Alt Hold (Q_PILOT_SPD_UP/-DN/Q_P_POSZ_P-lignende) - sentrert gasspak (innenfor dødsonen)
+            // holder høyden, avvik gir en ønsket klatre-/synkerate (se MC_ALT_HOLD_DEADBAND-kommentaren).
+            const centered = stick.throttle - 0.5;
+            const magnitude = Math.abs(centered);
+            let climbInput = 0;
+            if (magnitude > MC_ALT_HOLD_DEADBAND) climbInput = Math.sign(centered) * (magnitude - MC_ALT_HOLD_DEADBAND) / (0.5 - MC_ALT_HOLD_DEADBAND);
+            const climbError = climbInput * MC_MAX_CLIMB_RATE - planeState.velocity.y;
+            collectiveThrustMag = clamp(spec.mass * GRAVITY + spec.mass * MC_ALT_GAIN_PER_KG * climbError, 0, spec.liftThrustTotal);
+        } else if (planeState.flightMode === "fbwa") {
+            // ArduPilot: løftemotorene holder NÅVÆRENDE høyde AUTOMATISK mens de assisterer FBWA -
+            // gasspaken styrer trekkmotoren i stedet (se pusherThrottleEff) - "the aircraft will continue
+            // to hover... If you zero throttle... it will continue to hold current height".
+            const climbError = -planeState.velocity.y;
+            collectiveThrustMag = clamp(spec.mass * GRAVITY + spec.mass * MC_ALT_GAIN_PER_KG * climbError, 0, spec.liftThrustTotal);
+        } else {
+            // qstabilize/qacro: direkte, manuell kollektiv gass (ArduPilot: "the pilot's throttle input
+            // controls the average motor speed... constant adjustment of the throttle is required to
+            // maintain altitude").
+            collectiveThrustMag = throttleShaped * spec.liftThrustTotal;
+        }
+    }
+    planeState.lastCollectiveFrac = collectiveThrustMag / spec.liftThrustTotal;
+    const liftMotorThrustVec = bodyUpWorld.clone().multiplyScalar(collectiveThrustMag);
+
+    const accel = new THREE.Vector3().add(thrustVec).add(liftVec).add(dragVec).add(gravityVec).add(liftMotorThrustVec).multiplyScalar(1 / spec.mass);
 
     // Statisk lateral bakkefriksjon (se GROUND_LATERAL_FRICTION_COEFF-merknaden ved konstanten) - motstår
     // selve SIDEKRAFTEN (f.eks. vind-drag i kryssvind) mens flyet er på bakken, ikke bare farten som
@@ -2614,9 +3168,61 @@ function stepPhysics(dt) {
     // modus (mange ekte fly trenger en faktisk yaw-damper-boks av samme grunn) - boostet til ζ≈0.87.
     const yawDampCoeff = (finDampCoeff + yawWingDampCoeff) * YAW_DAMPER_GAIN;
 
-    planeState.angularVelocity.roll += (rollTorqueNoDamp / spec.inertiaRoll) * dt;
-    planeState.angularVelocity.pitch += (pitchTorqueF0 / spec.inertiaPitch) * dt;
-    planeState.angularVelocity.yaw += (yawTorqueF0 / spec.inertiaYaw) * dt;
+    // Løftemotorenes dreiemoment (roll/pitch/yaw) - se MC_ROLL_TORQUE_GAIN-kommentaren for hele
+    // "torque = kommando*autoritet - demping*rate"-strukturen (samme idiom som fastvinge-rorflatenes
+    // egen kontroll+demping over, men UAVHENGIG av qDynControl - se der for hvorfor). rollDeflection/
+    // pitchDeflection GJENBRUKES direkte som ønsket kommando i BEGGE effektor-kanaler (rorflater OG
+    // løftemotorer) - de representerer allerede "hvor mye/hvilken retning" piloten/autopiloten ønsker,
+    // uavhengig av HVILKEN fysisk mekanisme som til slutt leverer momentet. Yaw er en ren
+    // RATE-kommando (se MC_MAX_YAW_RATE_DEG-kommentaren) + et eventuelt weathervane-bidrag
+    // (weathervaneYawRateRad, kun satt i QLOITER - se over), summert til én mål-girrate.
+    // NEGERT fortegn på selve deflection-leddet i alle tre akser: rorflatenes AERODYNAMISKE moment over
+    // (rollTorqueNoDamp="-rollDeflection*...", tailTorqueAtPitchRate/finTorqueAtYawRate="-arm*lift" der
+    // lift OKER med hhv. +pitchDeflection/+yawDeflection) er ALLE negativt koblet til sin egen
+    // deflection-variabel - løftemotor-momentet brukte tidligere POSITIVT fortegn på samme variabel, altså
+    // stikk MOTSATT av den etablerte konvensjonen. Siden aeroAuthority/mcAuthority er komplementære
+    // (fader glatt mellom de to effektor-kanalene), betydde dette at selvnivellerings-loopens P-ledd
+    // (rollDeflection/pitchDeflection, beregnet for å DRIVE currentBankDeg/-PitchDeg MOT målet via den
+    // aerodynamiske konvensjonen) i realiteten fikk løftemotorene til å dreie flyet i STIKK MOTSATT
+    // retning i en Q-modus (der KUN løftemotor-momentet er aktivt, aeroAuthority=0) - en ekte, udempet
+    // POSITIV tilbakekobling. Dette var den reelle årsaken til at flyet "tilter over av seg selv" selv
+    // med målet tvunget til null (se targetBankDeg/-PitchDeg-kommentaren over) - loopen dyttet det stadig
+    // LENGER unna null, ikke tilbake mot det - og til at auto-trimmen "løp av sted" (elevatorTrimDeg
+    // jaget et pitchDeflection-avvik som aldri konvergerte, siden selve mekanismen som skulle rette det
+    // opp virket baklengs).
+    const mcRollTorque = (-rollDeflection * MC_ROLL_TORQUE_GAIN - planeState.angularVelocity.roll * MC_ROLL_DAMP_GAIN) * spec.inertiaRoll * mcAuthority;
+    const mcPitchTorque = (-pitchDeflection * MC_PITCH_TORQUE_GAIN - planeState.angularVelocity.pitch * MC_PITCH_DAMP_GAIN) * spec.inertiaPitch * mcAuthority;
+    const desiredMcYawRateRad = -yawDeflection * THREE.MathUtils.degToRad(MC_MAX_YAW_RATE_DEG) + weathervaneYawRateRad;
+    const mcYawTorque = (desiredMcYawRateRad - planeState.angularVelocity.yaw) * MC_YAW_RATE_GAIN * spec.inertiaYaw * mcAuthority;
+
+    // aeroAuthority (komplementet til mcAuthority) skalerer ned de AERODYNAMISKE (vinge/hale/finne)
+    // dreiemomentene i takt med at løftemotorene tar over - IKKE bare additivt, slik en ren "legg til
+    // MC-moment"-modell ville gjort. Nødvendig fordi vinge-/hale-modellen (bygget for FORWARD flight)
+    // regner AoA fra HELE luftfarten, inkludert ren VERTIKAL klatring/synk (localAirVel.y) - i ren
+    // hover (nesten null forover-fart, men opptil flere m/s klatrefart i QHOVER) gir dette en AoA nær
+    // ±90° (en aerodynamisk degenerert, i praksis meningsløs vinkel som modellen aldri var tunet for),
+    // som kunne gi et stort, ukommandert stigemoment rett etter avgang i Q-modus - brukeren rapporterte
+    // dette som "VTOL-en begynner å tilte framover helt av seg selv, må sette den i acro for å stoppe"
+    // (QACRO omgår problemet KUN fordi det hopper over selvnivellerings-loopen, ikke fordi det fjerner
+    // selve den feilaktige aero-momentet - denne fiksen fjerner selve KILDEN). Fysisk begrunnet: i ekte
+    // hover sitter hale/finne i grov, vertikal propellstrøm/turbulens fra løftemotorene, IKKE en ren,
+    // sammenhengende horisontal luftstrøm - de bidrar ikke med meningsfullt dreiemoment der uansett.
+    const aeroAuthority = 1 - mcAuthority;
+    // GIR (yaw) får sin EGEN autoritet, med et gulv i Q-modus - i MOTSETNING TIL rull/stigning over. Den
+    // degenererte AoA-feilen over oppstår fra VERTIKAL fart (localAirVel.y) som dominerer over forover-
+    // fart i rull-/stigningsmodellen - et modellsvakhet, ikke reell fysikk. Girmodellen (finTorqueAtYawRate)
+    // sin egen degenererte vinkel oppstår derimot fra LATERAL fart (kryssvind) som dominerer over forover-
+    // fart, men DER er den store, ukommanderte girvinkelen faktisk den ØNSKEDE, ekte oppførselen: en
+    // ordentlig hale-/finneflate på et VTOL som dette VIL naturlig værhane inn mot vinden når den ikke
+    // aktivt motvirkes, selv i hover - brukeren påpekte nettopp dette ("ustabilisert vil jo vinden
+    // naturlig prøve å dytte nesa inn i vinden"). Gulvet er en forenkling av at halepartiet (bak vingen/
+    // løftemotorene) uansett sitter noe friere fra selve propellstrømmen enn rull-/stigningsflatene rett
+    // under rotorene - derfor ikke FULL autoritet (1.0) som i ren fastvinget flukt, kun et gulv.
+    const yawAeroAuthority = isQMode(planeState.flightMode) ? Math.max(aeroAuthority, YAW_AERO_MIN_AUTHORITY_QMODE) : aeroAuthority;
+
+    planeState.angularVelocity.roll += ((rollTorqueNoDamp * aeroAuthority + mcRollTorque) / spec.inertiaRoll) * dt;
+    planeState.angularVelocity.pitch += ((pitchTorqueF0 * aeroAuthority + mcPitchTorque) / spec.inertiaPitch) * dt;
+    planeState.angularVelocity.yaw += ((yawTorqueF0 * yawAeroAuthority + mcYawTorque) / spec.inertiaYaw) * dt;
 
     // Aerodynamisk demping (roll/pitch/yaw) integreres IMPLISITT (eksponentiell nedgang: v *= e^(-k*dt))
     // i stedet for eksplisitt Euler (v += -k*v*dt). Ved høy fart (qDyn stor, spesielt kombinert med lav
@@ -2674,27 +3280,57 @@ function checkTailStrike(spec) {
 }
 
 // Gjenbrukte "scratch"-objekter for resolveGroundContact - samme begrunnelse som _tailStrikeScratch over.
-const _groundContactLocalPts = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-const _groundContactWorldPts = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+const GROUND_CONTACT_POINT_COUNT = 4;
+const _groundContactLocalPts = Array.from({ length: GROUND_CONTACT_POINT_COUNT }, function () { return new THREE.Vector3(); });
+const _groundContactWorldPts = Array.from({ length: GROUND_CONTACT_POINT_COUNT }, function () { return new THREE.Vector3(); });
 const _groundContactEuler = new THREE.Euler();
-const _groundContactQuat = new THREE.Quaternion();
+const _groundContactForceScratch = new THREE.Vector3();
+const _groundContactOffsetScratch = new THREE.Vector3();
+const _groundContactTorqueAccum = new THREE.Vector3();
+const _groundContactInvQuat = new THREE.Quaternion();
+// Fjærstivhet (N per kg per meter penetrasjon) for det EKTE per-punkt reaksjonsmomentet - se bruken i
+// resolveGroundContact. Tunet til å gi en akselerasjon i SAMME størrelsesorden som MC_ROLL_TORQUE_GAIN
+// sin egen (~10-15 rad/s² ved full kommandert avbøyning), IKKE en fysisk korrekt fjærstivhet - inertiaRoll/
+// -Pitch/-Yaw er (som resten av filens dreiemoment-formler) tunede spillverdier, ikke ekte kg·m²-treghet,
+// så en "fysisk riktig" fjærkonstant ville gitt en helt urealistisk voldsom respons (se utregningen i
+// kommentaren ved bruken). Første forsøk uten live-testing - juster om landinger føles for slappe/voldsomme.
+const GROUND_CONTACT_SPRING_GAIN = 25;
 
-// Ett understellspunkt per side (hovedhjul) - flat rullebane, ingen kant-/veggkollisjon nødvendig her
-// (i motsetning til quad-banen). Hard landing (høy synkefart eller stor krengevinkel ved berøring) gir
-// "krasjet"-tilstand; ellers demper kontakten synk/krengning og bremser med rullemotstand.
+// Understellet er TRE "ben" (se referansebildene brukeren la ved) - to landingsben på det FREMRE
+// motorparet (ett per side) pluss bukfinnen som et tredje, bakre ben - IKKE hjul, og IKKE ben på det
+// bakre motorparet. Én kombinert gjennomtrengnings-sjekk over ALLE punktene i samme tick unngår at
+// uavhengige per-punkt-korreksjoner motarbeider hverandre (samme prinsipp som det opprinnelige
+// hjul-/nesehjul-understellet hadde).
 function resolveGroundContact(dt) {
     const spec = currentPlaneSpec();
-    const gearTrack = spec.wingSpan * 0.25;
-    // Nesehjulet er med i SAMME liste som hovedhjulene (ikke en separat, senere korreksjon lenger) - to
-    // uavhengige posisjonskorreksjoner i samme tick (én for hovedhjul, én for nesehjul) kunne motarbeide
-    // hverandre (den ene løftet flyet, den andre senket det rett etterpå, avhengig av hvilket punkt som
-    // "vant") - det ga en synlig glitching/tipping selv under rolig, jevn taksing. Én kombinert
-    // gjennomtrengnings-sjekk over alle tre punktene unngår denne konflikten helt.
-    _groundContactLocalPts[0].set(gearTrack / 2, spec.gearOffsetY, 0.05);
-    _groundContactLocalPts[1].set(-gearTrack / 2, spec.gearOffsetY, 0.05);
-    _groundContactLocalPts[2].set(0, spec.gearOffsetY, -spec.wingSpan * 0.3);
+    // Verdensrom-ekvivalentene av buildPlane sin boomHalfLen/legX/tailFrontZ+ventralFinChord/2 (se
+    // kommentarene der) - MÅ holdes i synk med den visuelle modellen, akkurat som gearTrack/tailTipZ
+    // gjorde for det gamle hjulunderstellet.
+    const boomHalfLenWorld = spec.armLen * 0.5;
+    const boomCenterZWorld = BOOM_CENTER_Z_BUILD * spec.visualScale;
+    const frontZWorld = boomCenterZWorld - boomHalfLenWorld;
+    // Selve BENAS bunnpunkt - rett under bom-/motorposisjonen i X (GEAR_BOOM_X_FRAC, se buildPlane som
+    // bruker nøyaktig samme boomXPos for den visuelle beinplasseringen - ikke vinklet sideveis), men i Z
+    // interpolert TILBAKE fra fremre motor mot bom-/vingefestets senter (GEAR_LEG_BOOM_Z_FRAC, se
+    // kommentaren der og buildPlane sin legAttachZ - MÅ bruke nøyaktig samme formel).
+    const legXWorld = spec.wingSpan * GEAR_BOOM_X_FRAC;
+    const legAttachZWorld = THREE.MathUtils.lerp(frontZWorld, boomCenterZWorld, GEAR_LEG_BOOM_Z_FRAC);
+    const legZWorld = legAttachZWorld - GEAR_LEG_FORWARD_LEAN_BUILD * spec.visualScale;
+    const wingChordWorld = spec.wingArea / spec.wingSpan;
+    const tailChordWorld = wingChordWorld * 0.7;
+    const tailFrontZWorld = FUSELAGE_LENGTH_BUILD * spec.visualScale / 2 - tailChordWorld;
+    const tailSkidZWorld = tailFrontZWorld + tailChordWorld * 0.5 * 0.5;
+    _groundContactLocalPts[0].set(legXWorld, spec.gearOffsetY, legZWorld);
+    _groundContactLocalPts[1].set(-legXWorld, spec.gearOffsetY, legZWorld);
+    _groundContactLocalPts[2].set(0, spec.gearOffsetY, tailSkidZWorld);
+    // 4. punkt: skrogbuken (kabinseksjonens underside, midt på skroget) - de tre bena over er IKKE
+    // nødvendigvis skrogets faktisk LAVESTE punkt ved en brå/ekstrem stigning-/krengevinkel (f.eks. rett
+    // etter en for hard rotasjon i Q-modus) - uten dette kunne selve skrogbuken svinge ned GJENNOM
+    // bakkeplanet mens benas kontaktpunkter (plassert lenger ut mot vingene/halen) fortsatt teknisk sto
+    // klar, som brukeren rapporterte tidligere ("kroppen glitcher gjennom bakken").
+    _groundContactLocalPts[3].set(0, -CABIN_RADIUS_BUILD * spec.visualScale, BOOM_CENTER_Z_BUILD * spec.visualScale);
     let maxPenetration = -Infinity;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < GROUND_CONTACT_POINT_COUNT; i++) {
         _groundContactWorldPts[i].copy(_groundContactLocalPts[i])
             .applyQuaternion(planeState.quaternion).add(planeState.position);
         maxPenetration = Math.max(maxPenetration, -_groundContactWorldPts[i].y);
@@ -2720,32 +3356,54 @@ function resolveGroundContact(dt) {
     planeState.position.y += maxPenetration;
     if (planeState.velocity.y < 0) planeState.velocity.y *= 0.15;
 
-    // Svak, kontinuerlig slerp mot null krengning mens flyet er på bakken - forhindrer at et parkert fly
-    // blir stående og krenge urealistisk, uten å overstyre pilotens eget skråror-utslag under rulling
-    // (en tidligere, mye sterkere versjon av denne - 4*dt i stedet for 0.3*dt, pluss en direkte halvering
-    // av vinkelhastigheten hver tick - fightet aktivt mot skråror under hele takeoff-rullingen og ga
-    // både treg og oscillerende rull).
-    _groundContactEuler.setFromQuaternion(planeState.quaternion, "YXZ");
-    _groundContactEuler.set(_groundContactEuler.x, _groundContactEuler.y, 0, "YXZ");
-    _groundContactQuat.setFromEuler(_groundContactEuler);
-    planeState.quaternion.slerp(_groundContactQuat, Math.min(1, 0.3 * dt));
-    // Hjulenes rotasjonsfriksjon mot underlaget - uten denne ville en gir-rotasjon fortsette for evig i
+    // EKTE per-punkt fjærkraft-basert reaksjonsmoment - erstatter en tidligere "kunstig, alltid-nivellér-
+    // krengning"-slerp som ubetinget slerpet banken mot 0 uansett HVORDAN flyet faktisk landet. Den
+    // slerpen hindret aktivt flyet i noensinne å tippe over ved en ujevn/skjev horisontal landing (brukeren
+    // spurte eksplisitt: "får kraftig friksjon på bena. kanskje vil den tippe over?" - med kun ETT globalt
+    // korreksjonspunkt (maxPenetration under) og en garantert nivellering var svaret hardkodet til "aldri",
+    // uansett hvor skjevt landingen faktisk skjedde). Hvert PENETRERENDE punkt (KUN de tre ekte
+    // kontaktpunktene 0-2 - bena/bukfinnen - IKKE sikkerhetsnett-punktet på skrogbuken, punkt 3, som ikke
+    // skal bidra med en egen fysisk reaksjon) dytter nå tilbake med en kraft proporsjonal med sin EGEN
+    // penetrasjonsdybde (som en fjær), akkurat der DET punktet faktisk er i verdensrom - via et EKTE
+    // dreiemoment (r×F, transformert til kroppsrom via quaternion-invertering - samme "vektor i stedet for
+    // håndplukket fortegn"-prinsipp som lift-/drag-retningene i stepPhysics bruker, "robust mot
+    // fortegnsfeil", i stedet for en enkelt global korreksjon). En jevn, flat landing gir naturlig like
+    // store krefter på alle punkter (null netto moment - flyet blir liggende flatt av seg selv, akkurat
+    // som før), mens en skjev landing (kun ett ben treffer først) nå gir et EKTE rettende ELLER veltende
+    // moment avhengig av hvor ille skjevheten faktisk er - fysikken avgjør, ikke en hardkodet garanti.
+    _groundContactTorqueAccum.set(0, 0, 0);
+    for (let i = 0; i < 3; i++) {
+        const pen = -_groundContactWorldPts[i].y;
+        if (pen <= 0) continue;
+        _groundContactForceScratch.set(0, pen * spec.mass * GROUND_CONTACT_SPRING_GAIN, 0);
+        _groundContactOffsetScratch.copy(_groundContactWorldPts[i]).sub(planeState.position);
+        _groundContactTorqueAccum.add(_groundContactOffsetScratch.cross(_groundContactForceScratch));
+    }
+    _groundContactInvQuat.copy(planeState.quaternion).invert();
+    _groundContactTorqueAccum.applyQuaternion(_groundContactInvQuat);
+    // pitch=X, yaw=Y, roll=Z i kroppsrom - samme konvensjon som angVelVec i stepPhysics (se
+    // integrateOrientation-kallet der), IKKE en ny, egen håndplukket akse-tilordning her.
+    planeState.angularVelocity.pitch += (_groundContactTorqueAccum.x / spec.inertiaPitch) * dt;
+    planeState.angularVelocity.yaw += (_groundContactTorqueAccum.y / spec.inertiaYaw) * dt;
+    planeState.angularVelocity.roll += (_groundContactTorqueAccum.z / spec.inertiaRoll) * dt;
+    // Benas rotasjonsfriksjon mot underlaget - uten denne ville en gir-rotasjon fortsette for evig i
     // stillstand med motoren av, siden det aerodynamiske dempeleddet (som skalerer med fart²) blir null
     // når flyet står stille. Eksponentiell, tidssteg-uavhengig demping (samme prinsipp som rollDampDecay/
     // yawDampDecay i stepPhysics) - en ren "*=0.85 per tick" ville tilsvart 0.85^120≈3e-9 PER SEKUND ved
     // dette faste 120Hz-tidssteget, altså en nesten momentan stopp i stedet for en gradvis oppbremsing.
     planeState.angularVelocity.yaw *= Math.exp(-GROUND_YAW_FRICTION * dt);
-    // (Nesehjulets "kan ikke tippe frem"-fysikk er nå del av maxPenetration-punktene over, ikke en egen
-    // etterfølgende korreksjon her - se merknaden ved localPoints.)
 
+    // Skid-/benfriksjon (Coulomb: konstant retardasjon inntil faktisk stopp, IKKE en hjul-rullemotstand -
+    // se GROUND_SKID_FRICTION_COEFF-kommentaren) - motstår glidning i BEGGE fartsretninger (forover OG
+    // bakover, f.eks. fra vind eller en bratt bakkeeffekt-transient), ikke bare forover slik det gamle
+    // hjul+brems-konseptet gjorde. Klemt til selve farten hver tick (ikke en ren "-=konstant"), slik at
+    // den aldri overskyter og snur fortegn - flyet stopper faktisk HELT opp i stedet for å krype evig
+    // videre med en asymptotisk avtagende fart (som ROLLING_FRICTION alene ga - brukeren rapporterte
+    // dette som at flyet "sklir etter bakken").
     const forwardWorld = new THREE.Vector3(0, 0, -1).applyQuaternion(planeState.quaternion);
     const forwardSpeed = planeState.velocity.dot(forwardWorld);
-    if (forwardSpeed > 0.05) {
-        // Hjulbrems: piloten bruker normalt hjulbremser rett etter landing (gass i tomgang) i tillegg til
-        // ren rullemotstand - uten dette rullet flyet urealistisk lenge etter landing/taxi med gass av.
-        const brakeDecel = inputState.stick.throttle < 0.02 ? BRAKE_DECELERATION : 0;
-        planeState.velocity.addScaledVector(forwardWorld, -(ROLLING_FRICTION * GRAVITY + brakeDecel) * dt);
-    }
+    const forwardSkidDecel = Math.min(Math.abs(forwardSpeed), GROUND_SKID_FRICTION_COEFF * GRAVITY * dt);
+    planeState.velocity.addScaledVector(forwardWorld, -Math.sign(forwardSpeed) * forwardSkidDecel);
     const rightWorld = new THREE.Vector3(1, 0, 0).applyQuaternion(planeState.quaternion);
     const lateralSpeed = planeState.velocity.dot(rightWorld);
     planeState.velocity.addScaledVector(rightWorld, -lateralSpeed * Math.min(1, 8 * dt));
@@ -2764,12 +3422,25 @@ function resetPlane() {
     planeState.onGround = true;
     planeState.hasBeenAirborne = false;
     planeState.elevatorTrimDeg = 0;
-    inputState.stick.throttle = 0;
+    // Sentrert (0.5), ikke i bunn - se inputState-kommentaren over for begrunnelsen (gjelder likt her,
+    // siden R-tasten kan resette midt i en flytur der flightMode fortsatt er en Q-modus).
+    inputState.stick.throttle = 0.5;
+    resetVtolState();
 }
 
 function toggleEngine() {
     if (planeState.crashed) return;
     planeState.engineOn = !planeState.engineOn;
+}
+// Diskré av/på (i motsetning til toggleEngine over, som fortsatt brukes av K-tasten/HUD-knappen) - til
+// gamepad-knappekartet, se BUTTON_ACTIONS/engineOn/engineOff under. Brukeren påpekte at ÉN knapp for
+// av/på (en toggle) er dårlig gamepad-ergonomi: uten å se HUD-en vet piloten ikke hvilken tilstand
+// motoren faktisk er i, så samme knapp kan enten starte ELLER stoppe motoren avhengig av gjeldende
+// tilstand - to separate, diskré knapper (én som ALLTID slår PÅ, én som ALLTID slår AV) er entydige
+// uansett gjeldende tilstand, akkurat som et ekte fly har separate start-/stopp-prosedyrer.
+function setEngine(on) {
+    if (planeState.crashed) return;
+    planeState.engineOn = on;
 }
 
 function toggleCamera() {
@@ -2785,24 +3456,72 @@ function updatePlaneVisual(dt) {
     planeGroup.position.copy(planeState.position);
     planeGroup.quaternion.copy(planeState.quaternion);
 
-    // Propell-treghet: en elektrisk motor gir nesten momentant turtallsøkning med gasspådrag, men
-    // propellen (+ motorens egen rotasjonstreghet) coaster ned over ca. 1 sekund når motoren kuttes -
-    // ikke et brått stopp slik det var før.
-    const targetSpin = planeState.engineOn ? (6 + inputState.stick.throttle * 90) : (planeState.onGround ? 0 : 2);
+    // Propell-treghet (trekkpropell/pusher): en elektrisk motor gir nesten momentant turtallsøkning med
+    // gasspådrag, men propellen (+ motorens egen rotasjonstreghet) coaster ned over ca. 1 sekund når
+    // motoren kuttes - ikke et brått stopp slik det var før. Bruker lastPusherThrottle (faktisk
+    // trekkmotor-pådrag, se stepPhysics - IKKE inputState.stick.throttle direkte, som i Q-modus i
+    // stedet styrer løftemotorene, se lastCollectiveFrac under).
+    // I en Q-modus er pusheren fysisk avslått (pusherThrottleEff=0 uansett gasspak, se stepPhysics) - den
+    // skal derfor stå HELT stille (ikke engang en "tomgangs"-spinn), ikke først rulle i gang idet
+    // trekkmotor-modusene (MANUAL/FBWA) tar over under overgangen til fastvinget flukt.
+    const pusherIdleSpin = isQMode(planeState.flightMode) ? 0 : 6;
+    const targetSpin = planeState.engineOn ? (pusherIdleSpin + planeState.lastPusherThrottle * 90) : (planeState.onGround ? 0 : 2);
     const spinSmoothing = planeState.engineOn ? (1 - Math.pow(0.0005, dt)) : (1 - Math.pow(0.05, dt));
     propSpinSpeed += (targetSpin - propSpinSpeed) * spinSmoothing;
     planePropeller.rotation.z += propSpinSpeed * dt;
+
+    // Løftemotorene (fire stk, samme treghetsprinsipp) - FELLES grunnfart styrt av samlet kollektiv gass
+    // (lastCollectiveFrac), pluss et PER-MOTOR differensial-tillegg fra kommandert rull/stigning
+    // (lastRollDeflection/lastPitchDeflection) - uten dette så det ut som flyet tiltet "av seg selv" uten
+    // at noen motor synlig endret turtall (brukeren rapporterte nettopp dette). Rent kosmetisk - fysikkens
+    // egen rull-/stigningsmoment (mcRollTorque/mcPitchTorque i stepPhysics) er en abstrakt "samlet"
+    // modell, ikke fire uavhengige motor-krefter - denne mixeren later bare AS OM det er fire uavhengige
+    // motorer, med samme fortegn-konvensjon som det korrigerte mcRollTorque/mcPitchTorque (se
+    // kommentaren der): side*(-rollDeflection) og (front?1:-1)*(-pitchDeflection). Girmomentets egne
+    // motsatt-roterende par (Cnp/reactive torque) er fortsatt ikke modellert visuelt.
+    const liftTargetSpin = planeState.engineOn ? (6 + planeState.lastCollectiveFrac * 140) : 0;
+    const liftSpinSmoothing = planeState.engineOn ? (1 - Math.pow(0.0005, dt)) : (1 - Math.pow(0.05, dt));
+    liftPropSpinSpeed += (liftTargetSpin - liftPropSpinSpeed) * liftSpinSmoothing;
+    const liftRollMix = -planeState.lastRollDeflection * LIFT_PROP_DIFFERENTIAL_GAIN;
+    const liftPitchMix = -planeState.lastPitchDeflection * LIFT_PROP_DIFFERENTIAL_GAIN;
+    planeLiftProps.forEach(function (m) {
+        const diff = m.side * liftRollMix + (m.front ? 1 : -1) * liftPitchMix;
+        m.group.rotation.y += Math.max(0, liftPropSpinSpeed + diff) * dt;
+    });
 
     // Synlige, bevegelige rorflater - viser faktisk pinne-/autopilot-utslag (se stepPhysics, som lagrer
     // siste avbøyning på planeState hver fysikk-tick).
     // (Fortegn snudd - rorene beveget seg motsatt vei av forventet.)
     planeAileronLeft.rotation.x = planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
     planeAileronRight.rotation.x = -planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
-    planeElevator.rotation.x = planeState.lastPitchDeflection * SURFACE_MAX_DEFLECTION_RAD;
-    planeRudder.rotation.y = planeState.lastYawDeflection * SURFACE_MAX_DEFLECTION_RAD;
+    // V-halens to ruddervatorer: rent visuell mix av stigning+gir (se buildPlane-kommentaren ved
+    // vtailPivotBySide - fysikken bruker en egen, abstrakt aerodynamisk modell, uavhengig av denne
+    // geometrien) - hver pivot ligger allerede i sin egen VIPPEDE lokale ramme, så EN rotasjon her gir
+    // riktig kombinert utslag i verdensrom helt av seg selv - MEN hengselaksen må være rotation.Y, IKKE
+    // rotation.x: buildWingProfileMesh sitt verticalFin=true-spor (se kommentaren der) legger spennet
+    // langs lokal Y og TYKKELSEN (panelets egen flate-normal) langs lokal X for en vertikalt orientert
+    // flate som denne - å rotere om X vrir da panelet om sin EGEN flate-normal (usynlig/nesten usynlig
+    // for en tynn, flat plate), i stedet for å hengsle det om spennaksen slik en ekte rorflate skal (se
+    // den allerede riktige fastvinge-sideroret, som nettopp derfor bruker rotation.Y - samme flate-
+    // orientering, samme aksekonvensjon). Dette var den reelle årsaken til at rorene "ikke beveget seg".
+    //
+    // Hvilken av de to (felles-modus vs. differensial-modus mellom venstre/høyre) som faktisk gir PITCH
+    // vs. GIR i verdensrom, er IKKE intuitivt for en tilted (V-vinklet) hengselakse - måtte regnes ut for
+    // hånd (rotasjon om hver panels EGEN, allerede Rz(-side*VTAIL_ANGLE_DEG)-tiltede lokale Y-akse, projisert
+    // til verdensrom): felles-modus (samme fortegn på begge sider) gir et bakkant-utslag som er SPEIL-
+    // symmetrisk i world-Y (stigning kansellerer, sideveis/gir-komponenten adderer) - altså et GIR-utslag,
+    // IKKE stigning. Differensial-modus (motsatt fortegn) gir omvendt: sideveis-komponenten kansellerer,
+    // stigningskomponenten adderer - altså PITCH. Den opprinnelige koden hadde disse BYTTET OM
+    // (pitchCmd som felles-modus, yawCmd som differensial-modus) - brukeren rapporterte nettopp dette
+    // ("ser ut som yaw styrer høyde og omvendt"). Rettet: yawCmd er nå felles-modus, pitchCmd differensial.
+    const pitchCmd = planeState.lastPitchDeflection, yawCmd = planeState.lastYawDeflection;
+    planeVtailLeft.rotation.y = (yawCmd - pitchCmd) * SURFACE_MAX_DEFLECTION_RAD * 0.6;
+    planeVtailRight.rotation.y = (yawCmd + pitchCmd) * SURFACE_MAX_DEFLECTION_RAD * 0.6;
 }
 
 const hudMode = document.getElementById("hudMode");
+const hudAssist = document.getElementById("hudAssist");
+const hudThrottleLabel = document.getElementById("hudThrottleLabel");
 const hudArmed = document.getElementById("hudArmed");
 const hudInput = document.getElementById("hudInput");
 const hudCamera = document.getElementById("hudCamera");
@@ -2814,23 +3533,36 @@ const hudTrim = document.getElementById("hudTrim");
 const armToggleBtn = document.getElementById("armToggleBtn");
 const crashBanner = document.getElementById("crashBanner");
 const tailstrikeBanner = document.getElementById("tailstrikeBanner");
+const modeBlockedBanner = document.getElementById("modeBlockedBanner");
+const modeBlockedReasonEl = document.getElementById("modeBlockedReason");
 const trimInputEl = document.getElementById("trimInput");
 const trimValueEl = document.getElementById("trimValue");
 
 function updateHud() {
     hudMode.textContent = MODE_LABELS[planeState.flightMode];
+    hudAssist.textContent = Math.round(planeState.lastMcAuthority * 100) + " %";
     const engineLabel = planeState.crashed ? "Krasjet" : (planeState.engineOn ? "På" : "Av");
     hudArmed.textContent = engineLabel;
     hudArmed.className = "sim-status-value " + ((!planeState.crashed && planeState.engineOn) ? "sim-armed" : "sim-killed");
     crashBanner.classList.toggle("show", planeState.crashed);
     tailstrikeBanner.classList.toggle("show", performance.now() < tailstrikeWarningUntil);
+    modeBlockedBanner.classList.toggle("show", performance.now() < modeBlockedUntil);
     hudInput.textContent = inputState.source === "gamepad" ? "Gamepad" : "Tastatur";
     hudCamera.textContent = CAMERA_MODE_LABELS[CAMERA_MODES[cameraModeIndex]];
     hudPlaneClass.textContent = currentPlaneSpec().label.split(" ")[0];
     const altitude = Math.max(0, planeState.position.y);
     hudAltitude.textContent = (altitude >= 10 ? Math.round(altitude) : altitude.toFixed(1)) + " m";
     hudAirspeed.textContent = lastAirspeed.toFixed(1) + " m/s";
-    hudThrottle.textContent = Math.round(inputState.stick.throttle * 100) + " %";
+    // Gasspaken styrer ULIKE ting avhengig av modus (kollektiv i Q-moduser, trekkmotor i MANUAL/FBWA) -
+    // se stepPhysics - HUD-etiketten OG selve tallet følger derfor hvilken av de to som faktisk er
+    // aktiv, ikke bare den rå pinneposisjonen.
+    if (isQMode(planeState.flightMode)) {
+        hudThrottleLabel.textContent = "Kollektiv";
+        hudThrottle.textContent = Math.round(planeState.lastCollectiveFrac * 100) + " %";
+    } else {
+        hudThrottleLabel.textContent = "Gass";
+        hudThrottle.textContent = Math.round(planeState.lastPusherThrottle * 100) + " %";
+    }
     const trimText = (planeState.elevatorTrimDeg >= 0 ? "+" : "") + planeState.elevatorTrimDeg.toFixed(1) + "°";
     hudTrim.textContent = trimText;
     armToggleBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> ' + (planeState.engineOn ? "Motor av (K)" : "Motor på (K)");
@@ -2842,7 +3574,7 @@ function updateHud() {
 }
 
 /* ---------- Paneler (rates / fly-kamera / vind / gamepad / hjelp) ---------- */
-const ALL_PANEL_IDS = ["ratesPanel", "flyCameraPanel", "windPanel", "gamepadPanel", "helpPanel"];
+const ALL_PANEL_IDS = ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "gamepadPanel", "helpPanel"];
 function togglePanel(panel) {
     Sim.togglePanel(panel, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
 }
@@ -3002,7 +3734,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const settingsMenuEl = document.getElementById("settingsMenu");
     Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl,
-        ["ratesPanel", "flyCameraPanel", "windPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
+        ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
     Sim.wirePanelCloseButtons(settingsMenuEl);
     function closeSettingsMenu() { settingsMenuEl.classList.remove("open"); }
 
@@ -3018,6 +3750,10 @@ document.addEventListener("DOMContentLoaded", function () {
         togglePanel(document.getElementById("windPanel"));
         closeSettingsMenu();
     });
+    document.getElementById("toggleVtolBtn").addEventListener("click", function () {
+        togglePanel(document.getElementById("vtolPanel"));
+        closeSettingsMenu();
+    });
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));
         closeSettingsMenu();
@@ -3028,10 +3764,10 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("fpvHudBtn").addEventListener("click", toggleFpvHud);
 
     const planeClassSelect = document.getElementById("planeClassSelect");
-    Object.keys(PLANE_CLASSES).forEach(function (key) {
+    Object.keys(VTOL_CLASSES).forEach(function (key) {
         const opt = document.createElement("option");
         opt.value = key;
-        opt.textContent = PLANE_CLASSES[key].label;
+        opt.textContent = VTOL_CLASSES[key].label;
         if (key === planeState.planeClass) opt.selected = true;
         planeClassSelect.appendChild(opt);
     });
@@ -3090,6 +3826,57 @@ document.addEventListener("DOMContentLoaded", function () {
         saveSettings();
     });
 
+    const assistSpeedInput = document.getElementById("assistSpeedInput");
+    const assistSpeedValue = document.getElementById("assistSpeedValue");
+    const assistFadeInput = document.getElementById("assistFadeInput");
+    const assistFadeValue = document.getElementById("assistFadeValue");
+    const wvaneEnabledInput = document.getElementById("wvaneEnabledInput");
+    const wvaneGainInput = document.getElementById("wvaneGainInput");
+    const wvaneGainValue = document.getElementById("wvaneGainValue");
+    const wvaneAngMinInput = document.getElementById("wvaneAngMinInput");
+    const wvaneAngMinValue = document.getElementById("wvaneAngMinValue");
+    function refreshVtolParamsPanel() {
+        assistSpeedInput.value = vtolParams.assistSpeed;
+        assistSpeedValue.textContent = vtolParams.assistSpeed + " m/s";
+        assistFadeInput.value = vtolParams.assistFadeSec;
+        assistFadeValue.textContent = vtolParams.assistFadeSec + " s";
+        wvaneEnabledInput.checked = vtolParams.wvaneEnabled;
+        wvaneGainInput.value = vtolParams.wvaneGain;
+        wvaneGainValue.textContent = vtolParams.wvaneGain.toFixed(1);
+        wvaneAngMinInput.value = vtolParams.wvaneAngMin;
+        wvaneAngMinValue.textContent = vtolParams.wvaneAngMin.toFixed(1) + "°";
+    }
+    refreshVtolParamsPanel();
+    assistSpeedInput.addEventListener("input", function () {
+        vtolParams.assistSpeed = parseFloat(assistSpeedInput.value);
+        assistSpeedValue.textContent = assistSpeedInput.value + " m/s";
+        saveVtolParams();
+    });
+    assistFadeInput.addEventListener("input", function () {
+        vtolParams.assistFadeSec = parseFloat(assistFadeInput.value);
+        assistFadeValue.textContent = assistFadeInput.value + " s";
+        saveVtolParams();
+    });
+    wvaneEnabledInput.addEventListener("change", function () {
+        vtolParams.wvaneEnabled = wvaneEnabledInput.checked;
+        saveVtolParams();
+    });
+    wvaneGainInput.addEventListener("input", function () {
+        vtolParams.wvaneGain = parseFloat(wvaneGainInput.value);
+        wvaneGainValue.textContent = wvaneGainInput.value;
+        saveVtolParams();
+    });
+    wvaneAngMinInput.addEventListener("input", function () {
+        vtolParams.wvaneAngMin = parseFloat(wvaneAngMinInput.value);
+        wvaneAngMinValue.textContent = parseFloat(wvaneAngMinInput.value).toFixed(1) + "°";
+        saveVtolParams();
+    });
+    document.getElementById("resetVtolParamsBtn").addEventListener("click", function () {
+        Object.assign(vtolParams, DEFAULT_VTOL_PARAMS);
+        saveVtolParams();
+        refreshVtolParamsPanel();
+    });
+
     window.addEventListener("resize", resizeRenderer);
 
     document.getElementById("inputSourceSelect").addEventListener("change", function (e) {
@@ -3118,8 +3905,12 @@ document.addEventListener("DOMContentLoaded", function () {
         keys.add(e.code);
         if (e.repeat) return;
         switch (e.code) {
-            case "Digit1": planeState.flightMode = "stabilized"; break;
-            case "Digit2": planeState.flightMode = "manual"; break;
+            case "Digit1": trySetFlightMode("qstabilize"); break;
+            case "Digit2": trySetFlightMode("qhover"); break;
+            case "Digit3": trySetFlightMode("qloiter"); break;
+            case "Digit4": trySetFlightMode("qacro"); break;
+            case "Digit5": trySetFlightMode("manual"); break;
+            case "Digit6": trySetFlightMode("fbwa"); break;
             case "KeyK": toggleEngine(); break;
             case "KeyR": resetPlane(); break;
             case "KeyC": toggleCamera(); break;
