@@ -3,15 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Ber nettleseren om aldri å cache selve HTML-dokumentet (kun effekt når siden lastes over HTTP -
+         file://-åpning har uansett ingen HTTP-cache-lag) - uten dette kunne en VANLIG omlasting (ikke
+         hard refresh/Ctrl+Shift+R) fortsatt vist en gammel, cachet versjon av siden. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Quadcopter Simulator - FFI UAS</title>
-    <link rel="stylesheet" href="css/style.css">
+    <!-- ?v=... på egne (ikke CDN-hostede) skript/stilark - bumpes manuelt ved endringer i disse filene,
+         se samme forklaring over. En vanlig omlasting henter samme HTML (som selv aldri caches, se over),
+         men uten en ny query-streng her kunne nettleseren likevel gjenbrukt en cachet KOPI av selve
+         css/js-filene fra forrige gang de ble lastet med SAMME URL. -->
+    <link rel="stylesheet" href="css/style.css?v=20260805093751">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="js/menu.js"></script>
+    <script src="js/menu.js?v=20260805093751"></script>
 </head>
 <body>
 
@@ -369,7 +379,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="js/simulator-common.js"></script>
-<script src="js/simulator.js"></script>
+<script src="js/simulator-common.js?v=20260805093751"></script>
+<script src="js/simulator.js?v=20260805093751"></script>
 </body>
 </html>

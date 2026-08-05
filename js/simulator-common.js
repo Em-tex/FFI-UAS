@@ -337,7 +337,16 @@
                     // reelt om denne kanalen) OG ikke allerede er nesten helt ute (>0.97) - unngår både
                     // å dele på nesten-null (urimelig stor skalering) og å "forsterke" en sender som
                     // allerede er fint kalibrert (ren støy i input-lesingen ville da blitt skalert opp).
-                    if (maxSeen > 0.2 && maxSeen < 0.97) channelMap[ch].scale = clamp(1 / maxSeen, 1, 3);
+                    if (maxSeen > 0.2 && maxSeen < 0.97) {
+                        // Målet er 95 % av observert maks, IKKE observert maks selv - en enkelt støyspiss
+                        // et sted i det ~4 sekunder lange kalibreringsvinduet (elektrisk støy/USB-polling)
+                        // kan gjøre at "maxSeen" blir litt høyere enn det spaken faktisk når KONSEKVENT i
+                        // vanlig bruk etterpå, som ga en for LITEN skalering (endte på 0.90-0.97 i stedet
+                        // for 1.00 ved reelt fullt utslag). Denne margen gir i verste fall et lite
+                        // overskudd forbi 1.0 - som uansett klemmes til nøyaktig 1.0 av clamp() i
+                        // readStickAxis/readThrottleAxis - ALDRI et underskudd.
+                        channelMap[ch].scale = clamp(1 / (maxSeen * 0.95), 1, 3);
+                    }
                 });
                 if (onDone) onDone();
             }
