@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sjekkliste-bygger - FFI UAS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="js/menu.js"></script>
+</head>
+<body>
+
+<div class="container">
+
+    <div style="text-align:center; padding: 20px 0 30px 0;">
+        <h1>Sjekkliste-bygger</h1>
+        <p style="max-width: 700px; margin: 0 auto 20px; color: #666;">
+            Tilpass sjekklistene og last ned som PDF.
+        </p>
+        <button class="btn no-print" id="downloadPdfBtnTop"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
+    </div>
+
+    <div class="checklist-tabs no-print">
+        <button type="button" class="checklist-tab-btn active" data-tab-btn="normal">
+            <i class="fa-solid fa-clipboard-check"></i> Normal
+        </button>
+        <button type="button" class="checklist-tab-btn" data-tab-btn="contingency">
+            <i class="fa-solid fa-triangle-exclamation"></i> Contingency
+        </button>
+        <button type="button" class="checklist-tab-btn" data-tab-btn="emergency">
+            <i class="fa-solid fa-truck-medical"></i> Emergency
+        </button>
+        <button type="button" class="checklist-tab-btn" data-tab-btn="erp">
+            <i class="fa-solid fa-people-group"></i> ERP
+        </button>
+    </div>
+
+    <!-- ===================== NORMAL ===================== -->
+    <div class="tab-panel active" id="tabPanel-normal" data-tab="normal" data-template="mak">
+
+        <div class="form-field no-print" style="max-width: 320px; margin-bottom: 20px;">
+            <label for="normal-template-select">Sjekklistemal</label>
+            <select id="normal-template-select">
+                <option value="mak">MÅK</option>
+                <option value="spesifikk">Spesifikk</option>
+                <option value="custom">Egendefinert</option>
+            </select>
+        </div>
+
+        <div class="form-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 20px;">
+            <div class="form-field">
+                <label for="normal-drone">Drone *</label>
+                <input type="text" id="normal-drone" class="normal-meta-input" placeholder="F.eks. DJI Mavic 3">
+                <span class="field-required-note" id="normal-drone-note">Drone må fylles ut.</span>
+            </div>
+            <div class="form-field">
+                <label for="normal-approval-number">
+                    Autorisasjonsnummer *
+                    <span class="info-icon" tabindex="0">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <span class="info-tooltip">Ta kontakt med operativ leder dersom du ikke har fått nummer.</span>
+                    </span>
+                </label>
+                <div class="approval-number-group">
+                    <span class="approval-number-prefix">FFI-UAS-</span>
+                    <input type="text" id="normal-approval-number" class="normal-meta-input" placeholder="00023" inputmode="numeric">
+                </div>
+                <span class="field-required-note" id="normal-approval-number-note">Autorisasjonsnummer må fylles ut.</span>
+            </div>
+        </div>
+
+        <div class="builder-grid">
+            <div class="builder-col" data-sections="normal"></div>
+
+            <div class="builder-col">
+                <div class="section">
+                    <div class="section-header">
+                        <i class="fa-solid fa-toolbox" style="color:white;"></i>
+                        <h2>Utstyrsliste</h2>
+                    </div>
+                    <ul class="builder-list equipment-simple-list" data-equipment="normal"></ul>
+                    <div style="padding: 0 20px 16px;">
+                        <button type="button" class="btn btn-secondary add-row-btn no-print" data-add-equipment="normal">
+                            <i class="fa-solid fa-plus"></i> Legg til utstyr
+                        </button>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-header">
+                        <i class="fa-solid fa-ruler" style="color:white;"></i>
+                        <h2>Operasjonsbegrensninger</h2>
+                    </div>
+                    <table class="limits-table">
+                        <tbody data-limits="normal"></tbody>
+                    </table>
+                    <div style="padding: 16px 20px;">
+                        <button type="button" class="btn btn-secondary add-row-btn no-print" data-add-limit="normal">
+                            <i class="fa-solid fa-plus"></i> Legg til begrensning
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="no-print" style="margin: 10px 0 30px;">
+            <button type="button" class="btn add-row-btn" data-add-section="normal">
+                <i class="fa-solid fa-plus"></i> Legg til sjekklistedel
+            </button>
+        </div>
+    </div>
+
+    <!-- ===================== CONTINGENCY ===================== -->
+    <div class="tab-panel" id="tabPanel-contingency" data-tab="contingency">
+
+        <div class="form-field" style="margin-bottom: 20px;">
+            <label for="contingency-title">Sjekklistenavn</label>
+            <input type="text" id="contingency-title" class="checklist-title-input" placeholder="F.eks. Contingency-sjekkliste">
+        </div>
+        <p style="color:#777; font-size:0.9rem; margin-top:-10px;">
+            Prosedyrer for uønskede, men håndterbare situasjoner (f.eks. tapt lenke, lavt batteri, tap av GNSS).
+        </p>
+
+        <div class="builder-columns" data-sections="contingency"></div>
+        <div class="no-print" style="margin: 10px 0 30px;">
+            <button type="button" class="btn add-row-btn" data-add-section="contingency">
+                <i class="fa-solid fa-plus"></i> Legg til sjekklistedel
+            </button>
+        </div>
+    </div>
+
+    <!-- ===================== EMERGENCY ===================== -->
+    <div class="tab-panel" id="tabPanel-emergency" data-tab="emergency">
+
+        <div class="form-field" style="margin-bottom: 20px;">
+            <label for="emergency-title">Sjekklistenavn</label>
+            <input type="text" id="emergency-title" class="checklist-title-input" placeholder="F.eks. Emergency-sjekkliste">
+        </div>
+        <p style="color:#777; font-size:0.9rem; margin-top:-10px;">
+            Det som må håndteres <strong>umiddelbart mens man er i lufta</strong>, for å hindre en ulykke
+            (f.eks. fly-away, motorfeil, batteribrann) - ofte enkelt løst med killswitch over et område
+            uten personer. Det som skjer <em>etter</em> en ulykke hører hjemme på ERP-fanen.
+        </p>
+
+        <div class="builder-columns" data-sections="emergency"></div>
+        <div class="no-print" style="margin: 10px 0 30px;">
+            <button type="button" class="btn add-row-btn" data-add-section="emergency">
+                <i class="fa-solid fa-plus"></i> Legg til sjekklistedel
+            </button>
+        </div>
+    </div>
+
+    <!-- ===================== ERP ===================== -->
+    <div class="tab-panel" id="tabPanel-erp" data-tab="erp">
+
+        <div class="form-field" style="margin-bottom: 20px;">
+            <label for="erp-title">Sjekklistenavn</label>
+            <input type="text" id="erp-title" class="checklist-title-input" placeholder="F.eks. Emergency Response Plan (ERP)">
+        </div>
+        <p style="color:#777; font-size:0.9rem; margin-top:-10px;">
+            Emergency Response Plan - det som gjøres <strong>etter</strong> en ulykke: sikring,
+            førstehjelp, varsling og rapportering på bakken.
+        </p>
+
+        <div class="builder-grid">
+            <div class="builder-col" data-sections="erp"></div>
+
+            <div class="builder-col">
+                <div class="section">
+                    <div class="section-header">
+                        <i class="fa-solid fa-phone" style="color:white;"></i>
+                        <h2>Kontaktliste</h2>
+                    </div>
+                    <table class="limits-table">
+                        <tbody data-limits="erp"></tbody>
+                    </table>
+                    <div style="padding: 16px 20px;">
+                        <button type="button" class="btn btn-secondary add-row-btn no-print" data-add-limit="erp">
+                            <i class="fa-solid fa-plus"></i> Legg til kontakt
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="no-print" style="margin: 10px 0 30px;">
+            <button type="button" class="btn add-row-btn" data-add-section="erp">
+                <i class="fa-solid fa-plus"></i> Legg til sjekklistedel
+            </button>
+        </div>
+    </div>
+
+    <div class="no-print" style="text-align:center; margin-top: 20px;">
+        <button class="btn" id="downloadPdfBtn"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
+        <button class="btn btn-secondary" id="downloadJsonBtn"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
+        <button class="btn btn-danger" id="resetFormBtn"><i class="fa-solid fa-rotate-left"></i> Nullstill skjema</button>
+    </div>
+
+    <div id="printView" class="print-view"></div>
+
+</div>
+
+<script src="js/sjekkliste-bygger.js"></script>
+</body>
+</html>

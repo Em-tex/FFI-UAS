@@ -1129,6 +1129,331 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-style: italic;
 }
 
+/* --- Verktøykort (Risikovurdering-oversikt) --- */
+.tool-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+.tool-card {
+    display: block;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 24px;
+    text-decoration: none;
+    color: inherit;
+    background: white;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+.tool-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-color: var(--ffi-blue); }
+.tool-card i { font-size: 1.6rem; color: var(--ffi-blue); margin-bottom: 10px; }
+.tool-card h3 { border-bottom: none; padding-bottom: 0; margin-bottom: 6px; color: var(--ffi-blue); }
+.tool-card p { margin: 0; color: #666; font-size: 0.9rem; }
+
+/* --- Sjekkliste-generator: faner --- */
+.checklist-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+}
+.checklist-tab-btn {
+    background: none;
+    border: none;
+    font-family: 'Overpass', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #666;
+    padding: 12px 18px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.checklist-tab-btn:hover { color: var(--ffi-blue); }
+.checklist-tab-btn.active { color: var(--ffi-blue); border-bottom-color: var(--ffi-blue); }
+/* Fanefargene matcher temaet på hver sjekkliste (samme dempede farger som i utskriften) - Normal
+   beholder standard FFI-blå. */
+.checklist-tab-btn[data-tab-btn="contingency"]:hover,
+.checklist-tab-btn[data-tab-btn="contingency"].active { color: #ad7e0e; border-bottom-color: #ad7e0e; }
+.checklist-tab-btn[data-tab-btn="emergency"]:hover,
+.checklist-tab-btn[data-tab-btn="emergency"].active,
+.checklist-tab-btn[data-tab-btn="erp"]:hover,
+.checklist-tab-btn[data-tab-btn="erp"].active { color: #a01414; border-bottom-color: #a01414; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Sjekklistedel-headerne (Tap av GNSS, Fly-away, Kollisjon/krasj, osv.) arver samme dempede
+   fargetema som fane-knappen og utskriften - egen boks-header-farge per fane i stedet for FFI-blå
+   overalt (se .checklist-section .section-header lenger ned for basisregelen). */
+#tabPanel-contingency .checklist-section .section-header { background-color: #ad7e0e; }
+#tabPanel-emergency .checklist-section .section-header,
+#tabPanel-erp .checklist-section .section-header { background-color: #a01414; }
+
+/* Fokusrammen på inputfelt inni sjekklistedelene var hardkodet FFI-blå overalt (fra de generelle
+   .builder-item-table/.limits-table-reglene) - stakk seg ut som en plutselig blå boks midt i det
+   gule/røde temaet på contingency/emergency/erp. Egen fokusfarge per fane retter opp i det.
+   (.section-title-input er unntatt med vilje - den sitter oppå selve den fargede header-baren og skal
+   fortsatt ha hvit fokusramme uansett fanefarge, se den generelle regelen lenger ned i filen.) */
+#tabPanel-contingency .builder-item-table input:focus,
+#tabPanel-contingency .builder-item-table textarea:focus { border-color: #ad7e0e; }
+#tabPanel-emergency .builder-item-table input:focus,
+#tabPanel-emergency .builder-item-table textarea:focus,
+#tabPanel-erp .builder-item-table input:focus,
+#tabPanel-erp .builder-item-table textarea:focus,
+#tabPanel-erp .limits-table input:focus { border-color: #a01414; }
+
+/* --- Sjekkliste-generator: MÅK / spesifikk / egendefinert mal-valg (kun normal-fanen) ---
+   Hvilke sjekkpunkter som hører til MÅK vs. spesifikk er satt i standardmalen (item.variant i
+   DEFAULTS, js/sjekkliste-bygger.js) - ikke redigerbart per rad. Rader merket data-variant="mak"/
+   "spesifikk" skjules når det motsatte malvalget er aktivt; "egendefinert" treffer ingen av filtrene og
+   viser dermed alt. Valget lever som et data-template-attributt på fane-panelet, satt av nedtrekksmenyen
+   (og automatisk når brukeren redigerer innholdet, se markNormalCustom i JS). */
+.tab-panel[data-template="mak"] tr[data-variant="spesifikk"] { display: none; }
+.tab-panel[data-template="spesifikk"] tr[data-variant="mak"] { display: none; }
+
+/* --- Sjekkliste-generator: godkjenningsnummer (fast "FFI-UAS-"-prefiks + kun tallet i feltet) --- */
+.approval-number-group { display: flex; align-items: stretch; }
+.approval-number-prefix {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    background: var(--ffi-light-bg);
+    border: 1px solid #ccc;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    color: #555;
+    font-size: 1rem;
+    font-family: 'Overpass', sans-serif;
+    white-space: nowrap;
+}
+.approval-number-group input[type="text"] {
+    border-radius: 0 6px 6px 0;
+    flex: 1;
+    min-width: 0;
+}
+
+/* --- Sjekkliste-generator: påkrevde felt (drone/autorisasjonsnummer) - lyserødt når feltet mangler
+   innhold, se validateNormalRequiredFields i js/sjekkliste-bygger.js. --- */
+.field-invalid { background: #fde3e3 !important; border-color: #d97a7a !important; }
+.approval-number-group.field-invalid .approval-number-prefix { background: #fde3e3; border-color: #d97a7a; }
+.field-required-note {
+    display: none;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: #c0392b;
+    margin-top: 4px;
+}
+.field-required-note.visible { display: block; }
+
+/* --- Sjekkliste-generator: info-ikon med hover/fokus-tooltip (ren CSS, ingen JS nødvendig) --- */
+.info-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ffi-blue);
+    cursor: help;
+    margin-left: 4px;
+    font-size: 0.85rem;
+    font-weight: 400;
+}
+.info-icon .info-tooltip {
+    position: absolute;
+    bottom: 135%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #222;
+    color: white;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 8px 10px;
+    border-radius: 6px;
+    width: 220px;
+    text-align: left;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s;
+    z-index: 20;
+    pointer-events: none;
+}
+.info-icon .info-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #222;
+}
+.info-icon:hover .info-tooltip,
+.info-icon:focus .info-tooltip,
+.info-icon:focus-within .info-tooltip { opacity: 1; visibility: visible; }
+
+/* --- Sjekkliste-generator: to-kolonners boks-layout på skjermen ---
+   Contingency/emergency har bare sjekklistedeler (ensartet innhold) og flyter som "aviskolonner"
+   (.builder-columns). Normal-fanen har to ulike typer innhold - sjekklistedeler man krysser av på
+   underveis, og ren referanse (utstyr/begrensninger) - så der brukes i stedet en eksplisitt
+   to-kolonners grid (.builder-grid/.builder-col) med sjekklistedelene fast i venstre kolonne og
+   utstyr/begrensninger fast i høyre, i stedet for at innholdet flyter fritt mellom kolonnene. */
+.builder-columns {
+    column-count: 2;
+    column-gap: 24px;
+}
+.builder-columns > .section {
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+}
+@media (max-width: 800px) {
+    .builder-columns { column-count: 1; }
+}
+
+.builder-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+}
+@media (max-width: 800px) {
+    .builder-grid { grid-template-columns: 1fr; }
+}
+
+/* --- Sjekkliste-generator: utstyrsliste ---
+   ul.equipment-simple-list (ikke bare .equipment-simple-list) - samme spesifisitet som .builder-list
+   alene ga uforutsigbart resultat avhengig av rekkefølge i filen (.builder-list sin padding:0 vant og
+   spiste opp marginen), elementselektoren her sikrer at denne alltid vinner uansett. */
+ul.equipment-simple-list { padding: 16px 20px 0; }
+.builder-list { list-style: none; margin: 0 0 12px 0; padding: 0; }
+.builder-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+.builder-list li:last-child { border-bottom: none; }
+.builder-list input[type="text"] {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.95rem;
+    box-sizing: border-box;
+}
+.builder-list input:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
+
+/* --- Sjekkliste-generator: operasjonsbegrensninger --- */
+.limits-table { width: 100%; border-collapse: collapse; }
+.limits-table td { padding: 6px 20px; border-bottom: 1px solid #f0f0f0; }
+.limits-table tr:last-child td { border-bottom: none; }
+.limits-table .col-remove { width: 40px; text-align: center; padding-right: 20px; }
+.limits-table input[type="text"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.95rem;
+    box-sizing: border-box;
+}
+.limits-table td.limit-key input { font-weight: 600; }
+.limits-table input:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
+
+/* --- Sjekkliste-generator: overskrifter midtstilt i sin boks-header (ikoner droppet, se HTML/JS -
+   uten et fast-bredt ikon på venstre side kan h2/tittelfeltet fylle hele bredden og sentreres ordentlig,
+   i tråd med referansebildene der alle boks-headere er ren midtstilt tekst uten ikon). ---*/
+.tab-panel .section-header { justify-content: center; }
+
+/* --- Sjekkliste-generator: sjekklistedeler (delt tittelfelt i mørk header) --- */
+.section-header .section-title-input {
+    flex: 1;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    font-weight: 600;
+    font-size: 1.05rem;
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-family: 'Overpass', sans-serif;
+    box-sizing: border-box;
+    text-align: center;
+}
+.section-header .section-title-input::placeholder { color: rgba(255,255,255,0.65); }
+.section-header .section-title-input:focus { outline: none; border-color: white; }
+.remove-section-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.75);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px 8px;
+    flex-shrink: 0;
+}
+.remove-section-btn:hover { color: #ff9d9d; }
+/* Sjekklistedeler (Før avreise, Tap av GNSS, osv.) får FFI-blå header i stedet for standard
+   .section-header-fargen - skiller dem visuelt fra ren referanseinfo (Utstyrsliste,
+   Operasjonsbegrensninger), som beholder den nøytrale mørke standardfargen. */
+.checklist-section { margin-bottom: 20px; }
+.checklist-section .section-header { background-color: var(--ffi-blue); }
+.builder-item-table { width: 100%; border-collapse: collapse; }
+.builder-item-table th {
+    background-color: var(--ffi-blue);
+    color: white;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-align: left;
+    padding: 10px 12px;
+}
+.builder-item-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
+}
+.builder-item-table .col-check { width: 36px; text-align: center; }
+.builder-item-table .col-remove { width: 40px; text-align: center; }
+/* Sjekkpunkt/Status-tiltak er nå auto-voksende tekstfelt (textarea, ikke input) - lang tekst (typisk
+   "Tiltak" på contingency/emergency/erp) ble ellers klippet/scrollet inni et enlinjes felt uten at man
+   kunne se hele innholdet. Se autoGrowTextarea i JS. */
+.builder-item-table textarea {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 0.95rem;
+    font-family: 'Overpass', sans-serif;
+    box-sizing: border-box;
+    resize: none;
+    overflow: hidden;
+    min-height: 37px;
+    line-height: 1.3;
+}
+.builder-item-table textarea:focus {
+    outline: none;
+    border-color: var(--ffi-blue);
+}
+.builder-item-table input[type="text"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 0.95rem;
+    font-family: 'Overpass', sans-serif;
+    box-sizing: border-box;
+}
+.builder-item-table input[type="text"]:focus,
+.builder-item-table input[type="checkbox"]:focus {
+    outline: none;
+    border-color: var(--ffi-blue);
+}
+.builder-item-table input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+
 /* --- Print / last ned som PDF --- */
 @media print {
     nav, .no-print { display: none !important; }
@@ -1143,3 +1468,196 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     .section { break-inside: avoid; box-shadow: none; }
     .exercise-table .col-remove, .add-row-btn { display: none !important; }
 }
+
+/* --- Sjekkliste-generator: felt-vennlig utskrift ---
+   I stedet for å printe det redigerbare skjemaet direkte (inputbokser, kolonner osv.), bygges en egen
+   kompakt "print-view" i JS (se buildAllPrintPages i sjekkliste-bygger.js) rett før window.print()
+   kalles, og body får klassen "printing-checklist". Samme visibility-triks som diplomutskriften
+   (.sim-diploma-overlay) lenger opp i filen - se kommentaren der. */
+.print-view { display: none; }
+
+/* Nettlesere utelater bakgrunnsfarger/-bilder fra utskrift som standard (for å spare blekk) med mindre
+   dette eksplisitt overstyres - uten denne regelen skriver f.eks. Chrome ut de fargede boks-headerne
+   som tomme/hvite bokser med usynlig hvit skrift, uavhengig av "Bakgrunnsgrafikk"-valget i
+   utskriftsdialogen. print-color-adjust: exact tvinger farger/bakgrunner til faktisk å skrives ut. */
+.print-view, .print-view * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+@media print {
+    body.printing-checklist * { visibility: hidden; }
+    body.printing-checklist .print-view,
+    body.printing-checklist .print-view * { visibility: visible; }
+    body.printing-checklist .print-view {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: white;
+    }
+}
+
+.print-page {
+    position: relative;
+    break-after: page;
+    page-break-after: always;
+    padding: 4mm 2mm 10mm;
+    box-sizing: border-box;
+    /* Fyller hele arket (A4 minus @page-margen på 15mm x 2, se lenger opp i filen) slik at
+       .print-page-date faktisk havner nederst på selve papiret, ikke bare rett under innholdet. */
+    min-height: 267mm;
+}
+.print-page:last-child { break-after: auto; page-break-after: auto; }
+
+/* Tittelbanner: alle fire sjekklistetypene får en helfarget banner med hvit, midtstilt skrift
+   (blå/gul/rød) - umulig å ta feil av på avstand i felt. Banneren viser nå kun tittelen (ett navn skulle
+   ikke stå både som tittel og som eget "Contingency"/"Emergency"-merke ved siden av) - datoen er flyttet
+   til ett hjørnestempel nederst på selve arket (.print-page-date), ikke gjentatt per side/halvdel. Temaet
+   ([data-theme]) settes enten på selve .print-page (Normal/ERP - egen side hver) eller på en
+   .print-combined-half (Contingency/Emergency som deler side) - selektorene matcher begge. */
+.print-header {
+    display: flex;
+    justify-content: center;
+    background: var(--ffi-blue);
+    color: white;
+    border-radius: 4px;
+    padding: 9px 14px;
+    margin-bottom: 10px;
+}
+[data-theme="contingency"] .print-header { background: #d4a017; }
+[data-theme="emergency"] .print-header,
+[data-theme="erp"] .print-header { background: #a01414; }
+.print-header h1 { font-size: 15pt; margin: 0; color: white; font-family: 'Overpass', sans-serif; text-align: center; }
+
+/* Drone/autorisasjonsnummer inni selve tittelbanneret (kun normal-siden, se buildPrintHeader) - grid i
+   stedet for flex slik at midtkolonnen (tittelen) holder seg visuelt sentrert uansett hvor lange
+   drone-navnet/nummeret er, siden de to flankekolonnene alltid er like store (1fr hver). */
+.print-header.print-header-with-meta {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: baseline;
+    gap: 10px;
+}
+.print-header-meta {
+    font-size: 9pt;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.print-header-meta-left { text-align: left; }
+.print-header-meta-right { text-align: right; }
+
+.print-page-date {
+    position: absolute;
+    bottom: 3mm;
+    right: 4mm;
+    font-size: 8pt;
+    color: #888;
+}
+
+/* Selve siden er en rad: hovedinnholdet (to kolonner) + en smal fargekodet sidefelt med det stavede
+   temaordet (kun contingency/emergency, se buildPrintPage) - samme idé som den loddrette
+   "BEREDSKAP"/"NØD"-stripen i referansebildene. */
+.print-page-body { display: flex; gap: 5mm; align-items: stretch; }
+.print-columns {
+    flex: 1;
+    min-width: 0;
+    column-count: 2;
+    column-gap: 8mm;
+    column-fill: auto;
+}
+/* Normal-siden: fast venstre/høyre-oppdeling (sjekklistedeler / utstyr+begrensninger) - se
+   kommentaren ved buildNormalPage i js/sjekkliste-bygger.js. */
+.print-grid {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8mm;
+    align-content: start;
+}
+.print-col { display: flex; flex-direction: column; min-width: 0; }
+.print-sidebar {
+    flex: 0 0 9mm;
+    background: var(--ffi-blue);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border-radius: 3px;
+    padding: 8px 0;
+    font-weight: 700;
+    font-size: 9pt;
+    letter-spacing: 0.02em;
+}
+[data-theme="contingency"] .print-sidebar { background: #d4a017; }
+[data-theme="emergency"] .print-sidebar { background: #a01414; }
+
+/* Contingency + emergency deler én side (hver sin halvdel) i stedet for hver sin egen side, med en
+   stiplet skillelinje mellom dem. column-width (ikke et fast column-count) på .print-columns-half lar
+   hver halvdel selv falle tilbake til én kolonne når det er trangt, men bruke flere kolonner "hvis det
+   er plass" - se buildCombinedPage. */
+.print-combined-row { display: flex; gap: 6mm; align-items: stretch; }
+.print-combined-half { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.print-combined-half:first-child { border-right: 1px dashed #ccc; padding-right: 6mm; }
+.print-combined-half .print-header h1 { font-size: 12pt; }
+.print-columns-half {
+    flex: 1;
+    min-width: 0;
+    column-width: 78mm;
+    column-gap: 6mm;
+    column-fill: auto;
+}
+
+.print-box {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px dotted #999;
+    margin: 0 0 6mm;
+}
+.print-box-header {
+    background: var(--ffi-blue);
+    color: white;
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    text-align: center;
+    padding: 3px 8px;
+    border: 1px solid var(--ffi-blue);
+}
+.print-box-header i { margin-right: 4px; }
+[data-theme="contingency"] .print-box-header { background: #d4a017; border-color: #d4a017; }
+[data-theme="emergency"] .print-box-header,
+[data-theme="erp"] .print-box-header { background: #a01414; border-color: #a01414; }
+/* Utstyrsliste/Operasjonsbegrensninger/Kontaktliste er ren referanseinfo, ikke noe som skal krysses av -
+   egen, nøytral mørk header (uavhengig av sidetema) skiller dem fra de fargede sjekklistedel-boksene.
+   Doblet klasseselektor (ikke bare .print-box-header-reference alene) for å veie like tungt som
+   [data-theme] .print-box-header-regelen over og dermed faktisk vinne (samme spesifisitet + senere i
+   filen) - ellers vinner temafargen på ERP-siden siden Kontaktliste ligger inni [data-theme="erp"]. */
+.print-box-header.print-box-header-reference { background: var(--section-header-bg); border-color: var(--section-header-bg); }
+
+.print-rows { width: 100%; border-collapse: collapse; }
+.print-rows tr { border-bottom: 1px solid #e5e5e5; }
+.print-rows tr:last-child { border-bottom: none; }
+.print-rows td { padding: 2px 8px; font-size: 8.5pt; vertical-align: top; line-height: 1.4; }
+.print-rows td.print-check { width: 12px; padding-right: 2px; }
+.print-rows td.print-label.print-key { font-weight: 700; }
+.print-rows td.print-value { text-align: right; color: #333; padding-left: 6px; }
+.print-checkbox-box {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border: 1px solid #333;
+    margin-top: 2px;
+}
+.print-checkbox-box.checked { background: #333; }
+.print-empty-note { font-size: 8pt; color: #888; font-style: italic; padding: 4px 8px; }
+/* Sjekklistedel med bare ett punkt - overskriften er allerede beskrivende, så bare tiltaket vises som
+   ren tekst i stedet for en tabellrad med redundant situasjon-kolonne (se buildSectionBox). */
+.print-single-action { padding: 5px 8px; font-size: 8.5pt; line-height: 1.4; }

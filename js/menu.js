@@ -18,7 +18,8 @@ document.addEventListener("DOMContentLoaded", function() {
         },
         {
             name: "Risikovurdering", icon: "fa-triangle-exclamation", children: [
-                { name: "Oversikt", link: "risikovurdering.html", icon: "fa-house" }
+                { name: "Oversikt", link: "risikovurdering.html", icon: "fa-house" },
+                { name: "Sjekkliste-bygger", link: "sjekkliste-bygger.html", icon: "fa-list-check" }
             ]
         }
         // Legg til flere sider her etter hvert, f.eks.:
