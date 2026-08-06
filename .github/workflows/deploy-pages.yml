@@ -1,0 +1,40 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Lar deg også trigge en deploy manuelt fra Actions-fanen på GitHub, uten å måtte pushe en commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Kansellerer en eventuell hengende/pågående deploy automatisk når en ny starter, i stedet for at den
+# nye køes bak en fastlåst gammel kjøring (trolig årsaken til den evige "deployment_in_progress"-loopen).
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sjekk ut kode
+        uses: actions/checkout@v4
+
+      - name: Sett opp Pages
+        uses: actions/configure-pages@v5
+
+      - name: Last opp hele nettstedet som artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy til GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

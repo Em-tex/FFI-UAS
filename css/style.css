@@ -1193,6 +1193,11 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 #tabPanel-contingency .checklist-section .section-header { background-color: #ad7e0e; }
 #tabPanel-emergency .checklist-section .section-header,
 #tabPanel-erp .checklist-section .section-header { background-color: #a01414; }
+/* Selve kolonneoverskriftsraden ("Situasjon"/"Tiltak", .builder-item-table th) var fortsatt hardkodet
+   FFI-blå - stod igjen som en blå stripe rett under den ellers gule/røde boks-headeren. */
+#tabPanel-contingency .builder-item-table th { background-color: #ad7e0e; }
+#tabPanel-emergency .builder-item-table th,
+#tabPanel-erp .builder-item-table th { background-color: #a01414; }
 
 /* Fokusrammen på inputfelt inni sjekklistedelene var hardkodet FFI-blå overalt (fra de generelle
    .builder-item-table/.limits-table-reglene) - stakk seg ut som en plutselig blå boks midt i det

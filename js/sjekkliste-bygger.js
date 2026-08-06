@@ -6,7 +6,7 @@ const STORAGE_KEY = "ffi-uas:sjekkliste-generator";
 // mellomlagret innhold i nettleseren (fra før en oppdatering av sjekkpunktene) ikke stille overskygger
 // nytt innhold. Egne redigeringer forsvinner riktignok samtidig, men det er en villet avveining så lenge
 // malen fortsatt er under aktiv utvikling.
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 // Kolonneoverskrifter i sjekkpunkt-tabellen er ulike for normal- vs. contingency/emergency/erp-
 // sjekklister: en normal preflight-sjekk sammenligner mot en forventet status, mens de andre beskriver
@@ -539,6 +539,31 @@ function reloadNormalFromDefaults(template) {
     saveState();
 }
 
+// Nullstiller KUN én fane (brukt av "Nullstill skjema"-knappen, som nå er fane-lokal, ikke global) -
+// tittel, drone/autorisasjonsnummer (kun normal), utstyr, begrensninger og sjekklistedeler settes
+// tilbake til standardmalen for den fanen. De andre fanene røres ikke.
+function resetTab(tabKey) {
+    const titleInput = document.getElementById(tabKey + "-title");
+    if (titleInput) titleInput.value = "";
+
+    if (tabKey === "normal") {
+        const droneInput = document.getElementById("normal-drone");
+        if (droneInput) droneInput.value = "";
+        const approvalInput = document.getElementById("normal-approval-number");
+        if (approvalInput) approvalInput.value = "";
+        checkNormalField(droneInput, null, document.getElementById("normal-drone-note"), false);
+        checkNormalField(approvalInput, document.querySelector(".approval-number-group"), document.getElementById("normal-approval-number-note"), false);
+    }
+
+    document.querySelectorAll('[data-equipment="' + tabKey + '"] li').forEach(function (li) { li.remove(); });
+    document.querySelectorAll('[data-limits="' + tabKey + '"] tr').forEach(function (tr) { tr.remove(); });
+    const sectionsContainer = document.querySelector('[data-sections="' + tabKey + '"]');
+    if (sectionsContainer) sectionsContainer.innerHTML = "";
+
+    renderTab(tabKey, DEFAULTS[tabKey]);
+    saveState();
+}
+
 /* ---------- Påkrevde felt: drone + autorisasjonsnummer ----------
    Sjekklisten skal ikke kunne lastes ned/eksporteres uten at drone og autorisasjonsnummer er fylt ut -
    feltene markeres lyserøde og en liten tekst dukker opp under, i stedet for kun å stole på fargen
@@ -836,12 +861,20 @@ function buildPrintHeader(tabKey, data) {
     return header;
 }
 
+// DD.MM.ÅÅÅÅ med ledende null - toLocaleDateString("no-NO") gir riktig rekkefølge, men ikke nødvendigvis
+// ledende null på ettsifret dag/måned (f.eks. "6.8.2026" i stedet for "06.08.2026").
+function formatDateNorwegian(date) {
+    const dd = String(date.getDate()).padStart(2, "0");
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    return dd + "." + mm + "." + date.getFullYear();
+}
+
 // Ett datostempel nede i høyre hjørne av selve arket (.print-page har position:relative) - vises kun
 // én gang per side, ikke én gang per halvdel på den delte contingency/emergency-siden.
 function buildPageDateStamp() {
     const dateEl = document.createElement("div");
     dateEl.className = "print-page-date";
-    dateEl.textContent = new Date().toLocaleDateString("no-NO");
+    dateEl.textContent = formatDateNorwegian(new Date());
     return dateEl;
 }
 
@@ -1100,6 +1133,11 @@ function switchTab(tabKey) {
     document.querySelectorAll(".tab-panel").forEach(function (panel) {
         panel.classList.toggle("active", panel.getAttribute("data-tab") === tabKey);
     });
+    // Sjekkpunkt-tekstfeltene i faner som IKKE var aktive ved sideinnlasting kunne ikke måles riktig av
+    // autoGrowTextarea da de ble bygget - display:none-elementer har ingen layout, så scrollHeight var 0,
+    // og feltene fikk feil (for lav) høyde permanent. Mål dem på nytt nå som fanen faktisk vises.
+    const panel = document.querySelector('.tab-panel[data-tab="' + tabKey + '"]');
+    if (panel) panel.querySelectorAll("textarea").forEach(autoGrowTextarea);
 }
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -1206,9 +1244,11 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     document.getElementById("resetFormBtn").addEventListener("click", function () {
-        if (confirm("Er du sikker på at du vil nullstille sjekklisten? Alt innhold i alle faner blir slettet og erstattet med standardmalen.")) {
-            localStorage.removeItem(STORAGE_KEY);
-            location.reload();
+        const activePanel = document.querySelector(".tab-panel.active");
+        const tabKey = activePanel ? activePanel.getAttribute("data-tab") : "normal";
+        const tabLabel = (TAB_META[tabKey] && TAB_META[tabKey].label) || tabKey;
+        if (confirm("Er du sikker på at du vil nullstille " + tabLabel + "-fanen? Alt innhold der blir slettet og erstattet med standardmalen. De andre fanene påvirkes ikke.")) {
+            resetTab(tabKey);
         }
     });
 });
