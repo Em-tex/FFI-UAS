@@ -31,10 +31,15 @@
             <span class="sim-crash-title">MODUSBYTTE AVVIST</span>
             <span class="sim-crash-hint" id="modeBlockedReason">For lav luftfart for MANUAL</span>
         </div>
+        <div class="sim-warning-banner" id="rtlFailsafeBanner">
+            <span class="sim-crash-title">LAVT BATTERI</span>
+            <span class="sim-crash-hint">Automatisk QRTL aktivert</span>
+        </div>
         <div class="sim-status-bar">
-            <div class="sim-status-item">
+            <div class="sim-status-item sim-dropdown">
                 <span class="sim-status-label">Modus</span>
-                <span id="hudMode" class="sim-status-value">QHOVER</span>
+                <span id="hudMode" class="sim-status-value" style="cursor:pointer;" title="Klikk for modusoversikt">QHOVER</span>
+                <div class="sim-dropdown-menu" id="modePopover" style="right:auto; left:0;"></div>
             </div>
             <div class="sim-status-item" title="Løftemotorenes kontrollmyndighet - 100% i Q-moduser, trappes ned mot 0% i FBWA idet overgangsfarten nås, alltid 0% i MANUAL">
                 <span class="sim-status-label">MR-assist</span>
@@ -72,6 +77,10 @@
                 <span class="sim-status-label">Trim</span>
                 <span id="hudTrim" class="sim-status-value">0.0°</span>
             </div>
+            <div class="sim-status-item" title="Simulert batteriprosent - se RTL/failsafe-panelet for utholdenhet og lavspenning-terskel">
+                <span class="sim-status-label">Batteri</span>
+                <span id="hudBattery" class="sim-status-value">100 %</span>
+            </div>
         </div>
 
         <div class="sim-toolbar no-print">
@@ -86,6 +95,8 @@
                     <button type="button" class="sim-dropdown-item" id="toggleFlyCameraBtn"><i class="fa-solid fa-plane"></i> Fly og kamera</button>
                     <button type="button" class="sim-dropdown-item" id="toggleWindBtn"><i class="fa-solid fa-wind"></i> Vind</button>
                     <button type="button" class="sim-dropdown-item" id="toggleVtolBtn"><i class="fa-solid fa-arrows-up-down"></i> VTOL/overgang</button>
+                    <button type="button" class="sim-dropdown-item" id="toggleRtlBtn"><i class="fa-solid fa-house"></i> RTL/failsafe</button>
+                    <button type="button" class="sim-dropdown-item" id="toggleFlightLogBtn"><i class="fa-solid fa-list"></i> Flightlogg</button>
                     <button type="button" class="sim-dropdown-item" id="toggleGamepadBtn" style="display:none;"><i class="fa-solid fa-gamepad"></i> Kontroller</button>
                 </div>
             </div>
@@ -184,6 +195,101 @@
             <button type="button" class="sim-btn sim-btn-primary" id="resetVtolParamsBtn" style="margin-top:8px;"><i class="fa-solid fa-rotate-left"></i> Tilbakestill til standard</button>
         </div>
 
+        <div class="sim-panel" id="rtlPanel" style="display:none;">
+            <div class="sim-panel-header">
+                <button type="button" class="sim-panel-back" title="Tilbake"><i class="fa-solid fa-arrow-left"></i></button>
+                <h3>RTL/failsafe</h3>
+                <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p class="sim-panel-hint" style="margin-top:0;">QRTL (tastatur: 7) navigerer hjem til punktet der motoren sist ble slått PÅ, og lander automatisk. Navnene følger ArduPilot sine egne Q_*-parametre.</p>
+            <div class="sim-rate-row" title="Q_RTL_MODE: overordnet RTL-strategi. 0=Fixed Wing RTL (sirkler fastvinget for alltid, lander aldri av seg selv). 1=Switch to QRTL at radius (rett fastvinget innflyging, ingen loiter). 2=Loiter to altitude, switch to QRTL (fastvinget sirkel-nedstigning før VTOL). 3=Approach, switch to QRTL (standarden ekte QRTL selv alltid bruker, uansett Q_RTL_MODE - forenklet her til samme oppførsel som 2).">
+                <label>Q_RTL_MODE</label>
+                <select id="rtlModeSelect">
+                    <option value="0">0: Fixed Wing RTL (kun loiter)</option>
+                    <option value="1">1: Switch to QRTL ved radius</option>
+                    <option value="2">2: Loiter til høyde, så QRTL</option>
+                    <option value="3">3: Approach, så QRTL (standard)</option>
+                </select>
+            </div>
+            <div class="sim-rate-row" title="Q_RTL_ALT: høyde å klatre mot/holde under retur.">
+                <label>RTL-høyde</label>
+                <input type="range" id="rtlAltInput" min="5" max="60" step="1">
+                <span class="sim-rate-value" id="rtlAltValue">15 m</span>
+            </div>
+            <div class="sim-rate-row" title="RTL_RADIUS: innenfor denne avstanden fra hjem flys det rett hjem i VTOL-modus og lander; utenfor går den over til fastvinget marsjflyging først (ekte ArduPilot: 'this value is used to set the minimum radius at which the plane will transition from fixed-wing to VTOL mode'). Forenklet her til å ALLEREDE inkludere ArduPilot sin egen 1.5×max(RTL_RADIUS,WP_LOITER_RAD)-faktor, i stedet for to separate parametre - tallet du setter ER selve overgangsterskelen.">
+                <label>RTL_RADIUS</label>
+                <input type="range" id="transitionRadiusInput" min="10" max="200" step="5">
+                <span class="sim-rate-value" id="transitionRadiusValue">40 m</span>
+            </div>
+            <div class="sim-rate-row" title="Pusher-gass i fastvinget cruise-fase mot hjem.">
+                <label>Cruise-gass</label>
+                <input type="range" id="cruiseThrottleInput" min="30" max="100" step="5">
+                <span class="sim-rate-value" id="cruiseThrottleValue">70 %</span>
+            </div>
+            <div class="sim-rate-row" title="Q_WP_SPD: marsjfart hjem i VTOL-retur-fasen.">
+                <label>VTOL-fart hjem</label>
+                <input type="range" id="qWpSpeedInput" min="1" max="12" step="0.5">
+                <span class="sim-rate-value" id="qWpSpeedValue">5 m/s</span>
+            </div>
+            <div class="sim-rate-row" title="Q_WP_SPD_DN: synkefart mot finalhøyden.">
+                <label>Synkefart</label>
+                <input type="range" id="wpSpeedDnInput" min="0.2" max="3" step="0.1">
+                <span class="sim-rate-value" id="wpSpeedDnValue">1 m/s</span>
+            </div>
+            <div class="sim-rate-row" title="Q_LAND_FINAL_ALT: høyde AGL der finalnedstigningen begynner.">
+                <label>Finalhøyde</label>
+                <input type="range" id="landFinalAltInput" min="2" max="15" step="1">
+                <span class="sim-rate-value" id="landFinalAltValue">6 m</span>
+            </div>
+            <div class="sim-rate-row" title="Q_LAND_FINAL_SPD: synkefart under finalhøyden.">
+                <label>Finalsynkefart</label>
+                <input type="range" id="landFinalSpeedInput" min="0.1" max="1.5" step="0.1">
+                <span class="sim-rate-value" id="landFinalSpeedValue">0.5 m/s</span>
+            </div>
+            <div class="sim-rate-row" style="flex:1;" title="Q_OPTIONS bit 16: hopp alltid over fastvinget cruise, fly rett hjem i VTOL uansett avstand.">
+                <label style="flex:1;">Kun VTOL-retur</label>
+                <input type="checkbox" id="pureVtolOnlyInput">
+            </div>
+            <h3 style="margin-top:16px;">Batteri (simulert)</h3>
+            <p class="sim-panel-hint" style="margin-top:0;">Forenklet utholdenhetsproxy, ikke ekte spenning/mAh.</p>
+            <div class="sim-rate-row" title="Simulert utholdenhet ved kontinuerlig full hover.">
+                <label>Utholdenhet, hover</label>
+                <input type="range" id="batteryHoverInput" min="3" max="40" step="1">
+                <span class="sim-rate-value" id="batteryHoverValue">12 min</span>
+            </div>
+            <div class="sim-rate-row" title="Simulert utholdenhet ved kontinuerlig fastvinget cruise.">
+                <label>Utholdenhet, cruise</label>
+                <input type="range" id="batteryCruiseInput" min="5" max="90" step="1">
+                <span class="sim-rate-value" id="batteryCruiseValue">30 min</span>
+            </div>
+            <div class="sim-rate-row" style="flex:1;" title="Trigger automatisk QRTL når batteriet krysser terskelen under.">
+                <label style="flex:1;">Batteri-failsafe</label>
+                <input type="checkbox" id="batteryFailsafeEnabledInput">
+            </div>
+            <div class="sim-rate-row" title="Batteriprosent som trigger automatisk QRTL.">
+                <label>Failsafe-terskel</label>
+                <input type="range" id="batteryFailsafePercentInput" min="5" max="50" step="5">
+                <span class="sim-rate-value" id="batteryFailsafePercentValue">20 %</span>
+            </div>
+            <button type="button" class="sim-btn sim-btn-primary" id="resetRtlParamsBtn" style="margin-top:8px;"><i class="fa-solid fa-rotate-left"></i> Tilbakestill til standard</button>
+        </div>
+
+        <div class="sim-panel" id="flightLogPanel" style="display:none; width:min(90vw, 620px);">
+            <div class="sim-panel-header">
+                <button type="button" class="sim-panel-back" title="Tilbake"><i class="fa-solid fa-arrow-left"></i></button>
+                <h3>Flightlogg</h3>
+                <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p class="sim-panel-hint" style="margin-top:0;">Siste 30 sekunder, samplet ca. hvert 0.15s. Fryses automatisk ved krasj (starter igjen ved Reset). Nyttig for feilrapportering - kopier og lim inn.</p>
+            <textarea id="flightLogText" readonly spellcheck="false" style="width:100%; height:260px; font-family:monospace; font-size:0.75rem; white-space:pre; overflow:auto; resize:vertical; background:rgba(0,0,0,0.35); color:#e4e4e4; border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:6px;"></textarea>
+            <div class="sim-rate-row" style="gap:8px; margin-top:8px;">
+                <button type="button" class="sim-btn" id="flightLogRefreshBtn"><i class="fa-solid fa-rotate"></i> Oppdater</button>
+                <button type="button" class="sim-btn sim-btn-primary" id="flightLogCopyBtn"><i class="fa-solid fa-copy"></i> Kopier</button>
+                <button type="button" class="sim-btn" id="flightLogClearBtn"><i class="fa-solid fa-trash"></i> Tøm</button>
+            </div>
+            <p class="sim-panel-hint" id="flightLogStatus" style="margin-bottom:0;"></p>
+        </div>
+
         <div class="sim-panel" id="gamepadPanel" style="display:none;">
             <div class="sim-panel-header">
                 <button type="button" class="sim-panel-back" title="Tilbake"><i class="fa-solid fa-arrow-left"></i></button>
@@ -216,6 +322,7 @@
                 <li><strong>[ / ]</strong><span>Trim høyderor ned / opp (kun FBWA/MANUAL)</span></li>
                 <li><strong>1-4</strong><span>QSTABILIZE / QHOVER / QLOITER / QACRO (svevemodus)</span></li>
                 <li><strong>5 / 6</strong><span>MANUAL / FBWA (fastvinget marsjflyging)</span></li>
+                <li><strong>7</strong><span>QRTL - naviger automatisk hjem (til punktet motoren sist ble slått PÅ) og land. Flyr fastvinget hvis langt unna, går over til VTOL-modus nær hjem - se RTL/failsafe-panelet</span></li>
                 <li><strong>Bytt modus = transisjon</strong><span>Det finnes ingen egen transisjonsbryter - bytt til en Q-modus for umiddelbar svevemyndighet, bytt til MANUAL/FBWA for å fly videre som fastvinget</span></li>
                 <li><strong>QSTABILIZE</strong><span>Selvnivellerende krengning/stigning, manuell (direkte) kollektiv gass</span></li>
                 <li><strong>QHOVER</strong><span>Som QSTABILIZE + Alt Hold (sentrert gasspak holder høyden)</span></li>
@@ -248,5 +355,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="js/simulator-common.js"></script>
 <script src="js/simulator-vtol.js"></script>
+<script src="js/simulator-vtol-rtl.js"></script>
+<script src="js/simulator-vtol-flightlog.js"></script>
 </body>
 </html>

@@ -476,6 +476,14 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 .sim-status-value.sim-armed { color: #6fdc8c; }
 .sim-status-value.sim-killed { color: #ff6b6b; }
+/* Kort gult blink på hudMode ved modusbytte (se modeFlashUntil i simulator-vtol.js) - ren CSS-animasjon
+   i stedet for en JS-drevet fargeovergang, siden klassen kun står på i ~400ms (ett engangsblink, ikke
+   en vedvarende tilstand som sim-armed/sim-killed over). */
+.sim-status-value.mode-flash { animation: sim-mode-flash 0.4s ease-out; }
+@keyframes sim-mode-flash {
+    0% { color: #ffd23f; text-shadow: 0 0 8px rgba(255,210,63,0.9); }
+    100% { color: white; text-shadow: none; }
+}
 
 /* Fremdrift/telleren for gjeldende øvelsessteg (hover-holdetid, runder, killswitch-status ...) -
    egen liten boks nederst midt på skjermen, i tillegg til (ikke i stedet for) selve HUD-baren,

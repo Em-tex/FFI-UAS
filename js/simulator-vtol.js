@@ -5,8 +5,9 @@
    (IKKE vippbare) løftemotorer (quad-oppsett, som quadcopter-simulatoren) for vertikal/svevende flyging,
    PLUSS en egen trekkmotor ("pusher") bak V-halen for forover-flyging - en "QuadPlane" i ArduPilot/
    Mission Planner-terminologi (se MODE_LABELS-kommentaren for hele modus-oversikten: QSTABILIZE/QHOVER/
-   QLOITER/QACRO for svevemodus, MANUAL/FBWA for fastvinget marsjflyging - AUTO/RTL/QLAND/QRTL er bevisst
-   utelatt, se samme kommentar). To flyregimer (multirotor/svevende og fastvinget/marsjerende) deler den
+   QLOITER/QACRO for svevemodus, MANUAL/FBWA for fastvinget marsjflyging, QRTL for automatisk hjemflyging
+   (se js/simulator-vtol-rtl.js) - AUTO/QLAND er fortsatt bevisst utelatt, se samme kommentar). To
+   flyregimer (multirotor/svevende og fastvinget/marsjerende) deler den
    samme skrog-/vinge-/hale-fysikken fra fastvinge-simmen, men har HVER SIN kilde til dreiemoment:
    fastvinge-modellens rorflater (skalerer med dynamisk trykk, ~null ved lav fart) og de fire
    løftemotorene (fast autoritet i Q-moduser, trappet ned/av i FBWA/MANUAL) - se computeMcAuthority i
@@ -306,11 +307,24 @@ const RUNWAY_SPAWN_Z = 8;   // spawn litt bak terskelen, klar for avgang nedover
 // liftThrustTotal er den SAMLEDE (alle fire motorer) maks vertikale trekkraften - satt til en typisk
 // multirotor-thrust/vekt-margin (~1.8-2.0x egenvekt i Newton) slik at flyet kan svelve OG fortsatt
 // klatre/manøvrere med margin til overs, akkurat som en ekte quadcopter.
+// pusherMaxThrust/propPitchSpeed økt IGJEN her (runde 3 - se "motor boost"-git-historikken for runde 2,
+// som satte pusherMaxThrust LIK fastvinge-simmens egen tilsvarende klasse) - brukeren rapporterte at selv
+// FULL gass på Liten bare så vidt kom over 20 m/s i level fastvinget flukt. Regnet etter: likevektsfarten
+// (thrust(V)=drag(V)) med de gamle tallene (18N/30 m/s pitch-fart) løser til ~21 m/s for Liten - stemmer
+// nøyaktig med rapporten, altså IKKE en feil, bare reell undertuning. Grunnen til at ren
+// "match fastvinge-simmens tall"-runde 2 ikke var nok: en ekte QuadPlane har MER motstand i fastvinget
+// flukt enn en ren fastvinge med samme skrog/vinge, fra de fire faste løftemotorene/bommene som henger i
+// luftstrømmen (IKKE modellert som egen drag-økning her - cd0 er uendret fra fastvinge-simmens egne tall)
+// - samme trekkraft holder da ikke til samme fart. Løftet derfor BÅDE trekkraften (mer margin over
+// motstanden ved marsjfart) OG propPitchSpeed (flatere trekkraft-vs-fart-kurve, se thrustForce i
+// stepPhysics - kraften faller null idet farten når propPitchSpeed) for alle tre klasser, proporsjonalt
+// skalert (samme ~1.67x-faktor på trekkraft, ~1.33x på pitch-fart, gjennom alle tre - konsistent med
+// hvordan runde 2 også skalerte klassene sammen).
 const VTOL_CLASSES = {
     small: {
         label: "Liten (trener-VTOL)",
         mass: 3.4, wingArea: 0.4, wingSpan: 1.9,
-        pusherMaxThrust: 18, cd0: 0.05, inducedDragK: 0.95, clSlope: 0.11, stallAngleDeg: 14, propPitchSpeed: 30,
+        pusherMaxThrust: 30, cd0: 0.05, inducedDragK: 0.95, clSlope: 0.11, stallAngleDeg: 14, propPitchSpeed: 40,
         liftThrustTotal: 3.4 * GRAVITY * 1.8,
         inertiaRoll: 0.16, inertiaPitch: 0.5, inertiaYaw: 0.5,
         gearOffsetY: -0.22, visualScale: 1.0, armLen: 0.62
@@ -318,11 +332,7 @@ const VTOL_CLASSES = {
     medium: {
         label: "Middels",
         mass: 12, wingArea: 0.68, wingSpan: 2.5,
-        // pusherMaxThrust satt LIK fastvinge-simmens egen Middels-klasse (36N, se VTOL_CLASSES-
-        // toppkommentaren) - et første forsøk (26N) var fortsatt "undermotorisert" i fastvinget modus
-        // ifølge brukeren, siden pusheren da hadde vesentlig lavere trekkraft/vekt enn tilsvarende
-        // fastvinge-klasse, selv om selve luftrammen (vekt/vingeareal/drag) er nesten identisk.
-        pusherMaxThrust: 36, cd0: 0.045, inducedDragK: 1.05, clSlope: 0.105, stallAngleDeg: 13, propPitchSpeed: 32,
+        pusherMaxThrust: 60, cd0: 0.045, inducedDragK: 1.05, clSlope: 0.105, stallAngleDeg: 13, propPitchSpeed: 43,
         liftThrustTotal: 12 * GRAVITY * 2.0,
         inertiaRoll: 1.1, inertiaPitch: 1.6, inertiaYaw: 1.8,
         gearOffsetY: -0.28, visualScale: 1.4, armLen: 0.85
@@ -330,9 +340,7 @@ const VTOL_CLASSES = {
     large: {
         label: "Stor",
         mass: 32, wingArea: 1.25, wingSpan: 3.5,
-        // pusherMaxThrust satt LIK fastvinge-simmens egen Stor-klasse (80N) - se Middels sin egen
-        // pusherMaxThrust-kommentar over for begrunnelsen.
-        pusherMaxThrust: 80, cd0: 0.04, inducedDragK: 1.15, clSlope: 0.1, stallAngleDeg: 12, propPitchSpeed: 34,
+        pusherMaxThrust: 130, cd0: 0.04, inducedDragK: 1.15, clSlope: 0.1, stallAngleDeg: 12, propPitchSpeed: 45,
         liftThrustTotal: 32 * GRAVITY * 1.9,
         inertiaRoll: 3.2, inertiaPitch: 4.4, inertiaYaw: 4.8,
         gearOffsetY: -0.35, visualScale: 2.0, armLen: 1.15
@@ -346,11 +354,17 @@ const DEFAULT_PLANE_CLASS = "small";
 // "Plane"-moduser (fastvinget marsjflyging, kun FBWA får assistanse av løftemotorene ved lav fart, se
 // samme funksjon). Det finnes IKKE en egen "transisjonsbryter" som i PX4 - selve MODUSVALGET er
 // transisjonen (bytt til en Q-modus for umiddelbar svevemyndighet, bytt til MANUAL/FBWA for å fly videre
-// som fastvinget), akkurat som i ekte ArduPilot. AUTO/RTL/QLAND/QRTL (oppdragsbaserte/autonome moduser)
-// er bevisst UTELATT - denne simmen har ingen oppdrags-/rutepunkt-system, kun manuell flyging.
+// som fastvinget), akkurat som i ekte ArduPilot. AUTO/QLAND (oppdragsbaserte moduser) er fortsatt bevisst
+// UTELATT - denne simmen har ingen oppdrags-/rutepunkt-system. QRTL er lagt til som ETT eget unntak (se
+// js/simulator-vtol-rtl.js): den trenger ikke et generelt rutepunktsystem, kun ett enkelt fast mål (hjem).
 const MODE_LABELS = {
     qstabilize: "QSTABILIZE", qhover: "QHOVER", qloiter: "QLOITER", qacro: "QACRO",
-    manual: "MANUAL", fbwa: "FBWA"
+    manual: "MANUAL", fbwa: "FBWA",
+    // QRTL - IKKE lenger utelatt (se js/simulator-vtol-rtl.js for hele autopilot-laget, lastet inn som en
+    // egen fil rett etter denne). Bevisst IKKE med i isQMode()/DEFAULT_VTOL_PARAMS-familien: QRTL har sin
+    // egen, dynamiske "effektiv modus" (fbwa/qloiter om hverandre avhengig av fase) i stedet for én fast
+    // myndighet, se controlMode i stepPhysics.
+    qrtl: "QRTL"
 };
 const AXIS_LABELS = { aileron: "Aileron", elevator: "Elevator", rudder: "Rudder" };
 const CHANNEL_LABELS = { aileron: "Aileron", elevator: "Elevator", rudder: "Rudder", throttle: "Gass" };
@@ -379,7 +393,7 @@ const DEFAULT_GAMEPAD_MAP = {
         // To DISKRÉ knapper (ikke én toggle, se setEngine-kommentaren) - én som alltid slår motoren PÅ,
         // én som alltid slår den AV, entydig uansett gjeldende tilstand.
         engineOn: null, engineOff: null, modeQStabilize: null, modeQHover: null, modeQLoiter: null, modeQAcro: null,
-        modeManual: null, modeFbwa: null, trimUp: null, trimDown: null
+        modeManual: null, modeFbwa: null, modeQrtl: null, trimUp: null, trimDown: null
     }
 };
 // trimUp/trimDown er IKKE med i BUTTON_ACTIONS/buttonManager under - de er kontinuerlige "hold inne"-
@@ -388,7 +402,7 @@ const DEFAULT_GAMEPAD_MAP = {
 const BUTTON_ACTION_LABELS = {
     engineOn: "Motor PÅ", engineOff: "Motor AV",
     modeQStabilize: "Modus: QSTABILIZE", modeQHover: "Modus: QHOVER", modeQLoiter: "Modus: QLOITER",
-    modeQAcro: "Modus: QACRO", modeManual: "Modus: MANUAL", modeFbwa: "Modus: FBWA",
+    modeQAcro: "Modus: QACRO", modeManual: "Modus: MANUAL", modeFbwa: "Modus: FBWA", modeQrtl: "Modus: QRTL",
     trimUp: "Trim opp", trimDown: "Trim ned"
 };
 
@@ -451,7 +465,12 @@ const planeState = {
     filteredBankRateDeg: 0, filteredPitchRateDeg: 0,
     // VTOL-spesifikke - lagres i stepPhysics for bruk i updatePlaneVisual (propellanimasjon) og
     // updateHud (samme "siste beregnede verdi fra fysikk-tick"-mønster som lastRollDeflection over).
-    lastPusherThrottle: 0, lastCollectiveFrac: 0, lastMcAuthority: 1
+    lastPusherThrottle: 0, lastCollectiveFrac: 0, lastMcAuthority: 1,
+    // Effektiv modus kontrolloven FAKTISK brukte forrige tick - lik flightMode for alle vanlige moduser,
+    // men i "qrtl" er den enten "fbwa" (cruise-fase) eller "qloiter" (VTOL-fasene), se
+    // js/simulator-vtol-rtl.js. Brukt av updatePlaneVisual/updateHud, som ikke selv har tilgang til
+    // stepPhysics sin lokale controlMode-konstant.
+    lastControlMode: "qhover"
 };
 
 let lastAirspeed = 0;
@@ -540,6 +559,12 @@ function computeMcAuthority(mode, airspeed, now) {
 // den. Bruker samme terskel (vtolParams.assistSpeed) som FBWA sin egen overgang - én kilde til sannhet,
 // justerbar i samme VTOL-panel.
 let modeBlockedUntil = 0;
+// modeFlashUntil: brukt av updateHud til å legge på ".mode-flash"-CSS-klassen (kort gult blink, se
+// style.css) på hudMode et lite øyeblikk hver gang selve modusen FAKTISK endres - brukeren ba om en
+// tydelig visuell bekreftelse på modusbytte, siden HUD-teksten alene lett kan overses midt i en manøver.
+// Kun satt ved et EKTE bytte (mode !== planeState.flightMode), ikke ved f.eks. gjentatte trykk på samme
+// modusknapp eller et AVVIST bytte (se manual-sjekken over, som returnerer FØR dette punktet).
+let modeFlashUntil = 0;
 function trySetFlightMode(mode) {
     if (mode === "manual" && lastAirspeed < vtolParams.assistSpeed) {
         modeBlockedUntil = performance.now() + 3000;
@@ -549,6 +574,7 @@ function trySetFlightMode(mode) {
         }
         return false;
     }
+    if (mode !== planeState.flightMode) modeFlashUntil = performance.now() + 400;
     planeState.flightMode = mode;
     return true;
 }
@@ -566,7 +592,19 @@ function computeWeathervaneYawRateRad(forwardWorld, leanMagDeg) {
     if (windSpeed < 0.5 || leanMagDeg < vtolParams.wvaneAngMin) return 0;
     // Nesen skal peke MOT der vinden kommer FRA, altså motsatt av vindens egen bevegelsesretning.
     const targetX = -currentWindVector.x / windSpeed, targetZ = -currentWindVector.z / windSpeed;
-    const cross = forwardWorld.x * targetZ - forwardWorld.z * targetX;
+    // BUG (rapportert av brukeren: "weathervaner motsatt med halen inn i vinden") - cross var opprinnelig
+    // forwardWorld.x*targetZ - forwardWorld.z*targetX, som beregner signert vinkel med MOTSATT fortegns-
+    // konvensjon av motorens egen positive-gir-retning. Verifisert konkret: med forward=(0,0,-1) og en
+    // vind som blåser i +x (target=(-1,0,0), altså nesen SKAL ende opp pekende mot -x), krever selve
+    // rotasjonsintegratoren (se integrateOrientation/angVelVec, y-komponenten) en positiv gir på +90° for
+    // å nå dit (positiv gir dreier nesen mot -x, se currentBankDeg/-PitchDeg-kommentaren over for samme
+    // "forward rotert via applyQuaternion, ikke algebraisk"-forsiktighet). Den GAMLE formelen ga i stedet
+    // -90° for akkurat dette tilfellet - stikk motsatt fortegn - som betydde at weathervaneYawRateRad
+    // (lagt RETT INN i desiredMcYawRateRad) systematisk kommanderte gir i FEIL retning, og konvergerte mot
+    // det ustabile motsatte likevektspunktet (halen inn i vinden) i stedet for det stabile (nesen inn i
+    // vinden). Byttet komponentrekkefølgen (fz*tx - fx*tz i stedet for fx*tz - fz*tx) retter fortegnet -
+    // samme type fiks som currentBankDeg-negasjonen andre steder i denne filen.
+    const cross = forwardWorld.z * targetX - forwardWorld.x * targetZ;
     const dot = forwardWorld.x * targetX + forwardWorld.z * targetZ;
     const headingErrorRad = Math.atan2(cross, dot);
     // Q_WVANE_GAIN er offisielt "grader lenevinkel -> grader/s girrate" (et ÅPENT, ikke-konvergerende
@@ -2544,7 +2582,8 @@ const BUTTON_ACTIONS = {
     modeQLoiter: function () { trySetFlightMode("qloiter"); },
     modeQAcro: function () { trySetFlightMode("qacro"); },
     modeManual: function () { trySetFlightMode("manual"); },
-    modeFbwa: function () { trySetFlightMode("fbwa"); }
+    modeFbwa: function () { trySetFlightMode("fbwa"); },
+    modeQrtl: function () { trySetFlightMode("qrtl"); }
 };
 const buttonManager = Sim.createButtonBindingManager(gamepadMap.buttons, BUTTON_ACTIONS, saveGamepadMap);
 
@@ -2652,6 +2691,34 @@ function dragCoefficient(aoaDeg, spec, groundEffectFactor) {
     return cd;
 }
 
+// Skråror (aileron) mister effektivitet når VINGEN DEN SITTER PÅ allerede er (nær) steilet på EGEN HÅND -
+// en ekte, separert luftstrøm kan ikke levere den ekstra, proporsjonale løft-økningen et rorutslag ber
+// om. Brukeren påpekte at vingen "tipper over veldig lett" og etterlyste at et ekte treningsfly i steiling
+// krever SIDEROR (ikke skråror) for å holde vingene rette - se finTorqueAtYawRate i stepPhysics, som er
+// UPÅVIRKET av vingens steiling (sideroret sitter på halen, ikke på selve vingen, og mister derfor ikke
+// autoritet her) og dermed forblir det virkemiddelet som faktisk virker, akkurat som i et ekte fly.
+//
+// VIKTIG: evaluert på VINGENS EGEN, RÅ AoA (baseAoaDeg - FØR ailerons eget bidrag legges til), IKKE den
+// KOMBINERTE vinkelen (base+aileron) - se rightWing/leftWing- og wingTorqueForce-kommentarene der
+// controlAoaDeg/extraAoaDeg brukes, som eksplisitt dokumenterer HVORFOR en tidligere versjon som lot
+// AILERON-UTSLAGET SELV telle med i steile-vurderingen ble fjernet ("et fullt rorutslag presset tidligere
+// den nedadgående vingen inn i steilingens flate område ved nettopp lav fart/høy AoA... Dette var den
+// reelle årsaken til at rull konsekvent føltes tregt", f.eks. under avgangsrotasjon). Denne funksjonen
+// gjentar IKKE den feilen: den ser KUN på om vingen ALLEREDE er steilet uavhengig av roret, så normal
+// rull-autoritet ved moderat AoA (takeoff-rotasjon, brattere svinger osv.) er helt uendret - kun i en
+// EKTE, etablert steiling (vingens egen AoA forbi stallAngleDeg) svekkes skråroret.
+function aileronLiftEffectiveness(baseAoaDeg, spec) {
+    const absA = Math.abs(baseAoaDeg);
+    const stall = spec.stallAngleDeg;
+    if (absA < stall) return 1;
+    if (absA < stall + STALL_POST_RANGE_DEG) {
+        const progress = (absA - stall) / STALL_POST_RANGE_DEG;
+        return 1 - progress * 0.85; // 1.0 -> 0.15 gjennom overgangssonen
+    }
+    return 0.15; // aldri helt null - et halvveis nedadgående skråror gir fortsatt LITT ekstra motstand/
+    // vridning selv dypt inne i steiling, kun mye mindre proporsjonal løft enn ved fri luftstrøm.
+}
+
 // Lokal luftfart/AoA for én vingetupp: legger til hastighetsbidraget fra rull/gir-rotasjon (omega x r) -
 // dette er selve mekanismen som lar innervingen i en hard, sakte sving steile før den ytre og få flyet
 // til å falle/rulle brått mot den siden (ekte "tip stall"/spinn-tendens), i stedet for at hele flyet
@@ -2690,6 +2757,18 @@ function stepPhysics(dt) {
         return;
     }
 
+    // QRTL (autopilot-lag, se js/simulator-vtol-rtl.js) - MÅ kjøre FØR stick leses under, siden
+    // updateRtlAutopilot skriver syntetiske pinneverdier RETT INN i inputState.stick (samme objekt) i
+    // stedet for ekte pilotinput mens "qrtl" er aktiv modus. Returnerer en "effektiv modus" som resten av
+    // denne funksjonen bruker i STEDET for planeState.flightMode - se controlMode rett under - siden QRTL
+    // sjonglerer mellom en FBWA-lignende (fastvinget cruise) og en QLOITER-lignende (VTOL-retur/landing)
+    // myndighet avhengig av hvilken fase den er i. planeState.flightMode selv rører verken denne eller
+    // updateRtlAutopilot - HUD/lagring/tastatur-guard skal fortsatt se det bokstavelige "qrtl".
+    const rtlEffectiveMode = planeState.flightMode === "qrtl" ? updateRtlAutopilot(dt) : null;
+    if (!rtlEffectiveMode) { rtlState.phase = "idle"; rtlState.landedTimer = 0; }
+    const controlMode = rtlEffectiveMode || planeState.flightMode;
+    planeState.lastControlMode = controlMode;
+
     const stick = inputState.stick;
     const throttleShaped = computeThrottleCurve(stick.throttle, rates.throttle.expo);
 
@@ -2705,15 +2784,20 @@ function stepPhysics(dt) {
     // Q-modus/Plane-modus-myndighet (0-1) - se computeMcAuthority-kommentaren. Beregnes tidlig siden BÅDE
     // trekkmotor- og løftemotor-thrust, OG selve vinkel-P(D)-målet (targetBankDeg/-PitchDeg under),
     // trenger den.
-    const mcAuthority = computeMcAuthority(planeState.flightMode, airspeed, performance.now());
+    const mcAuthority = computeMcAuthority(controlMode, airspeed, performance.now());
     planeState.lastMcAuthority = mcAuthority;
     const liftMotorsActive = mcAuthority > 0.001;
+    // Batteri (simulert utholdenhetsproxy, se js/simulator-vtol-rtl.js) - oppdateres HVER tick uansett
+    // modus, ikke bare i "qrtl", siden det er selve forbruket (og en evt. lavspenning-failsafe TRIGGER av
+    // qrtl) som skal skje kontinuerlig. Gjenbruker mcAuthority direkte som "hvor mye i hover-regime"
+    // (0=ren fastvinget cruise, 1=full svevemyndighet) i stedet for å anslå motorpådrag på nytt.
+    updateBattery(dt, mcAuthority);
 
     const forwardAirspeedIntoProp = Math.max(-localAirVel.z, 0);
     // Trekkpropellen (pusher) styres av gasspaken KUN i MANUAL/FBWA (fastvinget-regimet) - i en Q-modus
     // er den alltid av (ArduPilot har en egen, valgfri "manuell forover-gass i VTOL-moduser"-RC-kanal,
     // RCx_OPTION 209, som vi ikke har implementert her - se toppkommentaren).
-    const pusherThrottleEff = isQMode(planeState.flightMode) ? 0 : throttleShaped;
+    const pusherThrottleEff = isQMode(controlMode) ? 0 : throttleShaped;
     planeState.lastPusherThrottle = pusherThrottleEff;
     // En ekte (særlig fastpitch) propell mister trekkraft omtrent lineært med farten, fra full statisk
     // trekkraft ved V=0 til ~null idet flyet nærmer seg propellens "pitch speed" (spec.propPitchSpeed) -
@@ -2758,7 +2842,7 @@ function stepPhysics(dt) {
     // SAMME rorflatene proporsjonalt med vinkelavviket i stedet for direkte fra pinnen.
     let rollDeflection, pitchDeflection, yawDeflection;
     let weathervaneYawRateRad = 0;
-    if (planeState.flightMode === "manual" || planeState.flightMode === "qacro") {
+    if (controlMode === "manual" || controlMode === "qacro") {
         // Direkte fra pinnen (ingen selvnivellering) - MANUAL er fastvinget-ekvivalenten (ArduPilot:
         // "Please use FBWA mode instead of STABILIZE for manual flight" - ren pinnestyring er kun ment
         // for trim-sjekk/taksing, se MODE_LABELS-kommentaren). QACRO er samme prinsipp i Q-modus
@@ -2780,7 +2864,7 @@ function stepPhysics(dt) {
         const currentBankDeg = -THREE.MathUtils.radToDeg(euler.z);
 
         let targetBankDeg, targetPitchDeg;
-        if (planeState.flightMode === "qloiter" && mcAuthority > 0.01) {
+        if (controlMode === "qloiter" && mcAuthority > 0.01) {
             // QLOITER: pinnen kommanderer horisontal FART (kropp-relativt forover/sideveis, se
             // QLOITER_MAX_SPEED - ArduPilot: "Horizontal location can be adjusted with the Roll and
             // Pitch control sticks... When the pilot releases the sticks the QuadPlane will slow to a
@@ -2832,7 +2916,7 @@ function stepPhysics(dt) {
         // holde flyet flatt hele bakke-fasen (full P(D)-autoritet, ingen klipping), slik at det allerede
         // er flatt i det øyeblikket det faktisk letter - pinnen får krengings-/stigningsautoritet
         // tilbake umiddelbart idet onGround blir false.
-        if (planeState.onGround && isQMode(planeState.flightMode)) {
+        if (planeState.onGround && isQMode(controlMode)) {
             targetBankDeg = 0;
             targetPitchDeg = 0;
         }
@@ -2903,8 +2987,10 @@ function stepPhysics(dt) {
     const leftWing = { airspeed: leftWingBase.airspeed, aoaDeg: leftWingBase.aoaDeg, controlAoaDeg: rollDeflection * AILERON_MAX_AOA_DEG * 0.5 };
 
     const halfWingArea = spec.wingArea / 2;
-    const liftRight = 0.5 * AIR_DENSITY * rightWing.airspeed * rightWing.airspeed * halfWingArea * (liftCoefficient(rightWing.aoaDeg, spec) + spec.clSlope * rightWing.controlAoaDeg) * groundEffectLiftFactor;
-    const liftLeft = 0.5 * AIR_DENSITY * leftWing.airspeed * leftWing.airspeed * halfWingArea * (liftCoefficient(leftWing.aoaDeg, spec) + spec.clSlope * leftWing.controlAoaDeg) * groundEffectLiftFactor;
+    // aileronLiftEffectiveness (se funksjonen over) evaluert på hver vinges EGEN, RÅ aoaDeg - IKKE
+    // rørt av controlAoaDeg selv (se funksjonens egen kommentar for hvorfor det skillet er kritisk).
+    const liftRight = 0.5 * AIR_DENSITY * rightWing.airspeed * rightWing.airspeed * halfWingArea * (liftCoefficient(rightWing.aoaDeg, spec) + spec.clSlope * rightWing.controlAoaDeg * aileronLiftEffectiveness(rightWing.aoaDeg, spec)) * groundEffectLiftFactor;
+    const liftLeft = 0.5 * AIR_DENSITY * leftWing.airspeed * leftWing.airspeed * halfWingArea * (liftCoefficient(leftWing.aoaDeg, spec) + spec.clSlope * leftWing.controlAoaDeg * aileronLiftEffectiveness(leftWing.aoaDeg, spec)) * groundEffectLiftFactor;
     const totalLiftMag = liftRight + liftLeft;
 
     // Rull-/gir-koblingen beregnes fra vingenes EGEN lokale luftstrøm-RETNING (ikke bare fart/AoA-
@@ -2928,7 +3014,7 @@ function stepPhysics(dt) {
         // for selve rull-/gir-dreiemoment-beregningen). Drag bruker fortsatt DEN KOMBINERTE vinkelen -
         // ror-utslag skal fortsatt gi ekstra motstand/adverse yaw, det er kun løft-steilingen som ikke
         // skal "se" roret som en del av vingens egen angrepsvinkel.
-        const liftMag = qDynWing * (liftCoefficient(baseAoaDeg, spec) + spec.clSlope * extraAoaDeg) * groundEffectLiftFactor;
+        const liftMag = qDynWing * (liftCoefficient(baseAoaDeg, spec) + spec.clSlope * extraAoaDeg * aileronLiftEffectiveness(baseAoaDeg, spec)) * groundEffectLiftFactor;
         const dragMag = qDynWing * dragCoefficient(wingAoaDeg, spec, groundEffectFactor);
         const invSpeed = 1 / speed;
         return {
@@ -3026,7 +3112,7 @@ function stepPhysics(dt) {
     // av i MANUAL.
     let collectiveThrustMag = 0;
     if (planeState.engineOn && liftMotorsActive) {
-        if (planeState.flightMode === "qhover" || planeState.flightMode === "qloiter") {
+        if (controlMode === "qhover" || controlMode === "qloiter") {
             // Alt Hold (Q_PILOT_SPD_UP/-DN/Q_P_POSZ_P-lignende) - sentrert gasspak (innenfor dødsonen)
             // holder høyden, avvik gir en ønsket klatre-/synkerate (se MC_ALT_HOLD_DEADBAND-kommentaren).
             const centered = stick.throttle - 0.5;
@@ -3035,11 +3121,34 @@ function stepPhysics(dt) {
             if (magnitude > MC_ALT_HOLD_DEADBAND) climbInput = Math.sign(centered) * (magnitude - MC_ALT_HOLD_DEADBAND) / (0.5 - MC_ALT_HOLD_DEADBAND);
             const climbError = climbInput * MC_MAX_CLIMB_RATE - planeState.velocity.y;
             collectiveThrustMag = clamp(spec.mass * GRAVITY + spec.mass * MC_ALT_GAIN_PER_KG * climbError, 0, spec.liftThrustTotal);
-        } else if (planeState.flightMode === "fbwa") {
-            // ArduPilot: løftemotorene holder NÅVÆRENDE høyde AUTOMATISK mens de assisterer FBWA -
-            // gasspaken styrer trekkmotoren i stedet (se pusherThrottleEff) - "the aircraft will continue
-            // to hover... If you zero throttle... it will continue to hold current height".
-            const climbError = -planeState.velocity.y;
+        } else if (controlMode === "fbwa") {
+            // ArduPilot (sitert direkte av brukeren): "When you use the pitch stick (elevator) that will
+            // affect the climb rate of the quad motors. If you pull back on the elevator the quad motors
+            // will assist with the aircraft climb. If you push forward on the pitch stick the power to the
+            // quad motors will decrease and the aircraft will descend." - stigningspinnen styrer altså EKTE
+            // quad-klatrerate direkte, IKKE bare en ren rate-demping uavhengig av pinnen (se BUG under).
+            // Ved stick.pitch=0 er dette identisk med den GAMLE formelen (climbError=-velocity.y) - "hold
+            // nåværende høyde" ved nøytral pinne er dermed UENDRET oppførsel, kun aktiv klatre-/synke-
+            // kommando via pinnen er nytt.
+            // BUG (rapportert av brukeren: "QRTL cruise klatrer fortsatt mens den flyr tilbake, selv om den
+            // er langt over RTL høyde") - den gamle, rene rate-dempingen (climbError=-velocity.y, uansett
+            // stick.pitch) konvergerer KUN mot null RATE, aldri mot noen bestemt høyde: en allerede
+            // etablert klatrerate (f.eks. fra en tidligere Q-modus-klatring) ble dermed FASTHOLDT, ikke
+            // dempet mot noen referanse, så lenge løftemotor-myndigheten forble høy - noe QRTL sin
+            // bremsesone (lav fart nær hjem, se simulator-vtol-rtl.js) nå kan gjøre langvarig. Siden
+            // updateRtlAutopilot allerede setter stick.pitch fra et EKTE høydeavvik mot rtlAltM i cruise-
+            // fasen (se der), gir denne fiksen den kommandoen et FAKTISK grep på klatreraten igjen -
+            // akkurat som en ekte pilot/QRTL-kontroller ville brukt elevator til å style høyden mens
+            // løftemotorene fortsatt assisterer.
+            // FORTEGN-RETTELSE (rapportert av brukeren: "over RTL høyden ... klatrer den videre") - POSITIV
+            // stick.pitch er i DENNE kodebasen "trekk pinnen FREMOVER" (se QLOITER: stick.pitch>0 ->
+            // desiredFwdSpeed>0 -> forover bevegelse, som for en multirotor krever NESE NED), altså DYKK -
+            // motsatt av fastvinget "pull back = climb"-intuisjonen jeg opprinnelig antok denne kommentaren
+            // (og RTL-cruisens egen høyde-P-regulator, se updateRtlAutopilot) skulle følge. NEGERT her slik
+            // at POSITIV stick.pitch (dykk) reduserer kollektiv (synk), NEGATIV (klatre) øker den - matcher
+            // nå både den siterte ArduPilot-teksten OG denne kodebasens egen, allerede etablerte fortegn.
+            const climbInputFromPitch = clamp(-stick.pitch, -1, 1);
+            const climbError = climbInputFromPitch * MC_MAX_CLIMB_RATE - planeState.velocity.y;
             collectiveThrustMag = clamp(spec.mass * GRAVITY + spec.mass * MC_ALT_GAIN_PER_KG * climbError, 0, spec.liftThrustTotal);
         } else {
             // qstabilize/qacro: direkte, manuell kollektiv gass (ArduPilot: "the pilot's throttle input
@@ -3226,7 +3335,7 @@ function stepPhysics(dt) {
     // naturlig prøve å dytte nesa inn i vinden"). Gulvet er en forenkling av at halepartiet (bak vingen/
     // løftemotorene) uansett sitter noe friere fra selve propellstrømmen enn rull-/stigningsflatene rett
     // under rotorene - derfor ikke FULL autoritet (1.0) som i ren fastvinget flukt, kun et gulv.
-    const yawAeroAuthority = isQMode(planeState.flightMode) ? Math.max(aeroAuthority, YAW_AERO_MIN_AUTHORITY_QMODE) : aeroAuthority;
+    const yawAeroAuthority = isQMode(controlMode) ? Math.max(aeroAuthority, YAW_AERO_MIN_AUTHORITY_QMODE) : aeroAuthority;
 
     planeState.angularVelocity.roll += ((rollTorqueNoDamp * aeroAuthority + mcRollTorque) / spec.inertiaRoll) * dt;
     planeState.angularVelocity.pitch += ((pitchTorqueF0 * aeroAuthority + mcPitchTorque) / spec.inertiaPitch) * dt;
@@ -3254,6 +3363,9 @@ function stepPhysics(dt) {
 
     resolveGroundContact(dt);
     checkTailStrike(spec);
+    // Flightlogg (se js/simulator-vtol-flightlog.js) - kalt HELT til slutt slik at onGround/crashed er
+    // ferdig oppdatert for denne ticken før den samples.
+    logFlightSample(dt);
 }
 
 // Halepunktet - litt bak og litt høyere enn hovedhjulene (se resolveGroundContact) - er det som først
@@ -3436,11 +3548,17 @@ function resetPlane() {
     // siden R-tasten kan resette midt i en flytur der flightMode fortsatt er en Q-modus).
     inputState.stick.throttle = 0.5;
     resetVtolState();
+    // "Motor PÅ" ER arming-øyeblikket i denne simmen (se captureHome-kommentaren i
+    // js/simulator-vtol-rtl.js) - resetPlane tvinger alltid engineOn=true, så QRTL sitt hjem-punkt skal
+    // alltid fanges på nytt her også, ikke bare i setEngine/toggleEngine.
+    captureHome();
 }
 
 function toggleEngine() {
     if (planeState.crashed) return;
+    const wasOff = !planeState.engineOn;
     planeState.engineOn = !planeState.engineOn;
+    if (wasOff && planeState.engineOn) captureHome();
 }
 // Diskré av/på (i motsetning til toggleEngine over, som fortsatt brukes av K-tasten/HUD-knappen) - til
 // gamepad-knappekartet, se BUTTON_ACTIONS/engineOn/engineOff under. Brukeren påpekte at ÉN knapp for
@@ -3450,7 +3568,12 @@ function toggleEngine() {
 // uansett gjeldende tilstand, akkurat som et ekte fly har separate start-/stopp-prosedyrer.
 function setEngine(on) {
     if (planeState.crashed) return;
+    // Stigende flanke (AV->PÅ) = QRTL sitt hjem-/batterifangst-øyeblikk, se captureHome i
+    // js/simulator-vtol-rtl.js - fanges FØR selve tilstandsendringen under (ren lesbarhet, ingen
+    // funksjonell forskjell siden captureHome ikke leser engineOn selv).
+    const wasOff = !planeState.engineOn;
     planeState.engineOn = on;
+    if (wasOff && on) captureHome();
 }
 
 function toggleCamera() {
@@ -3474,7 +3597,7 @@ function updatePlaneVisual(dt) {
     // I en Q-modus er pusheren fysisk avslått (pusherThrottleEff=0 uansett gasspak, se stepPhysics) - den
     // skal derfor stå HELT stille (ikke engang en "tomgangs"-spinn), ikke først rulle i gang idet
     // trekkmotor-modusene (MANUAL/FBWA) tar over under overgangen til fastvinget flukt.
-    const pusherIdleSpin = isQMode(planeState.flightMode) ? 0 : 6;
+    const pusherIdleSpin = isQMode(planeState.lastControlMode) ? 0 : 6;
     const targetSpin = planeState.engineOn ? (pusherIdleSpin + planeState.lastPusherThrottle * 90) : (planeState.onGround ? 0 : 2);
     const spinSmoothing = planeState.engineOn ? (1 - Math.pow(0.0005, dt)) : (1 - Math.pow(0.05, dt));
     propSpinSpeed += (targetSpin - propSpinSpeed) * spinSmoothing;
@@ -3550,6 +3673,10 @@ const trimValueEl = document.getElementById("trimValue");
 
 function updateHud() {
     hudMode.textContent = MODE_LABELS[planeState.flightMode];
+    // Kort gult blink ved modusbytte (se modeFlashUntil-kommentaren ved trySetFlightMode) - className
+    // (ikke bare textContent) settes her HVER tick, siden updateRtlHud (kalt rett etter denne i animate())
+    // kun overskriver hudMode.textContent i qrtl-fasetekst, aldri className - trygt å style uavhengig.
+    hudMode.classList.toggle("mode-flash", performance.now() < modeFlashUntil);
     hudAssist.textContent = Math.round(planeState.lastMcAuthority * 100) + " %";
     const engineLabel = planeState.crashed ? "Krasjet" : (planeState.engineOn ? "På" : "Av");
     hudArmed.textContent = engineLabel;
@@ -3566,7 +3693,7 @@ function updateHud() {
     // Gasspaken styrer ULIKE ting avhengig av modus (kollektiv i Q-moduser, trekkmotor i MANUAL/FBWA) -
     // se stepPhysics - HUD-etiketten OG selve tallet følger derfor hvilken av de to som faktisk er
     // aktiv, ikke bare den rå pinneposisjonen.
-    if (isQMode(planeState.flightMode)) {
+    if (isQMode(planeState.lastControlMode)) {
         hudThrottleLabel.textContent = "Kollektiv";
         hudThrottle.textContent = Math.round(planeState.lastCollectiveFrac * 100) + " %";
     } else {
@@ -3583,8 +3710,44 @@ function updateHud() {
     if (trimValueEl) trimValueEl.textContent = trimText;
 }
 
+/* ---------- Modus-popover (klikk på "Modus" i HUD-en) ----------
+   Samme tastatursnarveier/rekkefølge som Digit1-7-håndteringen under, og samme forklaringstekst som
+   helpPanel sine egne <li>-punkter (se der) - ETT sted å oppdatere om en modus' oppførsel endres, ikke to
+   separate tekster som kan gli fra hverandre. Bruker Sim.setupDropdown UENDRET (samme mekanikk som
+   Settings-menyen: åpne/lukke, lukk ved klikk utenfor, lukk andre åpne dropdowns) - se
+   .sim-dropdown/.sim-dropdown-menu-klassene i CSS-en, ingen ny styling trengt. */
+const MODE_KEY_LABELS = {
+    qstabilize: "1", qhover: "2", qloiter: "3", qacro: "4", manual: "5", fbwa: "6", qrtl: "7"
+};
+const MODE_DESCRIPTIONS = {
+    qstabilize: "Selvnivellerende krengning/stigning, manuell (direkte) kollektiv gass.",
+    qhover: "Som QSTABILIZE + Alt Hold (sentrert gasspak holder høyden).",
+    qloiter: "Som QHOVER + posisjonsholding (slipp pinnen for å stoppe/holde) + weathervaning.",
+    qacro: "Rate-styrt svevemodus, ingen selvnivellering (som Acro).",
+    manual: "Direkte rorstyring, løftemotorene er alltid AV - kun for trim-sjekk/taksing.",
+    fbwa: "Selvnivellerende fastvinget marsjflyging - løftemotorene assisterer automatisk til assist-farten nås.",
+    qrtl: "Naviger automatisk hjem (punktet motoren sist ble slått PÅ) og land. Flyr fastvinget hvis langt unna, går over til VTOL-modus nær hjem - se RTL/failsafe-panelet."
+};
+function buildModePopover() {
+    const popover = document.getElementById("modePopover");
+    popover.innerHTML = "";
+    Object.keys(MODE_LABELS).forEach(function (mode) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "sim-dropdown-item";
+        btn.title = MODE_DESCRIPTIONS[mode] || "";
+        btn.innerHTML = '<span style="opacity:0.6; min-width:14px; display:inline-block;">' + MODE_KEY_LABELS[mode] + '</span> ' + MODE_LABELS[mode];
+        btn.addEventListener("click", function () {
+            trySetFlightMode(mode);
+            popover.classList.remove("open");
+        });
+        popover.appendChild(btn);
+    });
+    Sim.setupDropdown(hudMode, popover, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
+}
+
 /* ---------- Paneler (rates / fly-kamera / vind / gamepad / hjelp) ---------- */
-const ALL_PANEL_IDS = ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "gamepadPanel", "helpPanel"];
+const ALL_PANEL_IDS = ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "rtlPanel", "flightLogPanel", "gamepadPanel", "helpPanel"];
 function togglePanel(panel) {
     Sim.togglePanel(panel, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
 }
@@ -3727,6 +3890,7 @@ function animate(now) {
     updateWindSmoke(frameDt);
     updateClockTowers();
     updateHud();
+    updateRtlHud(); // bygger videre på (ikke erstatter) updateHud() over - se js/simulator-vtol-rtl.js
     updateFpvHud();
     renderer.render(scene, activeCamera);
 }
@@ -3734,17 +3898,22 @@ function animate(now) {
 /* ---------- Oppstart ---------- */
 document.addEventListener("DOMContentLoaded", function () {
     initScene();
+    initRtlHomeMarker();
+    initRtlPanel();
+    initFlightLogPanel();
+    captureHome(); // fanger startposisjonen (motoren starter PÅ, se planeState.engineOn) som første hjem
     initFpvHudCanvas();
     document.getElementById("fpvHudBtn").innerHTML =
         '<i class="fa-solid fa-crosshairs"></i> OSD: ' + FPV_HUD_MODE_LABELS[settings.fpvHudMode] + " (O)";
     buildRatesPanel();
+    buildModePopover();
 
     document.getElementById("resetBtn").addEventListener("click", resetPlane);
     document.getElementById("armToggleBtn").addEventListener("click", toggleEngine);
 
     const settingsMenuEl = document.getElementById("settingsMenu");
     Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl,
-        ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
+        ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "rtlPanel", "flightLogPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
     Sim.wirePanelCloseButtons(settingsMenuEl);
     function closeSettingsMenu() { settingsMenuEl.classList.remove("open"); }
 
@@ -3762,6 +3931,14 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     document.getElementById("toggleVtolBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("vtolPanel"));
+        closeSettingsMenu();
+    });
+    document.getElementById("toggleRtlBtn").addEventListener("click", function () {
+        togglePanel(document.getElementById("rtlPanel"));
+        closeSettingsMenu();
+    });
+    document.getElementById("toggleFlightLogBtn").addEventListener("click", function () {
+        togglePanel(document.getElementById("flightLogPanel"));
         closeSettingsMenu();
     });
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
@@ -3921,6 +4098,7 @@ document.addEventListener("DOMContentLoaded", function () {
             case "Digit4": trySetFlightMode("qacro"); break;
             case "Digit5": trySetFlightMode("manual"); break;
             case "Digit6": trySetFlightMode("fbwa"); break;
+            case "Digit7": trySetFlightMode("qrtl"); break;
             case "KeyK": toggleEngine(); break;
             case "KeyR": resetPlane(); break;
             case "KeyC": toggleCamera(); break;
