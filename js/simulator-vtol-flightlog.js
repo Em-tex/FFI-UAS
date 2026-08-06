@@ -35,6 +35,13 @@ function logFlightSample(dt) {
     const pitchDeg = -THREE.MathUtils.radToDeg(euler.x);
     const bankDeg = -THREE.MathUtils.radToDeg(euler.z);
     const rtlPhase = planeState.flightMode === "qrtl" ? rtlState.phase : "-";
+    // Avstand til hjem (brukeren spurte eksplisitt om dette) - KUN meningsfull når hjem faktisk er satt
+    // (rtlState.homeSet, se captureHome i simulator-vtol-rtl.js); -1 ellers. Horisontal avstand (samme
+    // definisjon som horizDist i updateRtlAutopilot), IKKE 3D-avstand - det ER avstanden fase-/
+    // overgangslogikken faktisk styrer etter.
+    const homeDistM = rtlState.homeSet
+        ? Math.hypot(planeState.position.x - rtlState.home.x, planeState.position.z - rtlState.home.z)
+        : -1;
 
     flightLogState.buffer.push({
         t: performance.now() / 1000,
@@ -46,6 +53,7 @@ function logFlightSample(dt) {
         bankDeg: bankDeg,
         pitchDeg: pitchDeg,
         mcAuthPct: planeState.lastMcAuthority * 100,
+        homeDistM: homeDistM,
         stickP: inputState.stick.pitch,
         stickR: inputState.stick.roll,
         stickY: inputState.stick.yaw,
@@ -61,11 +69,12 @@ function logFlightSample(dt) {
 function flightLogToText() {
     if (flightLogState.buffer.length === 0) return "(ingen data ennå - fly litt først)";
     const t0 = flightLogState.buffer[0].t;
-    const header = "t(s)\tmodus\tfase\thøyde(m)\tluftfart(m/s)\tvfart(m/s)\tbank(deg)\tpitch(deg)\tmcAuth(%)\tpinneP\tpinneR\tpinneY\tpinneT\tbakke\tkrasj";
+    const header = "t(s)\tmodus\tfase\thøyde(m)\tluftfart(m/s)\tvfart(m/s)\tbank(deg)\tpitch(deg)\tmcAuth(%)\tavstand-hjem(m)\tpinneP\tpinneR\tpinneY\tpinneT\tbakke\tkrasj";
     const rows = flightLogState.buffer.map(function (s) {
         return [
             (s.t - t0).toFixed(2), s.mode, s.phase, s.altM.toFixed(1), s.airspeedMs.toFixed(1),
             s.vSpeedMs.toFixed(2), s.bankDeg.toFixed(1), s.pitchDeg.toFixed(1), s.mcAuthPct.toFixed(0),
+            s.homeDistM < 0 ? "-" : s.homeDistM.toFixed(0),
             s.stickP.toFixed(2), s.stickR.toFixed(2), s.stickY.toFixed(2), s.stickT.toFixed(2),
             s.onGround ? "1" : "0", s.crashed ? "1" : "0"
         ].join("\t");

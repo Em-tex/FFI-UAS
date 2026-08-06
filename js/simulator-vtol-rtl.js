@@ -263,9 +263,23 @@ function updateRtlAutopilot(dt) {
         // og skal derfor ALDRI selv-transisjonere basert på avstand/fart, uansett hvor sakte den blir.
         // pureVtolOnly (Q_OPTIONS bit 16) er en eksplisitt brukerkommandert override og tvinger fortsatt
         // VTOL-retur UANSETT rtlMode - de to er ortogonale brytere i denne forenklingen.
-        const wantVtolBySpeed = rtlParams.rtlMode !== 0
-            && horizDist < rtlParams.transitionRadiusM && lastAirspeed <= vtolParams.assistSpeed;
-        rtlState.phase = (rtlParams.pureVtolOnly || wantVtolBySpeed) ? "vtol_return" : "cruise";
+        // BUG/DESIGN-INNSIKT (rapportert av brukeren, direkte fra ArduPilot-dokumentasjonen de nettopp limte
+        // inn: "skal den ikke bytte til VTOL og lande når den er så nært home?" - loggen viste flyet
+        // sirkle/steile i cruise i 30 sekunder rett ved hjem UTEN å noensinne transisjonere, fordi
+        // luftfarten aldri KRYSSET assistSpeed før den steilet - selv om det var trygt nært hjem hele
+        // tiden). Sitatet er eksplisitt: "if the approach is entered less than 1.5X MAXRAD, it will
+        // IMMEDIATELY move to VTOL Position1 state... whether entered from fixed wing or VTOL" - ekte
+        // QRTL krever ALTSÅ IKKE at farten først kommer under assistSpeed før den transisjonerer innenfor
+        // radiusen - i stedet bruker den løftemotorene sine EGNE, fulle myndighet til å bremse ("AIRBRAKING
+        // phase... spinning up the VTOL motors to create additional braking") ETTER transisjonen, ikke FØR.
+        // Fjernet derfor fartsbetingelsen her - loiteren (se LOITER_RADIUS_M-grenen) gjør fortsatt sitt
+        // beste for å bremse ned OG holde høyden mens den venter på å komme innenfor selve radiusen, men
+        // selve TRANSISJONEN er nå (som ekte QRTL) et rent AVSTANDS-vilkår - vtol_return sin egen QLOITER-
+        // fartsregulator (se under) HAR allerede full, umiddelbar løftemotor-autoritet (mcAuthority=1 i
+        // Q-modus, se computeMcAuthority) og en velprøvd, konvergerende posisjonsholder - det ER den ekte
+        // "airbraking"-mekanismen, ikke noe som mangler.
+        const wantVtolByDistance = rtlParams.rtlMode !== 0 && horizDist < rtlParams.transitionRadiusM;
+        rtlState.phase = (rtlParams.pureVtolOnly || wantVtolByDistance) ? "vtol_return" : "cruise";
     }
     // Fersk cruise-ben-startposisjon FANGET IDET FASEN GÅR INN I "cruise" (ikke hver tick) - se
     // L1_LOOKAHEAD_M-bruken lenger ned for hvorfor: dette definerer selve LINJA cruise-styringen sikter
@@ -318,15 +332,80 @@ function updateRtlAutopilot(dt) {
                 const currentBankSign = Math.sign(-THREE.MathUtils.radToDeg(new THREE.Euler().setFromQuaternion(q, "YXZ").z)) || 1;
                 rtlState.loiterSign = currentBankSign;
             }
-            const LOITER_BANK_DEG = 22;
-            stick.roll = clamp(rtlState.loiterSign * LOITER_BANK_DEG / MAX_BANK_ANGLE, -1, 1);
+            // BUG (rapportert av brukeren: "innflygningen og oppbremsningen kan beregnes bedre? nå slakker
+            // den ned veldig sent. og krasjet igjen" - loggen viste mcAuth FORBLI 0% i alle 30 sekundene
+            // (luftfarten kom aldri under assistSpeed), MENS høyden likevel sakte, men stadig raskere,
+            // sank hele tiden (endte i et reelt steilfall de siste sekundene, pinneP klemt i bunn -1.00).
+            // Roten er FYSISK, ikke bare en autoritets-klemme: ved FAST 22° krengning krever en gitt
+            // vekt/løft-balanse MER angrepsvinkel jo LANGSOMMERE flyet blir (løft ∝ fart² ved gitt AoA) -
+            // en selvforsterkende felle idet farten faller mot assistSpeed, siden nettopp DA trengs mest
+            // løft, men vingen har minst å gi. Å bare øke pinne-autoriteten videre (var allerede hevet til
+            // ±0.85, se BUG-historikk) hjelper ikke – det presser bare AoA nærmere steilegrensen, som er
+            // nøyaktig det steilfallet på slutten av loggen viser. Ekte løsning (standard flygeteknikk):
+            // FLATE UT krengningen etter hvert som farten nærmer seg assistSpeed - en grunnere sving
+            // krever mindre løft å holde oppe, akkurat som en pilot ville redusert krengning i en
+            // langsom nedstigningssving. loiterBankDeg glir fra LOITER_BANK_DEG_MAX (langt over
+            // assistSpeed) ned mot LOITER_BANK_DEG_MIN (nær/under assistSpeed) - samme glidende prinsipp
+            // som gasslovens nearAssistBlend under, men på selve krengevinkelen i stedet for gasspaken.
+            const LOITER_BANK_DEG_MAX = 22, LOITER_BANK_DEG_MIN = 8;
+            const bankSpeedBlend = clamp((lastAirspeed - vtolParams.assistSpeed) / 8, 0, 1); // 0 nær assistSpeed, 1 godt over
+            const loiterBankDeg = THREE.MathUtils.lerp(LOITER_BANK_DEG_MIN, LOITER_BANK_DEG_MAX, bankSpeedBlend);
+            stick.roll = clamp(rtlState.loiterSign * loiterBankDeg / MAX_BANK_ANGLE, -1, 1);
             // Høyde: TOVEIS her (i motsetning til L1-transitt-grenen under) - loiteren er en stabil,
             // kontrollert sirkel, så en vanlig P-regulator mot rtlAltM er trygt (ingen samtidig kamp om
             // retningskontrollen, se BUG-historikken for hvorfor toveis var farlig i TRANSITT-fasen).
             // "gå ned på høyde" - brukerens eget ønske - er nøyaktig dette: en jevn spiral-nedstigning mot
             // rtlAltM mens den venter på VTOL-overgangen.
+            // BUG (rapportert av brukeren, BEKREFTET via flightlogg: "ville krasjet. klarer ikke lande på
+            // rtl punktet" - loggen viste en JEVN, UAVBRUTT synkefart fra ~20m helt ned til under 1m over
+            // HELE loiteren, med mcAuth=0% - dvs. INGEN løftemotor-hjelp - og gasspaken samtidig kuttet
+            // helt til 0 av bremsesonen under (se decelZoneM), mens denne klemmen begrenset elevator-
+            // autoriteten til kun ±0.5) - vingen ALENE, uten trekkraft OG med halvert autoritet, hadde
+            // rett og slett ikke nok løft til å holde både den faste 22°-krengningen OG rtlAltM samtidig.
+            // Flyet ble reddet i siste liten kun fordi farten til slutt falt under assistSpeed og
+            // løftemotorene endelig fikk myndighet (se mcAuth-hoppet til 100% helt til slutt i loggen).
+            // Fikset TO steder: (1) klemmen her økt til ±0.85 (mer elevator-autoritet å holde høyden med),
+            // (2) gasspaken i loiteren styres nå av LUFTFART (se speedErrorMs under), IKKE avstand - en
+            // ren avstandsbasert bremsesone (decelZoneM) gir ingen mening i en SIRKEL uansett (avstanden
+            // til hjem er ikke monotont minkende rundt en loiter) - og gir et lite, men ALDRI NULL, gulv
+            // med trekkraft, nok til å holde krengningen/høyden noenlunde stabilt mens farten likevel
+            // synker gradvis (økt indusert drag i svingen) mot assistSpeed.
             const altErrorM = rtlParams.rtlAltM - altitude;
-            stick.pitch = clamp(-altErrorM / RTL_CRUISE_ALT_P_M, -0.5, 0.5);
+            stick.pitch = clamp(-altErrorM / RTL_CRUISE_ALT_P_M, -0.85, 0.85);
+            // BUG (rapportert av brukeren, BEKREFTET via flightlogg: "den klarer aldri å lande. bare flyr
+            // rundt i cruise" - loggen viste luftfarten flate ut på 20-24 m/s i over 100 SEKUNDER, aldri i
+            // nærheten av å konvergere mot assistSpeed) - formelen under var STIKK BAKVENDT: den klemte
+            // gasspaken til MAKSIMUM (speedErrorMs/10 mettet raskt over cruiseThrottleFrac) nettopp mens
+            // farten var HØYEST over assistSpeed - altså mest gass akkurat når flyet trengte MINST (og
+            // burde bremset via drag i stedet) - som låste flyet i en selvopprettholdende høyfarts-likevekt
+            // (gass akkurat nok til å kompensere draget den samtidig kommanderte via 22°-krengningen) som
+            // ALDRI konvergerte nedover. Fikset ved å SNU forholdet: LAV gass (kun gulvet) mens det er MYE
+            // fart å bremse av - la indusert drag fra selve svingen gjøre jobben, akkurat som en ekte
+            // motorredusert spiral-nedstigning - og kun en MODERAT (ikke maks) økning idet farten faktisk
+            // nærmer seg assistSpeed, der steilerisikoen begynner å bli reell og løftemotorene ennå ikke
+            // har trådt til.
+            // BUG (rapportert av brukeren: "ny krasj. bytter aldri til VTOL" - loggen viste farten flate
+            // helt ut på 14.2-14.3 m/s i over TOLV SAMMENHENGENDE sekunder - rett over assistSpeed (12
+            // m/s), ALDRI under, mcAuth forble 0% hele veien - før den til slutt steilet og krasjet uansett
+            // etter 20+ sekunder med pinneP fastlåst nær -0.85 (nesten maks klatrekommando, brukt bare for
+            // å holde HØYDEN, ikke faktisk klatre - flyet var marginalt/nær steilegrensen hele denne tiden).
+            // Roten: NEAR_ASSIST-gulvet (0.35) var HØYERE enn FLOOR-et (0.15) - altså MER gass akkurat idet
+            // farten nærmet seg assistSpeed - kombinert med at krengningen SAMTIDIG flates ut der (mindre
+            // indusert drag, se bankSpeedBlend over) traff akkurat en likevekt (trekkraft=drag) et lite
+            // knapt stykke OVER assistSpeed - flyet satt fast der for alltid, siden ingenting lenger dro
+            // farten videre ned. Fikset ved å SNU denne også (samme idé som forrige gasslov-fiks, bare
+            // anvendt på "nær assistSpeed"-enden i stedet for "langt over"-enden): gjenbruker
+            // bankSpeedBlend DIREKTE (samme glidende variabel som krengningen - unngår to separate,
+            // potensielt usynkroniserte blend-beregninger) - gassen faller nå MOT NESTEN INGENTING idet
+            // farten nærmer seg assistSpeed, i stedet for å stige. Trygt fordi krengningen SAMTIDIG flates
+            // ut (mindre løftbehov akkurat når det er minst løft å gi) - ingen grunn til å HOLDE IGJEN med
+            // ekstra gass der lenger; selve overgangen til vtol_return (full Q-modus-autoritet) er den
+            // egentlige sikkerheten idet terskelen faktisk krysses.
+            const LOITER_THROTTLE_FAR = 0.30;
+            const LOITER_THROTTLE_NEAR_ASSIST = 0.05;
+            stick.throttle = THREE.MathUtils.lerp(LOITER_THROTTLE_NEAR_ASSIST, LOITER_THROTTLE_FAR, bankSpeedBlend);
+            stick.yaw = 0;
+            return "fbwa";
         } else {
             rtlState.loiterSign = 0; // nullstilt til neste gang loiteren entres - se init over
             // L1-lignende siktepunkt (se opprinnelig BUG-kommentar i git-historikken: ren pursuit mot selve
@@ -368,10 +447,10 @@ function updateRtlAutopilot(dt) {
             const altErrorM = rtlParams.rtlAltM - altitude;
             stick.pitch = clamp(-altErrorM / RTL_CRUISE_ALT_P_M, -1, 0);
         }
-        // Bremsesone (felles for begge grenene over) - gassen trappes LINEÆRT ned fra cruiseThrottleFrac
-        // til 0 mellom decelZoneM og transitionRadiusM, og FORBLIR 0 (idle) innenfor - flyet bremser ferdig
-        // ut (i loiteren, siden LOITER_RADIUS_M < decelZoneM) mens det venter på at luftfarten faktisk
-        // kommer under assistSpeed, se wantVtolBySpeed ved phase-valget.
+        // Bremsesone (KUN transitt-grenen over - loiter-grenen returnerer tidlig med sin egen, luftfart-
+        // baserte gasslov, se BUG-kommentaren der for hvorfor en avstandsbasert sone ikke gir mening i en
+        // sirkel) - gassen trappes LINEÆRT ned fra cruiseThrottleFrac til 0 mellom decelZoneM og
+        // transitionRadiusM, og FORBLIR 0 (idle) innenfor.
         const decelZoneM = Math.max(rtlParams.transitionRadiusM * RTL_DECEL_ZONE_FACTOR, rtlParams.transitionRadiusM + RTL_DECEL_ZONE_MIN_M);
         const decelProgress = clamp((decelZoneM - horizDist) / Math.max(1, decelZoneM - rtlParams.transitionRadiusM), 0, 1);
         stick.throttle = rtlParams.cruiseThrottleFrac * (1 - decelProgress);
