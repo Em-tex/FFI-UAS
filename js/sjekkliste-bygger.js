@@ -6,7 +6,7 @@ const STORAGE_KEY = "ffi-uas:sjekkliste-generator";
 // mellomlagret innhold i nettleseren (fra før en oppdatering av sjekkpunktene) ikke stille overskygger
 // nytt innhold. Egne redigeringer forsvinner riktignok samtidig, men det er en villet avveining så lenge
 // malen fortsatt er under aktiv utvikling.
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 12;
 
 // Kolonneoverskrifter i sjekkpunkt-tabellen er ulike for normal- vs. contingency/emergency/erp-
 // sjekklister: en normal preflight-sjekk sammenligner mot en forventet status, mens de andre beskriver
@@ -149,6 +149,7 @@ const DEFAULTS = {
         limits: [
             { key: "Brann", value: "110" },
             { key: "Ambulanse", value: "113" },
+            { key: "Legevakt", value: "116 117" },
             { key: "Politi", value: "112" },
             { key: "Politi (ikke nød)", value: "02800" },
             { key: "Operativ leder", value: "" },
@@ -156,23 +157,18 @@ const DEFAULTS = {
         ],
         sections: [
             {
-                title: "Kollisjon / krasj", items: [
-                    { text: "Luftfartøy krasjet", target: "Sikre området, sjekk for skadde, varsle ansvarlig" }
+                title: "Ulykke / hendelse", items: [
+                    { text: "Umiddelbart", target: "Disarm dronen. Sikre skadestedet og skaff deg oversikt." },
+                    { text: "Prioriter", target: "Varsle nødetat, etabler skadestedsleder (fortrinnsvis fartøysjef), ivareta egen sikkerhet, slukk brann med umiddelbart skadepotensial, gi livreddende førstehjelp." },
+                    { text: "Når du har kapasitet", target: "Varsle operativ leder." }
                 ]
             },
             {
-                title: "Personskade", items: [
-                    { text: "Person skadet av luftfartøy", target: "Iverksett førstehjelp, varsle nødetater (113)" }
-                ]
-            },
-            {
-                title: "Brann i batteri (på bakken)", items: [
-                    { text: "Batteri ryker/brenner etter landing/krasj", target: "Flytt til brannsikkert sted om mulig, varsle brannvesen (110)" }
-                ]
-            },
-            {
-                title: "Nødlanding utenfor godkjent område", items: [
-                    { text: "Nødlanding gjennomført utenfor område", target: "Sikre luftfartøyet, varsle grunneier/ansvarlig, rapporter hendelse" }
+                title: "Fly-away / mistet kontakt", items: [
+                    { text: "Kartlegg", target: "Samle informasjon om siste kjente posisjon, fart, retning, høyde, batteritid og dronetype." },
+                    { text: "Varsle", target: "Vurder om relevant lufttrafikktjeneste og politiet bør varsles." },
+                    { text: "Ved stor skogbrannfare", target: "Vurder om brannvesenet bør varsles dersom status på dronen er ukjent eller den har tatt fyr - et skadet batteri kan antenne i terrenget der dronen antas å ha krasjet." },
+                    { text: "Følg opp", target: "Varsle operativ leder. Vurder om du skal starte søk etter dronen." }
                 ]
             }
         ]
@@ -228,7 +224,7 @@ function createEquipmentRow(text) {
     return li;
 }
 
-// Samme rad-type brukes til to ting: Operasjonsbegrensninger (normal) og Kontaktliste (erp) - derfor
+// Samme rad-type brukes til to ting: Begrensninger (normal) og Kontaktliste (erp) - derfor
 // parametriserte placeholder-tekster i stedet for hardkodet "Maks vind"-eksempel begge steder.
 function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal) {
     const tr = document.createElement("tr");
@@ -699,7 +695,7 @@ function buildPrintRow(cells, extraClass) {
 // (egendefinerte/omdøpte deler) faller tilbake til et generisk sjekkliste-ikon i stedet for å stå uten.
 const BOX_ICONS = {
     "Utstyrsliste": "fa-toolbox",
-    "Operasjonsbegrensninger": "fa-ruler",
+    "Begrensninger": "fa-ruler",
     "Kontaktliste": "fa-phone",
     "Før avreise": "fa-clipboard-check",
     "På operasjonsområdet": "fa-map-location-dot",
@@ -761,7 +757,7 @@ function buildLimitsBox(limits, title) {
     box.className = "print-box";
     const header = document.createElement("div");
     header.className = "print-box-header print-box-header-reference";
-    setBoxHeaderContent(header, title || "Operasjonsbegrensninger");
+    setBoxHeaderContent(header, title || "Begrensninger");
     box.appendChild(header);
 
     const table = document.createElement("table");
@@ -900,15 +896,10 @@ function buildSectionBoxesForPrint(tabKey, data) {
 // nå inni selve tittelbanneret, se buildPrintHeader), og et eksplisitt to-kolonners grid (sjekklistedeler
 // fast til venstre, utstyr/begrensninger fast til høyre - se .builder-grid i css/style.css for samme
 // oppdeling på skjermen).
+// Returnerer null hvis fanen er helt tom (ingen utstyr, begrensninger eller sjekklistedeler) - samme
+// "ingen tomme sider"-prinsipp som ERP-siden (se buildErpPage), i stedet for å skrive ut en hel side med
+// kun teksten "Denne sjekklisten er tom." (f.eks. rett etter "Nullstill denne fanen").
 function buildNormalPage(data) {
-    const page = document.createElement("div");
-    page.className = "print-page";
-    page.setAttribute("data-theme", "normal");
-    page.appendChild(buildPrintHeader("normal", data));
-
-    const grid = document.createElement("div");
-    grid.className = "print-grid";
-
     const leftCol = document.createElement("div");
     leftCol.className = "print-col";
     const rightCol = document.createElement("div");
@@ -924,15 +915,17 @@ function buildNormalPage(data) {
     }
     buildSectionBoxesForPrint("normal", data).forEach(function (box) { leftCol.appendChild(box); });
 
-    if (!leftCol.children.length && !rightCol.children.length) {
-        const empty = document.createElement("p");
-        empty.className = "print-empty-note";
-        empty.textContent = "Denne sjekklisten er tom.";
-        grid.appendChild(empty);
-    } else {
-        grid.appendChild(leftCol);
-        grid.appendChild(rightCol);
-    }
+    if (!leftCol.children.length && !rightCol.children.length) return null;
+
+    const page = document.createElement("div");
+    page.className = "print-page";
+    page.setAttribute("data-theme", "normal");
+    page.appendChild(buildPrintHeader("normal", data));
+
+    const grid = document.createElement("div");
+    grid.className = "print-grid";
+    grid.appendChild(leftCol);
+    grid.appendChild(rightCol);
 
     const body = document.createElement("div");
     body.className = "print-page-body";
@@ -1101,7 +1094,8 @@ function buildAllPrintPages() {
     const state = getState();
     const container = document.getElementById("printView");
     container.innerHTML = "";
-    container.appendChild(buildNormalPage(state.normal));
+    const normalPage = buildNormalPage(state.normal);
+    if (normalPage) container.appendChild(normalPage);
 
     // Contingency/emergency deler én side hvis det er plass - hvis ikke (for mye innhold til å få plass
     // side ved side), får de hver sin fulle side i stedet. Se combinedHalvesFit. Er BEGGE helt tomme,

@@ -1403,7 +1403,7 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .remove-section-btn:hover { color: #ff9d9d; }
 /* Sjekklistedeler (Før avreise, Tap av GNSS, osv.) får FFI-blå header i stedet for standard
    .section-header-fargen - skiller dem visuelt fra ren referanseinfo (Utstyrsliste,
-   Operasjonsbegrensninger), som beholder den nøytrale mørke standardfargen. */
+   Begrensninger), som beholder den nøytrale mørke standardfargen. */
 .checklist-section { margin-bottom: 20px; }
 .checklist-section .section-header { background-color: var(--ffi-blue); }
 .builder-item-table { width: 100%; border-collapse: collapse; }
