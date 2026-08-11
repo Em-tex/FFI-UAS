@@ -1422,6 +1422,20 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 }
 .builder-item-table .col-check { width: 36px; text-align: center; }
 .builder-item-table .col-remove { width: 40px; text-align: center; }
+/* Radnummerering (1., 2., 3. ...) - tellerverdien settes av CSS (counter-reset/-increment), ikke JS,
+   slik at den automatisk starter på nytt for hver sjekklistedel/tabell og holder seg riktig uansett om
+   rader legges til, fjernes eller flyttes (se tdNumber i createItemRow). */
+.builder-item-table tbody { counter-reset: item-number; }
+.builder-item-table tbody tr { counter-increment: item-number; }
+.builder-item-table .col-number {
+    width: 22px;
+    text-align: right;
+    padding-right: 4px;
+    font-weight: 600;
+    color: #555;
+    white-space: nowrap;
+}
+.builder-item-table .col-number::before { content: counter(item-number) "."; }
 /* Sjekkpunkt/Status-tiltak er nå auto-voksende tekstfelt (textarea, ikke input) - lang tekst (typisk
    "Tiltak" på contingency/emergency/erp) ble ellers klippet/scrollet inni et enlinjes felt uten at man
    kunne se hele innholdet. Se autoGrowTextarea i JS. */
@@ -1650,8 +1664,12 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-rows { width: 100%; border-collapse: collapse; }
 .print-rows tr { border-bottom: 1px solid #e5e5e5; }
 .print-rows tr:last-child { border-bottom: none; }
-.print-rows td { padding: 2px 8px; font-size: 8.5pt; vertical-align: top; line-height: 1.4; }
+/* vertical-align: middle - alle rader/kolonner i en linje skal stå midtstilt i høyden i forhold til
+   hverandre, ikke toppjustert (så en ettordslinje ikke henger øverst mens en lengre, flerlinjes
+   nabocelle strekker raden nedover). */
+.print-rows td { padding: 2px 8px; font-size: 8.5pt; vertical-align: middle; line-height: 1.4; }
 .print-rows td.print-check { width: 12px; padding-right: 2px; }
+.print-rows td.print-number { width: 14px; text-align: right; padding-right: 3px; font-weight: 700; white-space: nowrap; }
 .print-rows td.print-label.print-key { font-weight: 700; }
 .print-rows td.print-value { text-align: right; color: #333; padding-left: 6px; }
 .print-checkbox-box {

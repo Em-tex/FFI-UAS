@@ -291,6 +291,13 @@ function createItemRow(item, showCheckbox, isNormal) {
         tr.appendChild(tdCheck);
     }
 
+    // Radnummer (1., 2., 3. ...) - ren CSS-teller på tbody/tr (se .col-number i style.css), ikke lagret
+    // i data-modellen. Nummereringen starter dermed automatisk på nytt fra 1 for hver sjekklistedel/
+    // tabell, og følger med uten ekstra JS-bokføring når rader legges til, fjernes eller flyttes.
+    const tdNumber = document.createElement("td");
+    tdNumber.className = "col-number";
+    tr.appendChild(tdNumber);
+
     // Textarea (ikke input) - vokser vertikalt med innholdet i stedet for å klippe/scrolle lang tekst
     // (typisk "Tiltak" på contingency/emergency/erp) inni et enlinjes felt, se autoGrowTextarea.
     const tdText = document.createElement("td");
@@ -372,6 +379,7 @@ function createSectionEl(tabKey, section) {
         table.innerHTML =
             '<thead><tr>' +
             (labels.checkbox ? '<th class="col-check"></th>' : '') +
+            '<th class="col-number"></th>' +
             '<th>' + labels.text + '</th>' +
             '<th>' + labels.target + '</th>' +
             '<th class="col-remove"></th>' +
@@ -515,6 +523,17 @@ function markNormalCustom() {
     }
 }
 
+// Tømmer én fanes redigerbare innhold (utstyr, begrensninger, sjekklistedeler) i DOM-et - tittel/drone/
+// autorisasjonsnummer røres ikke her, siden renderTab uansett overskriver disse direkte (de er enkeltverdi-
+// felt, ikke rader som legges til). Delt av reloadNormalFromDefaults, resetTab og importStateFromJson,
+// som alle på ulikt vis skal erstatte en fanes innhold fullstendig.
+function clearTabContent(tabKey) {
+    document.querySelectorAll('[data-equipment="' + tabKey + '"] li').forEach(function (li) { li.remove(); });
+    document.querySelectorAll('[data-limits="' + tabKey + '"] tr').forEach(function (tr) { tr.remove(); });
+    const sectionsContainer = document.querySelector('[data-sections="' + tabKey + '"]');
+    if (sectionsContainer) sectionsContainer.innerHTML = "";
+}
+
 // Gjenoppretter normal-fanens utstyrsliste, begrensninger og sjekklistedeler fra standardmalen -
 // brukes når man aktivt velger MÅK/spesifikk i nedtrekksmenyen, slik at man faktisk får tilbake det
 // opprinnelige innholdet (inkl. eventuelle rader man har slettet), ikke bare et filter over det som
@@ -522,10 +541,7 @@ function markNormalCustom() {
 // sjekklisteinnhold. ALL sjekklistedel-tekst (utstyr, begrensninger, sjekkpunkter) overskrives, så
 // kalles kun etter bekreftelse (se templateSelect-lytteren i DOMContentLoaded).
 function reloadNormalFromDefaults(template) {
-    document.querySelectorAll('[data-equipment="normal"] li').forEach(function (li) { li.remove(); });
-    document.querySelectorAll('[data-limits="normal"] tr').forEach(function (tr) { tr.remove(); });
-    const sectionsContainer = document.querySelector('[data-sections="normal"]');
-    if (sectionsContainer) sectionsContainer.innerHTML = "";
+    clearTabContent("normal");
 
     DEFAULTS.normal.equipment.forEach(function (text) { addEquipment("normal", text); });
     DEFAULTS.normal.limits.forEach(function (limit) { addLimit("normal", limit.key, limit.value); });
@@ -551,13 +567,34 @@ function resetTab(tabKey) {
         checkNormalField(approvalInput, document.querySelector(".approval-number-group"), document.getElementById("normal-approval-number-note"), false);
     }
 
-    document.querySelectorAll('[data-equipment="' + tabKey + '"] li').forEach(function (li) { li.remove(); });
-    document.querySelectorAll('[data-limits="' + tabKey + '"] tr').forEach(function (tr) { tr.remove(); });
-    const sectionsContainer = document.querySelector('[data-sections="' + tabKey + '"]');
-    if (sectionsContainer) sectionsContainer.innerHTML = "";
-
+    clearTabContent(tabKey);
     renderTab(tabKey, DEFAULTS[tabKey]);
     saveState();
+}
+
+// Laster sjekklisteinnhold fra en tidligere nedlastet JSON-fil tilbake inn i skjemaet - motstykket til
+// "Last ned som JSON"-knappen, slik at man kan hente frem en lagret/delt sjekkliste og gjøre justeringer
+// i stedet for å måtte bygge den opp på nytt fra bunnen. Erstatter ALT innhold i ALLE faner (tittel,
+// drone/autorisasjonsnummer, utstyr, begrensninger, sjekklistedeler), derfor bekreftet av brukeren først
+// (se uploadJsonInput-lytteren i DOMContentLoaded). Manglende faner i filen (f.eks. en eldre eksport fra
+// før ERP-fanen fantes) tømmes i stedet for å falle tilbake til standardmalen, så man ikke uventet får
+// inn nytt standardinnhold man aldri ba om.
+function importStateFromJson(data) {
+    TAB_KEYS.forEach(function (tabKey) {
+        const titleInput = document.getElementById(tabKey + "-title");
+        if (titleInput) titleInput.value = "";
+        if (tabKey === "normal") {
+            const droneInput = document.getElementById("normal-drone");
+            if (droneInput) droneInput.value = "";
+            const approvalInput = document.getElementById("normal-approval-number");
+            if (approvalInput) approvalInput.value = "";
+        }
+        clearTabContent(tabKey);
+        renderTab(tabKey, data[tabKey] || { title: "", sections: [] });
+    });
+    saveState();
+    switchTab("normal");
+    validateNormalRequiredFields(false);
 }
 
 /* ---------- Påkrevde felt: drone + autorisasjonsnummer ----------
@@ -711,10 +748,8 @@ const BOX_ICONS = {
     "Fly-away / mister kontroll": "fa-triangle-exclamation",
     "Motorfeil i lufta": "fa-gear",
     "Batteribrann i lufta": "fa-fire",
-    "Kollisjon / krasj": "fa-car-burst",
-    "Personskade": "fa-user-injured",
-    "Brann i batteri (på bakken)": "fa-fire-extinguisher",
-    "Nødlanding utenfor godkjent område": "fa-location-dot"
+    "Ulykke / hendelse": "fa-car-burst",
+    "Fly-away / mistet kontakt": "fa-magnifying-glass-location"
 };
 const DEFAULT_BOX_ICON = "fa-clipboard-list";
 
@@ -805,11 +840,12 @@ function buildSectionBox(section, showCheckbox) {
 
     const table = document.createElement("table");
     table.className = "print-rows";
-    items.forEach(function (item) {
+    items.forEach(function (item, index) {
         const cells = [];
         if (showCheckbox) {
             cells.push({ className: "print-check", html: '<span class="print-checkbox-box' + (item.checked ? " checked" : "") + '"></span>' });
         }
+        cells.push({ className: "print-number", text: (index + 1) + "." });
         cells.push({ className: "print-label", text: item.text });
         cells.push({ className: "print-value", text: item.target || "" });
         table.appendChild(buildPrintRow(cells));
@@ -1235,6 +1271,44 @@ document.addEventListener("DOMContentLoaded", function () {
         const titlePart = slug(state.normal && state.normal.drone) || "sjekklister";
         const datePart = new Date().toISOString().split("T")[0];
         downloadJson(titlePart + "-" + datePart + ".json", data);
+    });
+
+    // "Last opp JSON" - knappen åpner en skjult fil-input (ingen synlig, stygg standard-filvelger på
+    // selve knappen); selve innlesingen skjer i input-ets change-lytter under.
+    document.getElementById("uploadJsonBtn").addEventListener("click", function () {
+        document.getElementById("uploadJsonInput").click();
+    });
+    document.getElementById("uploadJsonInput").addEventListener("change", function (e) {
+        const input = e.target;
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function () {
+            let data;
+            try {
+                data = JSON.parse(reader.result);
+            } catch (err) {
+                alert("Kunne ikke lese filen - dette ser ikke ut som en gyldig JSON-fil.");
+                input.value = "";
+                return;
+            }
+            const hasKnownTab = data && typeof data === "object" && TAB_KEYS.some(function (k) { return data[k]; });
+            if (!hasKnownTab) {
+                alert("Fant ikke gjenkjennelig sjekklisteinnhold i filen. Bruk en JSON-fil lastet ned med \"Last ned som JSON\" herfra.");
+                input.value = "";
+                return;
+            }
+            if (confirm("Laste inn sjekklisten fra denne filen? Alt innhold i alle faner blir erstattet med innholdet i filen.")) {
+                importStateFromJson(data);
+            }
+            input.value = "";
+        };
+        reader.onerror = function () {
+            alert("Kunne ikke lese filen.");
+            input.value = "";
+        };
+        reader.readAsText(file);
     });
 
     document.getElementById("resetFormBtn").addEventListener("click", function () {
