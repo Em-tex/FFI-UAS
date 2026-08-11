@@ -167,7 +167,7 @@ const DEFAULTS = {
                 title: "Fly-away / mistet kontakt", items: [
                     { text: "Kartlegg", target: "Samle informasjon om siste kjente posisjon, fart, retning, høyde, batteritid og dronetype." },
                     { text: "Varsle", target: "Vurder om relevant lufttrafikktjeneste og politiet bør varsles." },
-                    { text: "Ved stor skogbrannfare", target: "Vurder om brannvesenet bør varsles dersom status på dronen er ukjent eller den har tatt fyr - et skadet batteri kan antenne i terrenget der dronen antas å ha krasjet." },
+                    { text: "Ved skogbrannfare", target: "Vurder om brannvesenet bør varsles dersom status på dronen er ukjent eller den har tatt fyr - et skadet batteri kan antenne i terrenget der dronen antas å ha krasjet." },
                     { text: "Følg opp", target: "Varsle operativ leder. Vurder om du skal starte søk etter dronen." }
                 ]
             }
