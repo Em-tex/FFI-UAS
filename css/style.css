@@ -1213,16 +1213,23 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 #tabPanel-erp .limits-table input:focus { border-color: #a01414; }
 
 /* --- Sjekkliste-generator: MÅK / spesifikk / egendefinert mal-valg (nedtrekksmenyen finnes kun på
-   normal-fanen, men selv malvalget gjelder nå BÅDE normal- og contingency-fanen - se "Tap av C2 link" i
+   normal-fanen, men selve KATEGORIEN gjelder nå BÅDE normal- og contingency-fanen - se "Tap av C2 link" i
    DEFAULTS.contingency, js/sjekkliste-bygger.js) ---
    Hvilke sjekkpunkter som hører til MÅK vs. spesifikk er satt i standardmalen (item.variant i
    DEFAULTS, js/sjekkliste-bygger.js) - ikke redigerbart per rad. Rader merket data-variant="mak"/
-   "spesifikk" skjules når det motsatte malvalget er aktivt; "egendefinert" treffer ingen av filtrene og
-   viser dermed alt. Valget lever som et data-template-attributt på HVERT relevante fane-panel, satt
-   samtidig på begge av setNormalTemplate (og automatisk når brukeren redigerer normal-fanens innhold, se
-   markNormalCustom i JS). */
-.tab-panel[data-template="mak"] tr[data-variant="spesifikk"] { display: none; }
-.tab-panel[data-template="spesifikk"] tr[data-variant="mak"] { display: none; }
+   "spesifikk" skjules når den MOTSATTE kategorien er aktiv.
+   BUG (rapportert av brukeren, med skjermbilde: "plutselig er C2 link sjekklisten doblet innholdet",
+   senere "fikk fortsatt doblett innholdet ... etter hard refresh") - filtreringen lå TIDLIGERE på et
+   data-template-attributt som OGSÅ representerte normal-fanens nedtrekksmeny-tilstand (inkl.
+   "egendefinert" - satt automatisk av markNormalCustom() ved ENHVER redigering på normal-fanen, se der).
+   En helt urelatert redigering av f.eks. utstyrslisten flippet dermed BÅDE normal-fanens eget malvalg
+   OG contingency sin C2-link-filtrering til "egendefinert" samtidig - som ikke treffer NOEN av filtrene
+   under, og dermed viste ALT (både mak- og spesifikk-merkede punkter om hverandre). Egen, separat
+   data-category-attributt nå i stedet (satt av setActiveCategory - KUN når brukeren faktisk velger MÅK
+   eller Spesifikk, ALDRI av markNormalCustom) - filtreringen er dermed uavhengig av om normal-fanens eget
+   innhold har blitt tilpasset i etterkant. */
+.tab-panel[data-category="mak"] tr[data-variant="spesifikk"] { display: none; }
+.tab-panel[data-category="spesifikk"] tr[data-variant="mak"] { display: none; }
 
 /* --- Sjekkliste-generator: godkjenningsnummer (fast "FFI-UAS-"-prefiks + kun tallet i feltet) --- */
 .approval-number-group { display: flex; align-items: stretch; }
@@ -1393,15 +1400,15 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    stedet for å kreve en bred kolonne - kolonnebredden kan dermed settes til en langt mer forsiktig,
    moderat andel (18ch, tydelig mindre enn de to foregående gjetningene) uten risiko for at innholdet
    forsvinner - det bare blir to linjer i sjeldne tilfeller, ikke klipt eller stjålet fra nabokolonnen. */
-/* display:flex (ikke lenger standard-cellevisning) - nødvendig NÅ som parameter-feltet er en <textarea>
-   (display:block, se regelen lenger ned) i stedet for et <input> (naturlig inline): et block-element ville
-   ellers tvunget seg ned på en EGEN linje UNDER nødnummer-ikonet i stedet for å stå ved siden av det.
-   Flex løser dette generelt (stiller barn på rad uansett deres egen display-type), se
-   .limits-table td.limit-key textarea under for hvordan selve textareaen tar resten av plassen.
-   align-items:flex-start (ikke center) - ikonet skal stå øverst ved siden av FØRSTE linje hvis
-   parameterteksten faktisk brekker til to linjer, ikke midtstilt i hele feltets høyde. */
-.limits-table td.limit-key { width: 18ch; display: flex; align-items: flex-start; }
-.limits-table td.limit-key textarea { flex: 1 1 auto; min-width: 0; width: auto; }
+/* BUG (rapportert av brukeren, med skjermbilde: "rar formatering av nødnumre på kontaktlisten") - ikonet
+   og textareaen sto TIDLIGERE som to likeverdige flex-elementer ved siden av hverandre inni cellen, som
+   dyttet selve boksens venstrekant lenger til høyre KUN på nødnummer-rader - boksene (Brann/Politi/
+   Ambulanse) startet dermed et annet sted enn boksene på de vanlige radene (Legevakt osv.) rett under,
+   så hele kolonnen sluttet å stå pent på linje seg imellom. Ikonet er nå i stedet absolutt posisjonert
+   OPPÅ selve boksen (se .limit-key-icon under) i stedet for ved siden av den - boksens egen venstrekant
+   flytter seg dermed ALDRI, uansett om raden har et ikon eller ikke. td.limit-key er bare
+   position:relative nå (ikke lenger flex) - selve ankeret ikonet posisjoneres i forhold til. */
+.limits-table td.limit-key { width: 18ch; position: relative; }
 .limits-table td.limit-value { width: auto; }
 .limits-table input[type="text"], .limits-table textarea {
     display: block;
@@ -1425,8 +1432,17 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 }
 /* Klassebasert (ikke lenger en "input"-tag-selektor) - matcher parameter-feltet uansett om det er et
    <input> (verdi-feltet, uendret) eller en <textarea> (parameter-feltet, se over) - en ren tag-selektor
-   som "td.limit-key input" ville sluttet å treffe idet feltet ble en textarea. */
-.limits-table .limit-key-input { font-weight: 600; }
+   som "td.limit-key input" ville sluttet å treffe idet feltet ble en textarea.
+   padding-left ALLTID (ikke bare på nødnummer-rader) - se BUG-kommentaren ved td.limit-key over:
+   reserverer fast plass til nødnummer-ikonet slik at selve TEKSTEN (ikke bare boksens kant) starter på
+   nøyaktig samme sted på hver rad, ikonet eller ei - et lite, umerkelig ekstra innrykk på de vanlige
+   radene er verdt at hele kolonnen faktisk står pent på linje.
+   BUG (rapportert av brukeren, med skjermbilde: "ikonen ikke hhelt bra justert" - ikonet klemte nesten
+   borti selve bokstaven rett etter, "Brann"/"Politi"/"Ambulanse") - 22px ga bare ~6px klaring mellom
+   ikonets høyrekant og teksten. Økt til 30px, deretter til 34px (se .limit-key-icon - ikonet flyttet fra
+   left:14px til 18px i samme runde som denne, se BUG-kommentaren der) for fortsatt tydelig klaring etter
+   at ikonet selv flyttet lenger inn. */
+.limits-table .limit-key-input { font-weight: 600; padding-left: 34px; }
 .limits-table input:focus, .limits-table textarea:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
 
 /* Nødnummer-fremheving på ERP sin Kontaktliste (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS i
@@ -1434,9 +1450,10 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    bold. Men ikke for skrikete... profesjonell sjekkliste". Bevisst tilbakeholdent: KUN en svak
    bakgrunnstone + en smal venstrekant i samme røde tone appen allerede bruker til hele ERP-fanen (ikke en
    ny, vilkårlig farge), pluss et lite ikon - ingen skarp rød tekst/full rød bakgrunn som ville sett ut som
-   en feilmelding. .limit-key-icon er tom (bredde 0, ingen visuell plass) helt til updateEmergencyEmphasis
-   faktisk gir den et fa-solid-ikonnavn (se createLimitRow) - width:14px der gir plass til selve ikonet
-   uten at kolonnen hopper i bredde idet det dukker opp/forsvinner mens brukeren skriver.
+   en feilmelding. .limit-key-icon er tom (ingen fa-solid-klasse, altså intet synlig ikon) helt til
+   updateEmergencyEmphasis faktisk gir den et ikonnavn (se createLimitRow) - siden ikonet er absolutt
+   posisjonert (se regelen under) ligger den uansett UTENFOR normal layout-flyt, så den kan aldri få
+   kolonnen til å "hoppe" i bredde idet den dukker opp/forsvinner mens brukeren skriver.
    #tabPanel-erp-prefiks er unødvendig (limit-row-emergency finnes kun på ERP sin kontaktliste-tabell i
    praksis, se isErpContacts-vakten), men holder regelen tydelig knyttet til riktig fane likevel. */
 /* border/background på selve <tr> er upålitelig på tvers av nettlesere ved border-collapse (spesielt
@@ -1446,7 +1463,26 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 /* Klassebasert (.limit-key-input, ikke "td.limit-key input") - samme begrunnelse som lenger opp:
    parameter-feltet er nå en <textarea>, en tag-selektor på "input" ville aldri truffet den. */
 #tabPanel-erp tr.limit-row-emergency .limit-key-input { color: #a01414; font-weight: 700; background: transparent; }
-.limit-key-icon { display: inline-block; width: 14px; text-align: center; color: #a01414; margin-right: 2px; }
+/* Absolutt posisjonert OPPÅ selve boksen (ankret til td.limit-key sin position:relative) i stedet for som
+   et eget flex-element ved siden av den - se BUG-kommentaren ved td.limit-key lenger opp.
+   BUG (rapportert av brukeren, med skjermbilde: "ikonene er fortsatt plassert for høyt til venstre") - et
+   gjettet fast "top"-tall (11px) traff aldri boksens faktiske vertikale midte presist (targetet var
+   TD-ens topp-kant, ikke selve boksens - td har egen toppolstring OVENPÅ boksen, se .limits-table td,
+   som gjorde 11px synlig for høyt oppe). Byttet til top:50% + transform:translateY(-50%) i stedet for
+   nok et gjettet px-tall - EKTE, robust vertikal midtstilling i forhold til HELE cellens høyde, uansett
+   faktisk boks-/padding-mål (som jeg uansett ikke kan måle presist herfra). left økt fra 14 til 18px
+   (og .limit-key-input sin padding-left tilsvarende fra 30 til 34px, se der) - ikonet satt for tett inntil
+   boksens egen venstre kant. */
+.limit-key-icon {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    text-align: center;
+    color: #a01414;
+    pointer-events: none;
+}
 
 /* --- Sjekkliste-generator: overskrifter midtstilt i sin boks-header (ikoner droppet, se HTML/JS -
    uten et fast-bredt ikon på venstre side kan h2/tittelfeltet fylle hele bredden og sentreres ordentlig,
@@ -1634,7 +1670,9 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     color: white;
     border-radius: 4px;
     padding: 9px 14px;
-    margin-bottom: 10px;
+    /* Økt fra 10px - brukerønske ("litt mer luft under overskriften 'sjekkliste' ned til der boksene
+       begynner") - boksene under startet nesten rett under selve banneret. */
+    margin-bottom: 20px;
 }
 [data-theme="contingency"] .print-header { background: #d4a017; }
 [data-theme="emergency"] .print-header,

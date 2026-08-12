@@ -11,7 +11,7 @@ const STORAGE_KEY = "ffi-uas:sjekkliste-generator";
 // linje 40) faktisk er GAMMEL, lagret tilstand fra en tidligere (siden fikset) versjon av
 // begrensninger-koden, ikke en fersk bug i gjeldende kode - en versjonsbump her tvinger uansett en frisk
 // innlasting fra DEFAULTS igjen, som et sikkert "reset" uansett hva den egentlige årsaken var.
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 22;
 
 // Kolonneoverskrifter i sjekkpunkt-tabellen er ulike for normal- vs. contingency/emergency/erp-
 // sjekklister: en normal preflight-sjekk sammenligner mot en forventet status, mens de andre beskriver
@@ -41,7 +41,7 @@ const DEFAULTS = {
             { key: "Maks hastighet", value: "" },
             { key: "Maks rekkevidde", value: "VLOS" },
             { key: "Vær", value: "Ingen nedbør" },
-            { key: "RTH-batterinivå", value: "20 %" },
+            // "RTH-batterinivå" fjernet - brukerønske ("kan variere med operasjonen").
             { key: "Oppvisning for publikum", value: "Forbudt" }
         ],
         sections: [
@@ -98,9 +98,9 @@ const DEFAULTS = {
             {
                 // "Tap av C2 link" (tidligere "Tap av fjernkontroll-lenke") - brukerønske. To sett
                 // sjekkpunkter under SAMME overskrift, merket med variant "mak"/"spesifikk" (samme
-                // mekanisme som MÅK/spesifikk-filtreringen på normal-fanen, se ITEM_LABELS/setNormalTemplate
-                // -kommentaren) - kun settet som matcher normal-fanens aktive mal vises om gangen, se
-                // .tab-panel[data-template=...] i css/style.css.
+                // mekanisme som MÅK/spesifikk-filtreringen på normal-fanen, se ITEM_LABELS/setActiveCategory
+                // -kommentaren) - kun settet som matcher gjeldende kategori vises om gangen, se
+                // .tab-panel[data-category=...] i css/style.css.
                 title: "Tap av C2 link", items: [
                     { text: "Mannskap", target: "Informert om \"lost link\"", variant: "mak" },
                     { text: "C2-link", target: "Forsøk å gjenopprette", variant: "mak" },
@@ -116,7 +116,7 @@ const DEFAULTS = {
             {
                 title: "Tap av GNSS", items: [
                     { text: "Mannskap", target: "Informer om \"lost GPS\"" },
-                    { text: "Vurder", target: "Om operasjonen skal avbrytes" }
+                    { text: "Operasjon", target: "Vurder å avbryte" }
                 ]
             },
             {
@@ -280,7 +280,16 @@ function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal, 
         if (!isErpContacts) return;
         const icon = ERP_EMERGENCY_CONTACTS[keyInput.value.trim()];
         tr.classList.toggle("limit-row-emergency", !!icon);
-        keyIcon.className = "limit-key-icon" + (icon ? " fa-solid " + icon : "");
+        // BUG (rapportert av brukeren, TO runder på rad med skjermbilder som så identiske ut til tross for
+        // en økt padding-fiks - "ikonen ikke hhelt bra justert") - roten var IKKE selve avstanden (som
+        // faktisk ble justert riktig), men at Font Awesome-glyfer UTEN "fa-fw" (fixed-width) rendres i sin
+        // egen, per-ikon NATURLIGE bredde, ikke den 14px .limit-key-icon-boksen jeg satte - en bred glyf
+        // som "fa-truck-medical" (ambulanse) kan rett og slett stikke UTENFOR den boksen og likevel treffe
+        // teksten, uansett hvor mye padding jeg la til rundt selve boksen. "fa-fw" er FontAwesome sin egen,
+        // formålsbygde klasse for akkurat dette (tvinger ALLE ikoner til samme faste bredde, uansett
+        // glyfens egen naturlige form) - riktig fiks fremfor å fortsette å gjette på px-verdier rundt et
+        // problem som satt i selve ikon-rendringen, ikke i avstanden.
+        keyIcon.className = "limit-key-icon" + (icon ? " fa-solid fa-fw " + icon : "");
     }
     keyInput.addEventListener("input", function () { autoGrowTextarea(keyInput); updateEmergencyEmphasis(); onEdit(); });
     updateEmergencyEmphasis();
@@ -531,20 +540,24 @@ function addSection(tabKey, section) {
 
 function getState() {
     const state = {};
-    // Malvalget (MÅK/spesifikk/egendefinert) leses fra normal-panelet - det er fortsatt eneste sted
-    // nedtrekksmenyen selv finnes, og setNormalTemplate holder tabPanel-normal/-contingency synkronisert
-    // (se kommentaren der) - men lagres nå på HVER fane sin tabState (ikke bare normal sin), slik at
-    // buildSectionBoxesForPrint kan filtrere variant-merkede punkter (f.eks. "Tap av C2 link" på
-    // contingency-fanen) riktig ved utskrift, uansett hvilken fane den bygger siden for.
+    // "category" (MÅK/spesifikk, ALDRI "custom") leses fra normal-panelets data-category-attributt (se
+    // setActiveCategory) og lagres på HVER fane sin tabState - dette er det buildSectionBoxesForPrint
+    // faktisk filtrerer variant-merkede punkter etter (f.eks. "Tap av C2 link" på contingency-fanen), helt
+    // uavhengig av om normal-fanens EGET innhold har blitt tilpasset (se BUG-kommentaren ved
+    // setNormalTemplate for hvorfor de to måtte skilles fra hverandre).
     const normalPanel = document.getElementById("tabPanel-normal");
-    const activeTemplate = (normalPanel && normalPanel.getAttribute("data-template")) || "mak";
+    const activeCategory = (normalPanel && normalPanel.getAttribute("data-category")) || "mak";
     TAB_KEYS.forEach(function (tabKey) {
         const tabState = {
             title: (document.getElementById(tabKey + "-title") || {}).value || "",
-            template: activeTemplate
+            category: activeCategory
         };
 
         if (tabKey === "normal") {
+            // "template" (kan også være "custom") er derimot KUN normal-fanens egen nedtrekksmeny-
+            // tilstand (se setNormalTemplate) - ikke lenger noe filtreringen leser, kun brukt til å
+            // gjenopprette riktig valg i selve <select>-elementet ved innlasting (se renderTab).
+            tabState.template = (normalPanel && normalPanel.getAttribute("data-template")) || "mak";
             tabState.drone = (document.getElementById("normal-drone") || {}).value || "";
             tabState.approvalNumber = (document.getElementById("normal-approval-number") || {}).value || "";
         }
@@ -596,21 +609,32 @@ function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-// Setter aktivt malvalg (MÅK/spesifikk/egendefinert): data-template-attributtet på fane-panelet styrer
-// hvilke sjekkpunkter som vises (se CSS-filtreringen på tr[data-variant] - "egendefinert" treffer ingen av
-// filtrene, så da vises alt). Nedtrekksmenyen selv finnes KUN på normal-fanen, men selve malvalget (MÅK
-// eller spesifikk) er ikke egentlig noe normal-fanen "eier" alene - det er samme operasjonskategori for
-// HELE sjekklistesettet (f.eks. "Tap av C2 link" på contingency-fanen har nå også mak/spesifikk-merkede
-// sjekkpunkter, se DEFAULTS.contingency). Setter derfor attributtet på BEGGE panelene, ikke bare
-// tabPanel-normal - se også getState() (som nå lagrer template-verdien uansett fane) og
-// buildSectionBoxesForPrint (som nå filtrerer variant-merkede punkter på alle faner, ikke bare normal).
-// Brukes både ved innlasting av lagret tilstand, nedtrekksvalg og automatisk når brukeren begynner å
-// redigere innholdet (se markNormalCustom).
+// Kategorien (MÅK/spesifikk - ALDRI "custom") som styrer variant-filtreringen (se tr[data-variant] i
+// css/style.css) - egen, separat attributt fra selve nedtrekksmeny-tilstanden (data-template, se
+// setNormalTemplate under) etter en BUG (rapportert av brukeren, med skjermbilder: "plutselig er C2 link
+// sjekklisten doblet innholdet", senere "fikk fortsatt doblett innholdet ... etter hard refresh") - se
+// den fulle forklaringen i css/style.css sin kommentar ved samme filtrering. Satt på BEGGE panelene
+// (normal OG contingency, se DEFAULTS.contingency sin "Tap av C2 link") - det er samme
+// operasjonskategori for HELE sjekklistesettet, ikke noe normal-fanen "eier" alene, selv om
+// nedtrekksmenyen selv kun finnes der.
+function setActiveCategory(category) {
+    const panel = document.getElementById("tabPanel-normal");
+    if (panel) panel.setAttribute("data-category", category);
+    const contingencyPanel = document.getElementById("tabPanel-contingency");
+    if (contingencyPanel) contingencyPanel.setAttribute("data-category", category);
+}
+
+// Setter selve nedtrekksmenyens tilstand (MÅK/spesifikk/egendefinert) - data-template-attributtet på
+// tabPanel-normal alene, KUN normal-fanens egen "har jeg avveket fra standardmalen"-status (brukt av
+// f.eks. templateSelect-lytteren for å vite hva den skal tilbakestille TIL hvis brukeren avbryter en
+// bekreftelsesdialog). IKKE lenger det samme som filtreringskategorien (se setActiveCategory over) -
+// oppdaterer kategorien KUN når malvalget faktisk ER en av de to offisielle malene (mak/spesifikk), ALDRI
+// når det går til "custom" (se markNormalCustom) - en redigering av normal-fanens EGET innhold skal ikke
+// lenger kunne slå av MÅK/spesifikk-filtreringen på "Tap av C2 link" som et utilsiktet sideeffekt.
 function setNormalTemplate(template) {
     const panel = document.getElementById("tabPanel-normal");
     if (panel) panel.setAttribute("data-template", template);
-    const contingencyPanel = document.getElementById("tabPanel-contingency");
-    if (contingencyPanel) contingencyPanel.setAttribute("data-template", template);
+    if (template === "mak" || template === "spesifikk") setActiveCategory(template);
     const select = document.getElementById("normal-template-select");
     if (select && select.value !== template) select.value = template;
 }
@@ -619,6 +643,7 @@ function setNormalTemplate(template) {
 // -punkter) på normal-fanen - i det øyeblikket brukeren begynner å tilpasse innholdet er det ikke
 // lenger den offisielle MÅK- eller spesifikk-malen, så valget hopper automatisk til "Egendefinert".
 // Gjør ingenting hvis malen allerede står på egendefinert (unngår unødvendig re-rendering/lagring).
+// Rører (via setNormalTemplate sin egen guard) IKKE selve filtreringskategorien - se der.
 function markNormalCustom() {
     const panel = document.getElementById("tabPanel-normal");
     if (panel && panel.getAttribute("data-template") !== "custom") {
@@ -750,6 +775,12 @@ function renderTab(tabKey, data) {
         const approvalInput = document.getElementById("normal-approval-number");
         if (approvalInput) approvalInput.value = data.approvalNumber || "";
         setNormalTemplate(data.template || "mak");
+        // Gjenoppretter filtreringskategorien EKSPLISITT her, uansett hva data.template måtte være (også
+        // "custom" - der ville setNormalTemplate sin egen guard (se der) IKKE rørt kategorien i det hele
+        // tatt) - uten denne ville en lagret "custom"-tilstand (fra FØR denne fiksen, se BUG-kommentaren
+        // ved buildSectionBoxesForPrint) latt kategorien stå på HTML-ens hardkodede startverdi ("mak") i
+        // stedet for brukerens faktisk sist valgte MÅK/spesifikk.
+        setActiveCategory(data.category || "mak");
     }
 
     if (Array.isArray(data.equipment)) {
@@ -1075,14 +1106,28 @@ function buildPageDateStamp() {
 // andre malvalget skal ikke dukke opp i utskriften, samme regel som CSS-filtreringen på skjermen.
 function buildSectionBoxesForPrint(tabKey, data) {
     const showCheckbox = ITEM_LABELS[tabKey].checkbox;
-    const template = data.template || "mak";
+    // BUG-historikk (rapportert av brukeren, med skjermbilder - "Tap av C2 link" viste ALLE 9 punktene på
+    // selve nettsiden, MEN "Ingen sjekkpunkter" i PDF-forhåndsvisningen, stikk motsatt; deretter fortsatt
+    // 9 punkter på skjermen selv etter hard refresh) - filtreringen leste TIDLIGERE data.template, som
+    // OGSÅ representerte normal-fanens egen "egendefinert"-tilstand (satt automatisk av markNormalCustom()
+    // ved ENHVER redigering på normal-fanen, se der) - en helt urelatert redigering flippet dermed
+    // filtreringen for BÅDE normal og contingency til "custom" som en utilsiktet sideeffekt, og
+    // "hard refresh" endret ingenting siden det bare lastet den samme (allerede lagrede) "custom"-
+    // tilstanden på nytt fra localStorage. Leser nå data.category i stedet - et EGET felt som KUN
+    // oppdateres når brukeren faktisk velger MÅK/spesifikk (se setActiveCategory/getState), aldri av
+    // markNormalCustom - filtreringen er dermed uavhengig av om normal-fanens eget innhold er tilpasset.
+    const template = data.category || "mak";
     const boxes = [];
     (data.sections || []).forEach(function (section) {
         // Variant-filtreringen gjaldt FØR kun normal-fanen (den eneste som hadde mak/spesifikk-merkede
         // punkter). Nå har contingency-fanen også slike (se "Tap av C2 link" i DEFAULTS.contingency), så
         // filteret kjøres nå uansett tabKey - harmløst for faner uten variant-merkede punkter (it.variant
         // er da alltid tom, og filteret slipper gjennom alt akkurat som før).
-        const items = (section.items || []).filter(function (it) { return !it.variant || it.variant === template; });
+        const items = (section.items || []).filter(function (it) {
+            if (!it.variant) return true;
+            if (template !== "mak" && template !== "spesifikk") return true;
+            return it.variant === template;
+        });
         const sectionBox = buildSectionBox({ title: section.title, items: items, singleColumn: section.singleColumn }, showCheckbox);
         if (sectionBox) boxes.push(sectionBox);
     });
@@ -1517,9 +1562,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const state = getState();
         const data = Object.assign({ skjema: "Sjekkliste-generator" }, state);
         const slug = function (s) { return (s || "").trim().replace(/\s+/g, "_"); };
-        const titlePart = slug(state.normal && state.normal.drone) || "sjekklister";
-        const datePart = new Date().toISOString().split("T")[0];
-        downloadJson(titlePart + "-" + datePart + ".json", data);
+        // Filnavn - brukerønske: "Begynne med Sjekkliste? Sjekkliste-drone-dato? Dato skal være
+        // DD-MM-ÅÅÅÅ". Dronenavnet droppes helt fra filnavnet (i stedet for en "sjekklister"-
+        // fallback-tekst) når feltet er tomt, i stedet for et misvisende "Sjekkliste-sjekklister-...".
+        // Datoen deler formateringslogikk med selve utskriftens datostempel (se formatDateNorwegian) -
+        // samme DD.MM.ÅÅÅÅ, kun med bindestrek i stedet for punktum her (punktum er uvanlig/upraktisk i
+        // filnavn på tvers av OS-er, bindestrek matcher også "Sjekkliste-drone-dato"-mønsteret for øvrig).
+        const dronePart = slug(state.normal && state.normal.drone);
+        const datePart = formatDateNorwegian(new Date()).replace(/\./g, "-");
+        const filenameParts = ["Sjekkliste"].concat(dronePart ? [dronePart] : []).concat([datePart]);
+        downloadJson(filenameParts.join("-") + ".json", data);
     });
 
     // "Last opp JSON" - knappen åpner en skjult fil-input (ingen synlig, stygg standard-filvelger på
