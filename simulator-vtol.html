@@ -41,7 +41,7 @@
                 <span id="hudMode" class="sim-status-value" style="cursor:pointer;" title="Klikk for modusoversikt">QHOVER</span>
                 <div class="sim-dropdown-menu" id="modePopover" style="right:auto; left:0;"></div>
             </div>
-            <div class="sim-status-item" title="Løftemotorenes kontrollmyndighet - 100% i Q-moduser, trappes ned mot 0% i FBWA idet overgangsfarten nås, alltid 0% i MANUAL">
+            <div class="sim-status-item" title="Løftemotorenes kontrollmyndighet - 100% i Q-moduser, trappes ned mot 0% i FBWA/FBWB idet overgangsfarten nås, alltid 0% i MANUAL">
                 <span class="sim-status-label">MR-assist</span>
                 <span id="hudAssist" class="sim-status-value">100 %</span>
             </div>
@@ -65,8 +65,8 @@
                 <span class="sim-status-label">Høyde</span>
                 <span id="hudAltitude" class="sim-status-value">0.0 m</span>
             </div>
-            <div class="sim-status-item">
-                <span class="sim-status-label">Fart</span>
+            <div class="sim-status-item" title="Indicated Airspeed - hva et pitotrør montert forover på flyet faktisk ville målt, IKKE flyets sanne luftfart. Tar høyde for posisjonsfeil: ved AoA/sideslip ulik null er luftstrømmen ikke lenger på linje med røret, så avlesningen blir lavere enn sann fart (mest merkbart nær steiling)">
+                <span class="sim-status-label">IAS</span>
                 <span id="hudAirspeed" class="sim-status-value">0.0 m/s</span>
             </div>
             <div class="sim-status-item">
@@ -168,7 +168,7 @@
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <p class="sim-panel-hint" style="margin-top:0;">Navnene følger ArduPilot sine egne Q_*-parametre - se Hjelp for modusoversikten.</p>
-            <div class="sim-rate-row" title="Q_ASSIST_SPEED / AIRSPEED_MIN: luftfart flyet må nå i FBWA før løftemotor-assistansen begynner å trappes ned.">
+            <div class="sim-rate-row" title="Q_ASSIST_SPEED / AIRSPEED_MIN: luftfart flyet må nå i FBWA/FBWB før løftemotor-assistansen begynner å trappes ned.">
                 <label>Assist-fart</label>
                 <input type="range" id="assistSpeedInput" min="4" max="25" step="0.5">
                 <span class="sim-rate-value" id="assistSpeedValue">12 m/s</span>
@@ -318,18 +318,19 @@
                 <li><strong>W / S</strong><span>Høyderor / pinne fram-bak (pitch)</span></li>
                 <li><strong>A / D</strong><span>Skråror / pinne venstre-høyre (roll)</span></li>
                 <li><strong>Q / E</strong><span>Sideror / gir venstre-høyre (yaw)</span></li>
-                <li><strong>Shift / Ctrl</strong><span>Gass opp / ned - kollektiv i Q-moduser, trekkmotor i MANUAL/FBWA</span></li>
-                <li><strong>[ / ]</strong><span>Trim høyderor ned / opp (kun FBWA/MANUAL)</span></li>
+                <li><strong>Shift / Ctrl</strong><span>Gass opp / ned - kollektiv i Q-moduser, trekkmotor i MANUAL/FBWA (mål-luftfart i FBWB)</span></li>
+                <li><strong>[ / ]</strong><span>Trim høyderor ned / opp (kun FBWA/FBWB/MANUAL)</span></li>
                 <li><strong>1-4</strong><span>QSTABILIZE / QHOVER / QLOITER / QACRO (svevemodus)</span></li>
-                <li><strong>5 / 6</strong><span>MANUAL / FBWA (fastvinget marsjflyging)</span></li>
-                <li><strong>7</strong><span>QRTL - naviger automatisk hjem (til punktet motoren sist ble slått PÅ) og land. Flyr fastvinget hvis langt unna, går over til VTOL-modus nær hjem - se RTL/failsafe-panelet</span></li>
-                <li><strong>Bytt modus = transisjon</strong><span>Det finnes ingen egen transisjonsbryter - bytt til en Q-modus for umiddelbar svevemyndighet, bytt til MANUAL/FBWA for å fly videre som fastvinget</span></li>
+                <li><strong>5 / 6 / 7</strong><span>MANUAL / FBWA / FBWB (fastvinget marsjflyging)</span></li>
+                <li><strong>8</strong><span>QRTL - naviger automatisk hjem (til punktet motoren sist ble slått PÅ) og land. Flyr fastvinget hvis langt unna, går over til VTOL-modus nær hjem - se RTL/failsafe-panelet</span></li>
+                <li><strong>Bytt modus = transisjon</strong><span>Det finnes ingen egen transisjonsbryter - bytt til en Q-modus for umiddelbar svevemyndighet, bytt til MANUAL/FBWA/FBWB for å fly videre som fastvinget</span></li>
                 <li><strong>QSTABILIZE</strong><span>Selvnivellerende krengning/stigning, manuell (direkte) kollektiv gass</span></li>
                 <li><strong>QHOVER</strong><span>Som QSTABILIZE + Alt Hold (sentrert gasspak holder høyden)</span></li>
                 <li><strong>QLOITER</strong><span>Som QHOVER + posisjonsholding (slipp pinnen for å stoppe/holde) + weathervaning</span></li>
                 <li><strong>QACRO</strong><span>Rate-styrt svevemodus, ingen selvnivellering (som Acro)</span></li>
                 <li><strong>MANUAL</strong><span>Direkte rorstyring, løftemotorene er alltid AV - kun for trim-sjekk/taksing</span></li>
                 <li><strong>FBWA</strong><span>Selvnivellerende fastvinget marsjflyging - løftemotorene assisterer automatisk til assist-farten nås</span></li>
+                <li><strong>FBWB</strong><span>Som FBWA (samme rull/quad-assist), men elevator styrer ønsket klatre-/synkerate i stedet for en vinkel direkte, og gasspaken styrer ønsket luftfart i stedet for pådraget direkte - autopiloten holder selv høyden/farten</span></li>
                 <li><strong>K</strong><span>Motor av/på, samme som knappen øverst</span></li>
                 <li><strong>C</strong><span>Bytt kamera (Chase → FPV → VLOS)</span></li>
                 <li><strong>Høyreklikk + dra</strong><span>Se rundt flyet i Chase-kamera (påvirker ikke styringen)</span></li>
@@ -341,7 +342,7 @@
                 <li><strong>Fly-størrelse</strong><span>Liten/Middels/Stor i Fly og kamera-panelet - ulik fartsgrense for steiling og treghet</span></li>
                 <li><strong>Løftemotorer</strong><span>Fire faste (ikke vippbare) motorer gir vertikalt løft i Q-moduser - se VTOL/overgang-panelet for overgangsinnstillinger</span></li>
                 <li><strong>Steiling</strong><span>For lav fart/for bratt sving kan la én vinge steile først - flyet ruller/faller da mot den siden</span></li>
-                <li><strong>Rullebane</strong><span>Kan brukes til rulletakeoff/-landing i FBWA/MANUAL, men flyet kan også ta av rett opp i en Q-modus</span></li>
+                <li><strong>Rullebane</strong><span>Kan brukes til rulletakeoff/-landing i FBWA/FBWB/MANUAL, men flyet kan også ta av rett opp i en Q-modus</span></li>
                 <li><strong>Portløype</strong><span>Vest for rullebanen - en rekke porter å fly gjennom</span></li>
                 <li><strong>Hus og låver</strong><span>Øst for rullebanen - bygninger med vindusåpninger du kan fly gjennom</span></li>
                 <li><strong>Liten by</strong><span>Litt lenger øst - landemerker å navigere etter (ikke gjennomflybar)</span></li>

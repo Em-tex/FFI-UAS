@@ -123,6 +123,11 @@ const rtlState = {
 // integrasjonspunktet der. Ekte ArduPilot: "home position is initially established at the time the plane
 // acquires its GPS lock ... updated as long as the autopilot is disarmed" - denne simulatoren har ikke
 // noe eget arm/disarm-begrep utover motor PÅ/AV, så "motor PÅ" ER arming-øyeblikket her.
+// setEngine/toggleEngine gater selve KALLET på planeState.onGround (brukertilbakemelding: "nytt RTL punkt
+// settes når motorene restartes i lufta. det skal ikke være mulig. kun lov å sette nytt RTL punkt etter
+// at dronen har landet trygt") - en restart midt i lufta skal ALDRI overskrive et allerede etablert
+// hjem-punkt med det midlertidige luft-punktet. resetPlane derimot tvinger onGround=true FØR den kaller
+// hit (fullstendig simulator-reset til bakken), så den treffer alltid denne samme, ubetingede funksjonen.
 function captureHome() {
     rtlState.home.copy(planeState.position);
     rtlState.homeSet = true;
@@ -133,7 +138,16 @@ function captureHome() {
     rtlState.loiterSign = 0;
     if (homeMarkerMesh) {
         homeMarkerMesh.visible = true;
-        homeMarkerMesh.position.set(rtlState.home.x, 0.03, rtlState.home.z);
+        // Y=0.05 (IKKE 0.03) - BUG (rapportert av brukeren: "H på bakken som indikerer hjempunkt. blir
+        // ikke synlig på rullebanen. blir sikkert liggende under teksturen der") - rullebane-mesh'et (se
+        // buildRunway i simulator-vtol.js) ligger på Y=0.04, altså FYSISK OVER markøren her (0.03) i
+        // verdensrom - polygonOffset (se groundDecalProps) biaser kun selve DYBDEBUFFER-presisjonen ved
+        // rastrering, det endrer ikke hvilken av to FAKTISK ulike Y-høyder som er nærmest kameraet, så
+        // rullebanens ugjennomsiktige asfalt-teksturt tegnet uforanderlig OVER (skjulte) H-en når hjemmet
+        // ble satt på selve rullebanen. 0.05 matcher samme "trygt over rullebanen"-konvensjon andre hevede
+        // bakke-dekaler i simulator-vtol.js allerede bruker (se f.eks. buildPavedCircle/veidekk-kommentaren
+        // der: "0.02 flimret (z-fighting) mot bakkeplanet under").
+        homeMarkerMesh.position.set(rtlState.home.x, 0.05, rtlState.home.z);
     }
 }
 
@@ -168,7 +182,10 @@ function initRtlHomeMarker() {
     }));
     homeMarkerMesh = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), mat);
     homeMarkerMesh.rotation.x = -Math.PI / 2;
-    homeMarkerMesh.position.y = 0.03;
+    // 0.05 - se captureHome sin egen Y-kommentar for hvorfor (må ligge OVER rullebanens Y=0.04, ikke
+    // under den). Denne startverdien overskrives uansett av captureHome() ved første motor-PÅ, men satt
+    // riktig fra start for konsistens.
+    homeMarkerMesh.position.y = 0.05;
     homeMarkerMesh.visible = false; // skjult til første captureHome()
     scene.add(homeMarkerMesh);
 }
@@ -423,7 +440,26 @@ function updateRtlAutopilot(dt) {
             if (legLen > 1) {
                 const legDirX = legVec.x / legLen, legDirZ = legVec.z / legLen;
                 const alongLeg = clamp((pos.x - legStart.x) * legDirX + (pos.z - legStart.z) * legDirZ, 0, legLen);
-                const L1_LOOKAHEAD_M = Math.max(rtlParams.transitionRadiusM * 1.5, 60);
+                // BUG (rapportert av brukeren, med flightlogg: "roll noen ganger kan være ekstremt
+                // hakkete/høyfrekvent hakking" - loggen viste pinneR hoppe mellom -1.00 og +1.00 NESTEN
+                // HVER ENESTE TICK i flere sekunder, mens banken samtidig hang fast oppunder 45-50°) - en
+                // FAST L1_LOOKAHEAD_M (60, uavhengig av fart) er nøyaktig den samme typen ustabilitet som
+                // toppkommentaren i denne filen allerede advarer mot for RENT pursuit-mot-hjem ("låser seg
+                // i en STABIL SIRKEL når målets avstand er mindre enn flyets egen minste svingradius") -
+                // bare flyttet til SIKTEPUNKTET i stedet for selve hjem-punktet. Flyets EGEN minste
+                // svingradius (R=v²/(g·tanΦ)) vokser med KVADRATET av farten - ved cruisefart etter
+                // "motor boost runde 4" (pusherMaxThrust, se VTOL_CLASSES) på 25-29 m/s og fullt utslått
+                // MAX_BANK_ANGLE (50°), er R allerede 70-90+ meter - GODT over den faste 60m-lookaheaden.
+                // Idet flyet ikke lenger klarer å svinge trangt nok til å nå et siktepunkt bare 60m foran
+                // langs linja, går akkurat samme pursuit-instabilitet i gang: flyet begynner å SIRKLE rundt
+                // det (nå relativt sett "for nære") siktepunktet i stedet for å konvergere mot linja, og
+                // peilingen til et punkt man sirkler tett rundt endrer seg EKSTREMT raskt (i prinsippet mot
+                // uendelig vinkelhastighet helt inntil punktet) - nøyaktig den hakkingen loggen viser.
+                // Fikset ved å la lookahead-avstanden SKALERE MED FAKTISK LUFTFART (samme prinsipp som ekte
+                // L1-styring for øvrig alltid bruker - L1-avstand er normalt et par sekunders flygetid, ikke
+                // et fast metertall), garantert godt over svingradiusen uansett hvor fort flyet flyr.
+                const L1_LOOKAHEAD_TIME_S = 4;
+                const L1_LOOKAHEAD_M = Math.max(rtlParams.transitionRadiusM * 1.5, 60, lastAirspeed * L1_LOOKAHEAD_TIME_S);
                 const aimAlong = alongLeg + L1_LOOKAHEAD_M;
                 aimX = legStart.x + legDirX * aimAlong;
                 aimZ = legStart.z + legDirZ * aimAlong;
@@ -435,11 +471,31 @@ function updateRtlAutopilot(dt) {
 
             // Retningsstyring: samme bodyForwardFlat/bodyRightFlat-projeksjon som VTOL-retur-grenen under
             // bruker - unngår risiko for å style svingen FEIL vei (ArduPilot: "a right roll at low speed
-            // will cause the aircraft to move to the right..."). Når siktepunktet ligger BAK flyet
-            // (fwdDot<0) tving et fullt rorutslag i den retningen selv en liten avvik antyder.
+            // will cause the aircraft to move to the right...").
             const fwdDot = bodyForwardFlat.x * aimDirX + bodyForwardFlat.z * aimDirZ;
             const rightDot = bodyRightFlat.x * aimDirX + bodyRightFlat.z * aimDirZ;
-            stick.roll = fwdDot >= 0 ? clamp(rightDot * 2, -1, 1) : (rightDot >= 0 ? 1 : -1);
+            // BUG (rapportert av brukeren: "rollen er veldig hakkete noen ganger. og ofte overskyter den
+            // svingen og må rolle tilbake") - den GAMLE loven ("fwdDot>=0 ? clamp(rightDot*2,-1,1) :
+            // (rightDot>=0?1:-1)") brukte rightDot (~sin(peilingsavvik)) DIREKTE som et proporsjonalt ledd
+            // med forsterkning 2 - det METTET dermed til FULLT rorutslag ved kun ~30° peilingsavvik
+            // (sin(30°)*2=1), og forble på FULL kommandert bank (opptil MAX_BANK_ANGLE=50° i cruise, se
+            // stepPhysics) helt til svingen var nesten fullført. Idet flyet endelig nærmet seg riktig kurs
+            // falt den kommanderte banken BRÅTT fra "full" til "liten" over et smalt vindu, mens flyets
+            // FAKTISKE bank (med egen treghet/moment fra å ha stått i maks bank) ikke rakk å følge like
+            // raskt - resultatet var et systematisk overskudd i svingen som måtte rettes opp igjen i etterkant,
+            // akkurat det brukeren beskriver. Byttet til en EKTE peilingsVINKEL (atan2, samme prinsipp som
+            // computeWeathervaneYawRateRad - robust også langt forbi ±90°, IKKE en rå sinus-tilnærming som
+            // mister presisjon/metter kunstig tidlig) direkte fra de allerede riktig signerte rightDot/
+            // fwdDot-verdiene, atan2(rightDot,fwdDot) - IKKE weathervane sin egen cross/dot-formel, som har
+            // en annen, ikke-kompatibel fortegnskonvensjon kalibrert for GIRRATE, ikke rull. Selve
+            // metnings-VINKELEN er dessuten hevet fra de effektive ~30° over til 75° - kommandert bank
+            // avtar dermed GLATT og forutsigbart gjennom hele siste del av svingen i stedet for å henge i
+            // taket til siste øyeblikk, som er selve roten til overskytingen. Eliminerer også det gamle,
+            // separate "siktepunkt bak flyet"-spesialtilfellet helt - atan2 håndterer allerede HELE
+            // ±180°-området glatt og kontinuerlig, uten noen egen gren.
+            const headingErrorRad = Math.atan2(rightDot, fwdDot);
+            const RTL_ROLL_FULL_DEFLECTION_RAD = THREE.MathUtils.degToRad(75);
+            stick.roll = clamp(headingErrorRad / RTL_ROLL_FULL_DEFLECTION_RAD, -1, 1);
             // Høyde: KUN-KLATRE, ALDRI dykk, mens langt unna (se BUG-historikk: en toveis regulator her
             // bygde opp farlig synkefart FØR selve overgangen til loiter/vtol_return). Nivåflukt hvis for
             // høyt (brukerens eget forslag), ekte klatring hvis for lavt (siden belowRtlAlt-tvangen til
