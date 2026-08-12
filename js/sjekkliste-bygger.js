@@ -1092,6 +1092,19 @@ function formatDateNorwegian(date) {
     return dd + "." + mm + "." + date.getFullYear();
 }
 
+// Filnavnbasis (UTEN filendelse) delt av BÅDE JSON- og PDF-nedlasting - brukerønske: "PDF som lagres.
+// samme filnavn som json. bare med pdf etternavnet selvfølgelig". Egen, delt funksjon i stedet for å
+// bygge samme mønster to steder (nedtrekksmeny-lytteren for JSON og downloadPdf under, se
+// DOMContentLoaded) - unngår at de to skulle kunne drive fra hverandre over tid.
+// "Sjekkliste-<drone>-DD-MM-ÅÅÅÅ" (dronenavnet droppes helt når feltet er tomt, ikke en misvisende
+// fallback-tekst) - se downloadJsonBtn-lytteren for opprinnelig begrunnelse av selve mønsteret.
+function buildExportFilenameBase(state) {
+    const slug = function (s) { return (s || "").trim().replace(/\s+/g, "_"); };
+    const dronePart = slug(state.normal && state.normal.drone);
+    const datePart = formatDateNorwegian(new Date()).replace(/\./g, "-");
+    return ["Sjekkliste"].concat(dronePart ? [dronePart] : []).concat([datePart]).join("-");
+}
+
 // Ett datostempel nede i høyre hjørne av selve arket (.print-page har position:relative) - vises kun
 // én gang per side, ikke én gang per halvdel på den delte contingency/emergency-siden.
 function buildPageDateStamp() {
@@ -1543,9 +1556,18 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+    // Nettlesernes "Skriv ut / Lagre som PDF"-dialog foreslår et filnavn basert på document.title, IKKE
+    // noe denne appen kan sette direkte selv (window.print() har ingen egen filnavn-parameter) -
+    // brukerønske: "PDF som lagres. samme filnavn som json. bare med pdf etternavnet selvfølgelig".
+    // Løsningen er derfor å MIDLERTIDIG endre selve sidetittelen til samme mønster som JSON-filnavnet
+    // (se buildExportFilenameBase) rett før window.print() kalles, og sette den tilbake til den
+    // opprinnelige ("Sjekkliste-bygger - FFI UAS", fra <title> i HTML-en) etterpå - fanget ÉN gang her
+    // (ikke lest på nytt hver gang) siden document.title uansett aldri endres av noe ANNET i appen.
+    const originalDocumentTitle = document.title;
     function downloadPdf() {
         if (!requireNormalFieldsBeforeExport()) return;
         buildAllPrintPages();
+        document.title = buildExportFilenameBase(getState());
         document.body.classList.add("printing-checklist");
         window.print();
     }
@@ -1555,23 +1577,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
     window.addEventListener("afterprint", function () {
         document.body.classList.remove("printing-checklist");
+        // Tilbakestiller sidetittelen (se downloadPdf over) - "afterprint" fyres uansett om brukeren
+        // faktisk lagret en PDF eller bare avbrøt dialogen, så fanebladet viser aldri det midlertidige
+        // filnavnet lenger enn selve utskriftsdialogen er åpen.
+        document.title = originalDocumentTitle;
     });
 
     document.getElementById("downloadJsonBtn").addEventListener("click", function () {
         if (!requireNormalFieldsBeforeExport()) return;
         const state = getState();
         const data = Object.assign({ skjema: "Sjekkliste-generator" }, state);
-        const slug = function (s) { return (s || "").trim().replace(/\s+/g, "_"); };
-        // Filnavn - brukerønske: "Begynne med Sjekkliste? Sjekkliste-drone-dato? Dato skal være
-        // DD-MM-ÅÅÅÅ". Dronenavnet droppes helt fra filnavnet (i stedet for en "sjekklister"-
-        // fallback-tekst) når feltet er tomt, i stedet for et misvisende "Sjekkliste-sjekklister-...".
-        // Datoen deler formateringslogikk med selve utskriftens datostempel (se formatDateNorwegian) -
-        // samme DD.MM.ÅÅÅÅ, kun med bindestrek i stedet for punktum her (punktum er uvanlig/upraktisk i
-        // filnavn på tvers av OS-er, bindestrek matcher også "Sjekkliste-drone-dato"-mønsteret for øvrig).
-        const dronePart = slug(state.normal && state.normal.drone);
-        const datePart = formatDateNorwegian(new Date()).replace(/\./g, "-");
-        const filenameParts = ["Sjekkliste"].concat(dronePart ? [dronePart] : []).concat([datePart]);
-        downloadJson(filenameParts.join("-") + ".json", data);
+        downloadJson(buildExportFilenameBase(state) + ".json", data);
     });
 
     // "Last opp JSON" - knappen åpner en skjult fil-input (ingen synlig, stygg standard-filvelger på

@@ -1670,9 +1670,9 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     color: white;
     border-radius: 4px;
     padding: 9px 14px;
-    /* Økt fra 10px - brukerønske ("litt mer luft under overskriften 'sjekkliste' ned til der boksene
-       begynner") - boksene under startet nesten rett under selve banneret. */
-    margin-bottom: 20px;
+    /* Økt fra 10px til 20px (brukerønske: "litt mer luft under overskriften 'sjekkliste' ned til der
+       boksene begynner"), deretter til 32px (samme ønske gjentatt - fortsatt for tett). */
+    margin-bottom: 32px;
 }
 [data-theme="contingency"] .print-header { background: #d4a017; }
 [data-theme="emergency"] .print-header,
