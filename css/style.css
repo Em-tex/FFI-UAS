@@ -1212,12 +1212,15 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 #tabPanel-erp .builder-item-table textarea:focus,
 #tabPanel-erp .limits-table input:focus { border-color: #a01414; }
 
-/* --- Sjekkliste-generator: MÅK / spesifikk / egendefinert mal-valg (kun normal-fanen) ---
+/* --- Sjekkliste-generator: MÅK / spesifikk / egendefinert mal-valg (nedtrekksmenyen finnes kun på
+   normal-fanen, men selv malvalget gjelder nå BÅDE normal- og contingency-fanen - se "Tap av C2 link" i
+   DEFAULTS.contingency, js/sjekkliste-bygger.js) ---
    Hvilke sjekkpunkter som hører til MÅK vs. spesifikk er satt i standardmalen (item.variant i
    DEFAULTS, js/sjekkliste-bygger.js) - ikke redigerbart per rad. Rader merket data-variant="mak"/
    "spesifikk" skjules når det motsatte malvalget er aktivt; "egendefinert" treffer ingen av filtrene og
-   viser dermed alt. Valget lever som et data-template-attributt på fane-panelet, satt av nedtrekksmenyen
-   (og automatisk når brukeren redigerer innholdet, se markNormalCustom i JS). */
+   viser dermed alt. Valget lever som et data-template-attributt på HVERT relevante fane-panel, satt
+   samtidig på begge av setNormalTemplate (og automatisk når brukeren redigerer normal-fanens innhold, se
+   markNormalCustom i JS). */
 .tab-panel[data-template="mak"] tr[data-variant="spesifikk"] { display: none; }
 .tab-panel[data-template="spesifikk"] tr[data-variant="mak"] { display: none; }
 
@@ -1354,11 +1357,54 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .builder-list input:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
 
 /* --- Sjekkliste-generator: operasjonsbegrensninger --- */
-.limits-table { width: 100%; border-collapse: collapse; }
-.limits-table td { padding: 6px 20px; border-bottom: 1px solid #f0f0f0; }
+.limits-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* Padding satt ned fra 20px til 12px sidevis (BUG-runde 2, se under - "kolonne to ble bitteliten") - 20px
+   på BEGGE sider av BEGGE kolonner spiste unødvendig mye av den i utgangspunktet trange bredden mellom to
+   inputbokser; 12px er fortsatt god pusterom uten å sluke en så stor andel av selve kolonnen. */
+.limits-table td { padding: 6px 12px; border-bottom: 1px solid #f0f0f0; }
 .limits-table tr:last-child td { border-bottom: none; }
 .limits-table .col-remove { width: 40px; text-align: center; padding-right: 20px; }
-.limits-table input[type="text"] {
+/* BUG (rapportert av brukeren TO runder, med skjermbilder: "kolonnene mellom input feltene er alt for
+   tett på hverandre. mer luft der" / "fortsatt veldig tett her? mellom de to input kolonnene") -
+   border-collapse:collapse (se .limits-table over) betyr at cellenes egen padding er ENESTE kilde til
+   luft mellom de to boksene (ingen "gap"-egenskap finnes for table-celler). Runde 1 la ekstra
+   høyre-padding på PARAMETER-cellen (limit-key) - men den cellen er samtidig den TRANGESTE (kun 18ch, se
+   BUG-historikken lenger ned - bevisst smal for å vinne bredde til verdikolonnen), så luften ble hentet
+   fra akkurat det budsjettet som allerede var stramt, og forble knapp. Flyttet i stedet til
+   VERDI-cellens (limit-value) VENSTRE-padding - den kolonnen er "auto" og har mer å gå på (se
+   BUG-historikken), så luften kan hentes derfra uten å presse parameter-kolonnen på nytt. */
+.limits-table td.limit-value { padding-left: 28px; }
+/* BUG-historikk (rapportert av brukeren, tre runder på rad - skjermbilder bekreftet begge de forrige
+   var feil):
+   Runde 1: input-boksene ikke pent på linje, "Oppvisning for publikum" (lengste standard-parameter, se
+   DEFAULTS.normal.limits) havnet utenfor boksen sin. Uten eksplisitte kolonnebredder fordelte
+   table-layout:auto bredden tilnærmet LIKT mellom parameter-navn og verdi (begge cellene inneholder bare
+   et umerket input width:100%, ingen naturlig breddeforskjell å styre etter) - løst med table-layout:fixed
+   (over) + en fast 58%-bredde på parameter-kolonnen.
+   Runde 2: "nå ble kolonne to bitteliten" - 58% viste seg for grådig i den faktiske (smalere enn antatt)
+   containeren; prøvde i stedet en ch-basert bredde (26ch, ment å treffe eksakt det parameter-kolonnen
+   trengte uansett containerbredde).
+   Runde 3 (skjermbilde): FORTSATT for smal kolonne to, OG selve 26ch-gjetningen viste seg smalere enn
+   antatt i den faktiske containeren også. To runder på rad med feilgjettet fast bredde er et tegn på at
+   PROBLEMET er strukturelt, ikke et tall å justere en gang til - parameter-feltet var et enkeltlinjes
+   <input> som TVANG kolonnen til å være minst like bred som den lengste teksten. Løsning: parameter-feltet
+   (keyInput, se createLimitRow i js/sjekkliste-bygger.js) er nå en auto-voksende textarea (rows=1, samme
+   teknikk som item-text/item-target) som får lov til å BREKKE TIL TO LINJER for en uvanlig lang tekst i
+   stedet for å kreve en bred kolonne - kolonnebredden kan dermed settes til en langt mer forsiktig,
+   moderat andel (18ch, tydelig mindre enn de to foregående gjetningene) uten risiko for at innholdet
+   forsvinner - det bare blir to linjer i sjeldne tilfeller, ikke klipt eller stjålet fra nabokolonnen. */
+/* display:flex (ikke lenger standard-cellevisning) - nødvendig NÅ som parameter-feltet er en <textarea>
+   (display:block, se regelen lenger ned) i stedet for et <input> (naturlig inline): et block-element ville
+   ellers tvunget seg ned på en EGEN linje UNDER nødnummer-ikonet i stedet for å stå ved siden av det.
+   Flex løser dette generelt (stiller barn på rad uansett deres egen display-type), se
+   .limits-table td.limit-key textarea under for hvordan selve textareaen tar resten av plassen.
+   align-items:flex-start (ikke center) - ikonet skal stå øverst ved siden av FØRSTE linje hvis
+   parameterteksten faktisk brekker til to linjer, ikke midtstilt i hele feltets høyde. */
+.limits-table td.limit-key { width: 18ch; display: flex; align-items: flex-start; }
+.limits-table td.limit-key textarea { flex: 1 1 auto; min-width: 0; width: auto; }
+.limits-table td.limit-value { width: auto; }
+.limits-table input[type="text"], .limits-table textarea {
+    display: block;
     width: 100%;
     padding: 8px 10px;
     border: 1px solid #ccc;
@@ -1367,8 +1413,40 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     font-size: 0.95rem;
     box-sizing: border-box;
 }
-.limits-table td.limit-key input { font-weight: 600; }
-.limits-table input:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
+/* Textarea-spesifikt (gjelder kun parameter-feltet, se over) - samme prinsipp som
+   .builder-item-table textarea: ingen synlig resize-håndtak/scrollbar, en fast linjehøyde å vokse fra
+   (rows=1 i utgangspunktet, se autoGrowTextarea), og display:block i stedet for textareaens
+   default inline-lignende visning (unngår uforutsigbar baseline-mellomrom under feltet i cellen). */
+.limits-table textarea {
+    resize: none;
+    overflow: hidden;
+    min-height: 37px;
+    line-height: 1.3;
+}
+/* Klassebasert (ikke lenger en "input"-tag-selektor) - matcher parameter-feltet uansett om det er et
+   <input> (verdi-feltet, uendret) eller en <textarea> (parameter-feltet, se over) - en ren tag-selektor
+   som "td.limit-key input" ville sluttet å treffe idet feltet ble en textarea. */
+.limits-table .limit-key-input { font-weight: 600; }
+.limits-table input:focus, .limits-table textarea:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
+
+/* Nødnummer-fremheving på ERP sin Kontaktliste (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS i
+   js/sjekkliste-bygger.js) - brukerønske: "noe indikasjon på at de er nødnumre, f.eks med farge eller
+   bold. Men ikke for skrikete... profesjonell sjekkliste". Bevisst tilbakeholdent: KUN en svak
+   bakgrunnstone + en smal venstrekant i samme røde tone appen allerede bruker til hele ERP-fanen (ikke en
+   ny, vilkårlig farge), pluss et lite ikon - ingen skarp rød tekst/full rød bakgrunn som ville sett ut som
+   en feilmelding. .limit-key-icon er tom (bredde 0, ingen visuell plass) helt til updateEmergencyEmphasis
+   faktisk gir den et fa-solid-ikonnavn (se createLimitRow) - width:14px der gir plass til selve ikonet
+   uten at kolonnen hopper i bredde idet det dukker opp/forsvinner mens brukeren skriver.
+   #tabPanel-erp-prefiks er unødvendig (limit-row-emergency finnes kun på ERP sin kontaktliste-tabell i
+   praksis, se isErpContacts-vakten), men holder regelen tydelig knyttet til riktig fane likevel. */
+/* border/background på selve <tr> er upålitelig på tvers av nettlesere ved border-collapse (spesielt
+   venstre-/høyrekant) - satt på cellene direkte i stedet, samme visuelle effekt uten den fallgruven. */
+#tabPanel-erp tr.limit-row-emergency td { background: rgba(160, 20, 20, 0.05); }
+#tabPanel-erp tr.limit-row-emergency td.limit-key { border-left: 3px solid #a01414; }
+/* Klassebasert (.limit-key-input, ikke "td.limit-key input") - samme begrunnelse som lenger opp:
+   parameter-feltet er nå en <textarea>, en tag-selektor på "input" ville aldri truffet den. */
+#tabPanel-erp tr.limit-row-emergency .limit-key-input { color: #a01414; font-weight: 700; background: transparent; }
+.limit-key-icon { display: inline-block; width: 14px; text-align: center; color: #a01414; margin-right: 2px; }
 
 /* --- Sjekkliste-generator: overskrifter midtstilt i sin boks-header (ikoner droppet, se HTML/JS -
    uten et fast-bredt ikon på venstre side kan h2/tittelfeltet fylle hele bredden og sentreres ordentlig,
@@ -1434,6 +1512,17 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     font-weight: 600;
     color: #555;
     white-space: nowrap;
+    /* BUG (rapportert av brukeren, ERP-linjer med underpunkter - f.eks. "3." på "Ulykke"/"2." på
+       "Fly-away", se singleColumn/DEFAULTS.erp) - .builder-item-table td over setter vertical-align:middle
+       for alle celler, så et flerlinjes item-target (autoGrowTextarea) gjorde raden høyere og radnummeret
+       havnet midt i raden i stedet for ved siden av FØRSTE linje, slik en vanlig nummerert liste ellers
+       gjør. Uten effekt på enlinjes rader (der er det uansett ingen ekstra høyde å sentrere i/ut fra). */
+    vertical-align: top;
+    /* 17px ~= naboraden (item-target) sin egen td-padding-top (8px) + textareaens border (1px) + dens
+       EGEN padding-top (8px), se .builder-item-table textarea under - gir tallet omtrent samme starthøyde
+       som selve FØRSTE tekstlinje i textareaen, i stedet for kun toppen av selve td-cellen (som ville stått
+       synlig høyere enn teksten ved siden av). */
+    padding-top: 17px;
 }
 .builder-item-table .col-number::before { content: counter(item-number) "."; }
 /* Sjekkpunkt/Status-tiltak er nå auto-voksende tekstfelt (textarea, ikke input) - lang tekst (typisk
@@ -1534,8 +1623,10 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    (blå/gul/rød) - umulig å ta feil av på avstand i felt. Banneren viser nå kun tittelen (ett navn skulle
    ikke stå både som tittel og som eget "Contingency"/"Emergency"-merke ved siden av) - datoen er flyttet
    til ett hjørnestempel nederst på selve arket (.print-page-date), ikke gjentatt per side/halvdel. Temaet
-   ([data-theme]) settes enten på selve .print-page (Normal/ERP - egen side hver) eller på en
-   .print-combined-half (Contingency/Emergency som deler side) - selektorene matcher begge. */
+   ([data-theme]) settes enten på selve .print-page (Normal - egen side) eller på en .print-combined-half
+   (Contingency/Emergency som deler side) eller ERP sin egen wrapper (buildErpBody, js/sjekkliste-
+   bygger.js - enten på egen side eller stablet under en delt side, se buildCombinedTriplePage) -
+   selektorene matcher uansett hvor dypt/grunt attributtet sitter i treet. */
 .print-header {
     display: flex;
     justify-content: center;
@@ -1625,6 +1716,16 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-combined-half { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .print-combined-half:first-child { border-right: 1px dashed #ccc; padding-right: 6mm; }
 .print-combined-half .print-header h1 { font-size: 12pt; }
+
+/* Brukerønske ("Hvis det er plass kan ERP være på samme side som contingency og emergency. ta nedre
+   halvdel av siden f.eks.") - ERP-innholdet (buildErpBody) stablet UNDER contingency/emergency-raden på
+   samme side (se buildCombinedTriplePage), i stedet for alltid egen side. Stiplet skillelinje ØVER (samme
+   visuelle språk som den loddrette stiplede linjen mellom contingency/emergency over) markerer overgangen
+   tydelig, i stedet for at ERP-innholdet bare henger rett under uten noen synlig grense. Samme mindre
+   tittelstørrelse som contingency/emergency sine halvdeler (12pt, se regelen over) - ville sett
+   påfallende stort ut ved siden av dem ellers. */
+.print-combined-bottom { margin-top: 6mm; padding-top: 5mm; border-top: 1px dashed #ccc; }
+.print-combined-bottom .print-header h1 { font-size: 12pt; }
 .print-columns-half {
     flex: 1;
     min-width: 0;
@@ -1636,8 +1737,21 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-box {
     break-inside: avoid;
     page-break-inside: avoid;
-    border: 1px dotted #999;
     margin: 0 0 6mm;
+}
+/* BUG (rapportert av brukeren: "litt rart at det går rundt hele tabellen. kanskje raden med overskrift
+   ikke har striplet rundt seg?") - den stiplede kanten satt på HELE .print-box (header + innhold under ett)
+   ga en dobbel kant akkurat rundt selve overskriftsraden: overskriften har allerede sin egen heldekkende,
+   fargede kant (se .print-box-header under), og den stiplede kanten fortsatte likevel rundt den også, som
+   en ramme utenpå en ramme. Flyttet i stedet til KUN selve innholdet under overskriften (tabellen/den
+   enkeltstående handlingsteksten/"Ingen sjekkpunkter"-meldingen - alltid nøyaktig étt element, se
+   buildSectionBox/buildLimitsBox/buildEquipmentBox) - :not(.print-box-header) treffer akkurat dette
+   elementet uansett hvilket av de tre det er, uten en egen ny CSS-klasse på hver av dem. Ingen topp-kant
+   (border-top: none) - overskriftens EGEN kant avslutter toppen pent i seg selv, en topp-kant her ville
+   bare gitt akkurat samme doble linje-problem på nytt, kun én kant lenger ned. */
+.print-box > *:not(.print-box-header) {
+    border: 1px dotted #999;
+    border-top: none;
 }
 .print-box-header {
     background: var(--ffi-blue);
@@ -1670,8 +1784,31 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-rows td { padding: 2px 8px; font-size: 8.5pt; vertical-align: middle; line-height: 1.4; }
 .print-rows td.print-check { width: 12px; padding-right: 2px; }
 .print-rows td.print-number { width: 14px; text-align: right; padding-right: 3px; font-weight: 700; white-space: nowrap; }
+/* Se print-number-top-kommentaren ved buildSectionBox i js/sjekkliste-bygger.js - kun singleColumn-rader
+   (ERP sine nummererte prosedyretrinn) toppjusteres, resten av utskriften beholder den bevisste
+   midtjusteringen (se kommentaren ved .print-rows td over). */
+.print-rows td.print-number-top { vertical-align: top; padding-top: 3px; }
 .print-rows td.print-label.print-key { font-weight: 700; }
+/* Se print-label-situation-kommentaren ved buildSectionBox i js/sjekkliste-bygger.js - situasjon/
+   sjekkpunkt-siden av en to-kolonners rad er alltid en kort, fast kategoribetegnelse og skal ALDRI brekke
+   til flere linjer, uansett hvor bred verditeksten på en ANNEN rad i samme tabell måtte være (ren
+   table-layout:auto fordeler kolonnebredde per HELE tabellen, ikke rad for rad, se der). Kun denne
+   spesifikke kombinasjonen - generisk .print-label (uten -situation) brukes også av f.eks.
+   utstyrslisten, der lange varenavn fortsatt skal få brekke normalt. */
+.print-rows td.print-label-situation { white-space: nowrap; }
+/* Nødnummer-fremheving i selve utskriften (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS,
+   js/sjekkliste-bygger.js) - print-key gir allerede fet skrift til ALLE kontakter/begrensninger (regelen
+   over), så her legges kun fargen til (samme røde ERP-temafarge som resten av fanen, ikke en ny/vilkårlig
+   farge) - bevisst tilbakeholdent, se kommentaren ved .limit-row-emergency i samme fil for begrunnelsen. */
+.print-rows td.print-key-emergency { color: #a01414; }
+.print-rows td.print-key-emergency i { margin-right: 3px; width: 11px; text-align: center; }
 .print-rows td.print-value { text-align: right; color: #333; padding-left: 6px; }
+/* singleColumn-deler (se buildSectionBox/createItemRow, js/sjekkliste-bygger.js - f.eks. "Ulykke"/
+   "Fly-away" på ERP-fanen) - ingen situasjon-kolonne ved siden av, så selve tiltaket skal stå
+   VENSTREjustert (som normal løpende tekst), ikke høyrejustert som en vanlig "verdi" ved siden av en
+   label. white-space: pre-line lar manuelle linjeskift (\n) i teksten (understreker under et trinn, se
+   DEFAULTS.erp) faktisk vises som egne linjer i stedet for å bli slått sammen til én lang linje. */
+.print-rows td.print-value.print-value-wide { text-align: left; padding-left: 3px; white-space: pre-line; }
 .print-checkbox-box {
     display: inline-block;
     width: 8px;

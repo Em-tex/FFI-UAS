@@ -157,6 +157,28 @@ const GROUND_EFFECT_HEIGHT_FACTOR = 2; // høyere tall = bakkeeffekten forsvinne
 // ikke denne følelsen like tydelig.
 const GROUND_EFFECT_LIFT_BOOST_MAX = 0.08;
 const PASSIVE_ANGULAR_DAMPING = 0.995;
+// Engangs energitap i selve krasjøyeblikket - se triggerCrash()-kommentaren for hele bakgrunnen
+// (brukeren: "vingene blir som et hjul. ruller og ruller... knekke av vingen som tar hardt nedi og
+// bremse flyet"). Andelen av fart/vinkelfart som BEHOLDES rett etter selve sammenstøtet.
+// JUSTERT NED (var 0.15 = 85% borte MOMENTANT) - brukeren rapporterte at flyet "stopper opp veldig bratt
+// når det krasjer i høy hastighet med vingen. virker ikke realistisk" - et ekte, hardt sammenstøt taper
+// ganske mye bevegelsesenergi momentant til selve strukturbristen (derfor fortsatt et reelt, øyeblikkelig
+// tap her, ikke 0), men IKKE 85% av det i ett eneste fysikk-tick - resten av oppbremsingen skal skje
+// GRADVIS, over en reell utrullings-/sklidistanse, akkurat som en ekte krasjlanding. Selve den fortsatte
+// oppbremsingen kommer nå fra CRASH_FRICTION_MULTIPLIER (se konstanten/bruken i resolveGroundContact) i
+// stedet for et nytt, kunstig engangskutt - fysisk begrunnet (et skadet, gnagende/gravende skrog har MYE
+// høyere friksjon enn et intakt understell), kontinuerlig over tid/distanse i stedet for øyeblikkelig, og
+// praktisk talt gratis ytelsesmessig (samme per-punkt-friksjonsberegning som allerede kjører hver tick,
+// kun én ekstra multiplikasjon - ingen ny simulering).
+const CRASH_ENERGY_LOSS_FRAC = 0.6;
+// Se CRASH_ENERGY_LOSS_FRAC-kommentaren over - selve den KONTINUERLIGE, realistiske utrullings-
+// oppbremsingen etter selve sammenstøtet. Et skadet skrog som sklir/tumler (bøyd metall, avrevne
+// deler, ingen lenger glatte/runde landingsben) graver seg ned i underlaget og har derfor MYE høyere
+// effektiv friksjon enn et intakt, uskadd fly - modellert som en rein multiplikator på den allerede
+// eksisterende per-punkt Coulomb-friksjonen (se bruken i resolveGroundContact), IKKE en egen,
+// separat mekanisme. 4x er en grov, ikke live-testet tilnærming - juster om utrullingen fortsatt føles
+// for lang/kort.
+const CRASH_FRICTION_MULTIPLIER = 4;
 
 const MAX_BANK_ANGLE = 50;      // grader, FBWA (fastvinget marsjfart): pinne-utslag -> ønsket krengevinkel
 // Økt videre (10 -> 12 -> 15) - brukeren rapporterte at tailstrike-geometrien (halelengden), ikke
@@ -369,6 +391,40 @@ const CRASH_BANK_DEG = 45;      // krengevinkel ved berøring som teller som har
 // berøring (brukerens skjermbilde: nesa ~45° ned i bakken) telle som en helt vanlig, ukrasjet landing bare
 // fordi selve SYNKEFARTEN var lav, akkurat like farlig/urealistisk som en hard skjev krengning ville vært.
 const CRASH_PITCH_DEG = 45;
+// Vingetupp-krasj (rapportert av brukeren, med skjermbilde: "det er mulig å fly full gass i FBWA
+// skrapende langs bakken... med vinge og fot nedi bakken. det skulle i virkeligheten ha ført til kraftig
+// friksjon, blitt kastet rundt og krasjet") - CRASH_BANK_DEG alene fanger IKKE dette scenariet: hvor
+// BRATT krengevinkel som faktisk får en vingetupp til å treffe bakken avhenger av GEOMETRI (vingespenn
+// og bakkeklaring), ikke bare attityde - et fly som allerede flyr lavt kan dra en vingetupp langs bakken
+// ved en krengevinkel langt under 45°, og dermed aldri krysse selve bank-terskelen i det hele tatt, mens
+// det fortsatt flyr videre "normalt". En EKTE vingetupp i bakken ved reell flygefart er derimot praktisk
+// talt ALLTID katastrofalt i virkeligheten (voldsom, asymmetrisk friksjon kaster flyet momentant rundt) -
+// sjekkes derfor DIREKTE i resolveGroundContact ut fra selve KONTAKTEN (nok penetrasjon PÅ EN VINGETUPP,
+// samtidig som flyet fortsatt har reell fart), uavhengig av hvilken krengevinkel som tilfeldigvis gjaldt
+// akkurat da. PEN-terskelen er satt godt over den mikroskopiske likevekts-gjeninntrengningen en normal,
+// flat landing gir (se frictionNormalForceMag-kommentaren: typisk brøkdeler av en millimeter) - kun en
+// vingetupp som faktisk graver seg tydelig ned skal telle.
+const WING_STRIKE_CRASH_PEN_M = 0.05;
+const WING_STRIKE_CRASH_SPEED_MS = 3;
+// Terskel for "sett seg helt til ro"-smellen i den krasjede grenen av stepPhysics - se BUG-kommentaren
+// der ("sklir sakte unaturlig etter krasj... burde ha stoppet opp raskere").
+const CRASH_SETTLE_SPEED_MS = 0.3;
+// Robust, direkte eksponentiell drag på CG-fart OG vinkelfart mens et krasjet fly er i bakkekontakt - se
+// BUG-kommentarene ved bruken i stepPhysics ("sklir med vingen nedi bakken. stopper aldri å skli" og
+// oppfølgingen "krasjer med nesa først. så ruller flyet unaturlig mye fremover også").
+// JUSTERT NED (var 3/3, under et kvart sekunds halveringstid) - brukeren rapporterte tilbake at DET i
+// stedet var for BRÅTT ("må jo ha en mellomting. nå bare stopper flyet opp med en gang. og blir stående i
+// en unaturlig stilling") - en for rask, ubetinget vinkelfart-drag kvelte den EKTE, fysiske
+// veltemomentet (fra nesetupp-/vingetupp-/bein-fjærkraften, se resolveGroundContact) FØR det noensinne
+// rakk å fullføre en naturlig velting ned mot en flat, stabil hvilestilling - flyet frøs i stedet fast
+// midt i selve velte-bevegelsen. Lavere rate her gir en lengre, mer synlig (men fortsatt garantert
+// begrenset) utrullings-/veltefase - noen sekunder, ikke under ett - som gir tyngdekraften/
+// kontaktmomentet nok tid til faktisk å fullføre en troverdig velting, samtidig som flyet fortsatt
+// garantert stanser innen rimelig tid i stedet for å rulle for alltid (det opprinnelige problemet).
+// Vinkelfart-raten er satt LAVERE enn selve fart-raten spesifikt for å prioritere at VELTINGEN får tid
+// til å fullføres.
+const CRASH_DRAG_RATE_PER_SEC = 0.8;
+const CRASH_GROUND_ANGULAR_DRAG_PER_SEC = 0.5;
 
 const FIXED_DT = 1 / 120;       // fysikk-tidssteg, samme substep-mønster (akkumulator) som quad-simulatoren
 // Samme verdi som Sim.rampStick sin egen interne default (simulator-common.js) - en referanse i stedet
@@ -583,6 +639,14 @@ const planeState = {
     // begrunnelsen (posisjonsfeil fra pitotrørets egen, forover-pekende monteringsakse). KUN til HUD, se
     // samme "siste beregnede verdi"-mønster som resten av denne gruppen.
     lastIndicatedAirspeed: 0,
+    // Hvilken vingetupp som "brakk" ved selve krasj-øyeblikket (-1 venstre, 0 ingen/ikke krasjet, 1 høyre)
+    // - se triggerCrash() og den visuelle bruken i updatePlaneVisual (brukertilbakemelding: "vingene blir
+    // som et hjul. ruller og ruller. Kan vi knekke av vingen som tar hardt nedi og bremse flyet?").
+    brokenWingSide: 0,
+    // Halepropellen (pusher) "brekker" ALLTID ved et krasj (brukeren: "kanskje propellene knekker også
+    // hvis de tar nedi ved krasj") - se triggerCrash()-kommentaren for hvorfor akkurat DENNE alltid
+    // regnes som truffet, i motsetning til løftemotorene (kun brokenWingSide-siden, se over).
+    brokenPusherProp: false,
     // Effektiv modus kontrolloven FAKTISK brukte forrige tick - lik flightMode for alle vanlige moduser,
     // men i "qrtl" er den enten "fbwa" (cruise-fase) eller "qloiter" (VTOL-fasene), se
     // js/simulator-vtol-rtl.js. Brukt av updatePlaneVisual/updateHud, som ikke selv har tilgang til
@@ -2925,7 +2989,18 @@ function stepPhysics(dt) {
     // rullebanen, nivå), men KUN før flyet noensinne har vært i luften (hasBeenAirborne) - ellers ville
     // dette teleportert et fly som lander og bremser ned under 0.4 m/s tilbake til spawn-retningen, uansett
     // hvilken vei det faktisk landet. Vinkelhastighetene nullstilles alltid uansett (forhindrer restspinn).
-    if (planeState.velocity.length() < 0.4) {
+    // BUG (rapportert av brukeren, med skjermbilde: flyet ble stående BALANSERT PÅ NESA i en fysisk umulig
+    // positur etter et krasj - "flyet kan bli hengende i unaturlige posisjoner etter krasj og det har
+    // stoppet opp... skal ikke være sånn") - denne nullstillingen kjørte UBETINGET, ogSÅ mens
+    // planeState.crashed er sann. Et krasjet fly kan fullt lovlig ha lav LINEÆR fart (mesteparten alt tapt
+    // til CRASH_ENERGY_LOSS_FRAC/bakkefriksjonen) mens det FORTSATT egentlig burde falle videre om -
+    // nesetupp-fjærkraften over gir et ekte, fysisk VELTENDE dreiemoment (se resolveGroundContact) hver
+    // eneste tick et fly balanserer nesetungt, akkurat som en blyant balansert på spissen. Denne
+    // nullstillingen slettet den oppbygde vinkelfarten FØR den noensinne rakk å velte flyet videre, og
+    // fanget det dermed for alltid i akkurat den (fysisk ustabile, men numerisk "fastfrosne") balansen.
+    // KUN gjelder derfor nå UTENFOR krasjet tilstand - et krasjet fly får lov til å fullføre sin egen,
+    // ekte velte-/settefase uansett hvor lav farten momentant er.
+    if (planeState.velocity.length() < 0.4 && !planeState.crashed) {
         if (!planeState.hasBeenAirborne) planeState.quaternion.identity();
         planeState.angularVelocity.roll = 0;
         planeState.angularVelocity.pitch = 0;
@@ -2941,6 +3016,52 @@ function stepPhysics(dt) {
         planeState.velocity.y -= GRAVITY * dt;
         planeState.position.add(planeState.velocity.clone().multiplyScalar(dt));
         resolveGroundContact(dt);
+        // BUG (rapportert av brukeren TO ganger nå, med skjermbilder: "sklir med vingen nedi bakken.
+        // stopper aldri å skli") - selv med CRASH_FRICTION_MULTIPLIER og det brukne vingepunktet fjernet
+        // (se resolveGroundContact) kan et krasjet skrog fortsatt "rulle" seg fremover UTEN reell
+        // GLIDNING ved noe kontaktpunkt til enhver tid - akkurat som et hjul translaterer fremover uten at
+        // NOE punkt på hjulkanten faktisk glir mot bakken idet det ruller, kan et tumlende vrak flytte
+        // CG-en fremover mens et STADIG NYTT punkt (ben, hale, gjenværende vingetupp, nese) hver for seg
+        // har tilnærmet null EGEN kontaktpunkt-hastighet i det korte øyeblikket det er i bakken - den
+        // rene, per-punkt Coulomb-friksjonsmodellen (se resolveGroundContact) er STRUKTURELT blind for
+        // nettopp denne typen bevegelse, uansett hvor høy friksjonskoeffisienten settes (se
+        // BUG-kommentaren ved det fjernede vingepunktet for samme "null glidningsfart = null
+        // friksjonskraft"-prinsipp). I stedet for å prøve å modellere denne subtile rotasjons-/
+        // glidningskoblingen fysisk korrekt (dyrt og skjørt), legges det her på en enkel, ROBUST, direkte
+        // eksponentiell luftmotstand/slepe-drag på selve CG-fartens horisontale komponent, UAVHENGIG av
+        // per-punkt-kinematikken - fysisk begrunnet (et faktisk ødelagt, tumlende vrak drar med seg
+        // avrevne deler / graver kontinuerlig i bakken / møter luftmotstand fra sin egen uregelmessige,
+        // ikke lenger aerodynamiske form) og praktisk talt gratis (to multiplikasjoner per tick) - MEN
+        // viktigst: den er GARANTERT å stoppe farten innen kort, forutsigbar tid, uansett hvilken (evt.
+        // "hjul-lignende") rotasjon skroget måtte ha, i stedet for å stole utelukkende på en
+        // kontaktmodell som kan feile i akkurat denne situasjonen.
+        // BUG (rapportert av brukeren, oppfølging: "krasjer med nesa først. så ruller flyet unaturlig mye
+        // fremover også") - NØYAKTIG samme "null glidningsfart under ren rulling"-hull som over, bare på
+        // VINKELFARTEN (stigning) i stedet for CG-farten - et fly som somersaulter forover om nesetuppen
+        // kan ha tilnærmet null lineær kontaktpunkt-hastighet DER akkurat i det det fortsatt roterer, så
+        // PASSIVE_ANGULAR_DAMPING alene (uendret, svak, 0.995/tick - ment for en fortsatt LUFTBÅREN
+        // ettertumling, ikke en som allerede henger fast mot bakken) rekker ikke å stanse den. Samme
+        // robuste, direkte eksponentielle løsning som over, nå på selve vinkelfarten - KUN mens flyet
+        // faktisk er i bakkekontakt (ren luftbåren tumling etter selve sammenstøtet skal fortsatt dempes
+        // av den opprinnelige, slakere PASSIVE_ANGULAR_DAMPING alene).
+        if (planeState.onGround) {
+            const crashDragDecay = Math.exp(-CRASH_DRAG_RATE_PER_SEC * dt);
+            planeState.velocity.x *= crashDragDecay;
+            planeState.velocity.z *= crashDragDecay;
+            const crashAngularDragDecay = Math.exp(-CRASH_GROUND_ANGULAR_DRAG_PER_SEC * dt);
+            planeState.angularVelocity.pitch *= crashAngularDragDecay;
+            planeState.angularVelocity.roll *= crashAngularDragDecay;
+            planeState.angularVelocity.yaw *= crashAngularDragDecay;
+        }
+        // Statisk "sett seg til ro" for resten - se BUG-kommentaren over. Fanger den lille resten
+        // eksponentiell drag alene aldri helt når frem til (asymptotisk mot 0, aldri EKSAKT 0).
+        if (planeState.onGround) {
+            const horizSpeedSq = planeState.velocity.x * planeState.velocity.x + planeState.velocity.z * planeState.velocity.z;
+            if (horizSpeedSq < CRASH_SETTLE_SPEED_MS * CRASH_SETTLE_SPEED_MS) {
+                planeState.velocity.x = 0;
+                planeState.velocity.z = 0;
+            }
+        }
         return;
     }
 
@@ -3253,15 +3374,30 @@ function stepPhysics(dt) {
         // alene har et lite, fartsavhengig etterslep), (2) trim-verdien er allerede riktig innstilt idet du
         // bytter til MANUAL/QACRO, i stedet for et brått jerk ved bytte, og (3) trimmer ikke bort en
         // forbigående manøver, kun en vedvarende ubalanse.
-        planeState.autoTrimFilteredDeflection += (pitchDeflection - planeState.autoTrimFilteredDeflection) * Math.min(1, dt / AUTO_TRIM_FILTER_TAU);
-        // Fortegn: pitchDeflection>0 betyr halen for øyeblikket dyttes mot MER nese-ned (se tailAoaDeg
-        // under) - trim skal da beveges i MOTSATT retning av utslaget for å overta den samme jobben og la
-        // utslaget slappe av mot null (verifisert med likevektsanalyse: trim_dot = -k*deflection er den
-        // eneste av de to fortegnene som faktisk konvergerer, ikke bare tilsynelatende riktig retning).
-        planeState.elevatorTrimDeg = clamp(
-            planeState.elevatorTrimDeg - planeState.autoTrimFilteredDeflection * AUTO_TRIM_RATE_DEG_PER_SEC * dt,
-            -TRIM_RANGE_DEG, TRIM_RANGE_DEG
-        );
+        // BUG (rapportert av brukeren: "autotrim bør vel ikke være med i Q modusene? i manuel blir jo
+        // trimmen helt ute å kjøre da") - punkt (2) over stemmer KUN når pitchDeflection faktisk
+        // representerer en AERODYNAMISK trim-tilstand (FBWA/FBWB, ekte marsjflyging). I en Q-modus er
+        // pitchDeflection derimot i stor grad et HOVER-/manøver-signal (kun opp til
+        // Q_MODE_AERO_AUTHORITY_CEILING av det ender faktisk opp som ekte rorflate-utslag, se
+        // aeroAuthority-kommentaren over - resten går til løftemotorenes mcPitchTorque) - å la autotrim
+        // jage DETTE bygger opp en elevatorTrimDeg som passer for å holde et QHOVER-manøver, ikke for
+        // trimmet marsjflyging. Byttet du så til MANUAL (som bruker elevatorTrimDeg DIREKTE som en fast
+        // halevinkel-offset, se tailAoaDeg-bruken i manual/qacro-grenen) arvet du en helt feil, "ute å
+        // kjøre" trim. Auto-trimmen oppdateres derfor nå KUN utenfor Q-moduser (isQMode) - i en Q-modus
+        // fryses BÅDE filteret og selve trimverdien akkurat der de sist stod fra ekte FBWA/FBWB-flyging
+        // (eller 0, om ingen har skjedd ennå), i stedet for å drive videre basert på hover-dynamikk.
+        if (!isQMode(controlMode)) {
+            planeState.autoTrimFilteredDeflection += (pitchDeflection - planeState.autoTrimFilteredDeflection) * Math.min(1, dt / AUTO_TRIM_FILTER_TAU);
+            // Fortegn: pitchDeflection>0 betyr halen for øyeblikket dyttes mot MER nese-ned (se tailAoaDeg
+            // under) - trim skal da beveges i MOTSATT retning av utslaget for å overta den samme jobben og
+            // la utslaget slappe av mot null (verifisert med likevektsanalyse: trim_dot = -k*deflection er
+            // den eneste av de to fortegnene som faktisk konvergerer, ikke bare tilsynelatende riktig
+            // retning).
+            planeState.elevatorTrimDeg = clamp(
+                planeState.elevatorTrimDeg - planeState.autoTrimFilteredDeflection * AUTO_TRIM_RATE_DEG_PER_SEC * dt,
+                -TRIM_RANGE_DEG, TRIM_RANGE_DEG
+            );
+        }
     }
     // Lagres for den visuelle animasjonen av rorflatene (se updatePlaneVisual) - kjøres i rendring-loopet,
     // ikke i det faste fysikk-tidssteget, så den leser siste beregnede verdi herfra.
@@ -3755,7 +3891,7 @@ function checkTailStrike(spec) {
 }
 
 // Gjenbrukte "scratch"-objekter for resolveGroundContact - samme begrunnelse som _tailStrikeScratch over.
-const GROUND_CONTACT_POINT_COUNT = 7;
+const GROUND_CONTACT_POINT_COUNT = 8;
 const _groundContactLocalPts = Array.from({ length: GROUND_CONTACT_POINT_COUNT }, function () { return new THREE.Vector3(); });
 const _groundContactWorldPts = Array.from({ length: GROUND_CONTACT_POINT_COUNT }, function () { return new THREE.Vector3(); });
 const _groundContactEuler = new THREE.Euler();
@@ -3778,6 +3914,44 @@ const _groundContactLinearAccum = new THREE.Vector3();
 // velteeffekt ved en skjev/ujevn landing, ikke bare en teoretisk mulighet. Fortsatt uten live-testing -
 // juster videre om landinger føles for slappe/voldsomme.
 const GROUND_CONTACT_SPRING_GAIN = 35;
+
+// Kalt fra BEGGE krasj-utløserne i resolveGroundContact under (synkefart OG bank/pitch) - se
+// planeState.crashed sin egen "return"-gren tidlig i stepPhysics, som deretter bare lar farten dø
+// gradvis ut via PASSIVE_ANGULAR_DAMPING mens resolveGroundContact fortsetter å kjøre hver tick. Med KUN
+// den jevne dempingen kunne en solid rullefart RETT VED selve krasjøyeblikket (f.eks. fra en hard, skjev
+// landing der én vingetupp/ett ben treffer først - se den per-punkt-baserte friksjonen/fjærkraften under)
+// fortsette å rulle svært lenge, ekstra "matet" av vingetuppenes egne fjærkraft-sprett hver gang de traff
+// bakken på nytt underveis i rullingen - brukeren rapporterte dette direkte ("vingene blir som et hjul.
+// ruller og ruller"). triggerCrash() kjøres KUN på selve OVERGANGEN til krasjet tilstand (se
+// !planeState.crashed-vakten under) og gir et ENGANGS, kraftig energitap - en forenklet, men fysisk
+// rimelig historie om at vingen som traff hardest RETT OG SLETT KNEKKER AV i selve sammenstøtet (brukerens
+// eget forslag: "Kan vi knekke av vingen som tar hardt nedi og bremse flyet? Kun ved krasj melding da for
+// å holde det enkelt") - en strukturell brist absorberer bevegelsesenergi omtrent momentant, i motsetning
+// til en jevn, vedvarende demping. Bevisst IKKE en full, kontinuerlig simulert løs vingedel (som ønsket,
+// "for å holde det enkelt") - kun dette ENE engangsutslaget pluss en fast, varig visuell "hengende"
+// vingetupp etterpå (se brokenWingSide-bruken i updatePlaneVisual).
+function triggerCrash() {
+    if (planeState.crashed) return;
+    planeState.crashed = true;
+    // Hvilken side traff hardest: sammenligner de to vingetupp-kontaktpunktenes EGEN gjennomtrengning
+    // akkurat NÅ (samme _groundContactWorldPts-array/indekser 4/5 som friksjons-/fjærkraftløkken lenger
+    // ned i resolveGroundContact selv bruker for vingetuppene) - dypest (mest negativ Y) er siden som
+    // traff hardest. Begge kallstedene under kjører ETTER at world-punktene er fylt denne tick, så
+    // arrayen er alltid gyldig her.
+    planeState.brokenWingSide = _groundContactWorldPts[4].y <= _groundContactWorldPts[5].y ? 1 : -1;
+    // Halepropellen (pusher) - brukeren: "kanskje propellene knekker også hvis de tar nedi ved krasj".
+    // ALLTID (ikke betinget av hvilken side/vinkel) - i motsetning til vingetuppene, som kun brekker på
+    // den siden som faktisk traff hardest, sitter pusher-propellen ALENE midt bak på halen (se
+    // pusherGroup i buildPlane), rett bak/over halefinnen/bukfinnen - enhver hard nok landing/krasj til å
+    // utløse triggerCrash() i det hele tatt (hardt synk ELLER en for bratt bank-/pitch-attityde ved
+    // bakkekontakt) involverer så godt som alltid at denne enslige, lavtsittende propellen også treffer,
+    // så en enkel, ubetinget "den brekker også" er en rimelig forenkling ("for å holde det enkelt").
+    planeState.brokenPusherProp = true;
+    planeState.angularVelocity.pitch *= CRASH_ENERGY_LOSS_FRAC;
+    planeState.angularVelocity.roll *= CRASH_ENERGY_LOSS_FRAC;
+    planeState.angularVelocity.yaw *= CRASH_ENERGY_LOSS_FRAC;
+    planeState.velocity.multiplyScalar(CRASH_ENERGY_LOSS_FRAC);
+}
 
 // Understellet er TRE "ben" (se referansebildene brukeren la ved) - to landingsben på det FREMRE
 // motorparet (ett per side) pluss bukfinnen som et tredje, bakre ben - IKKE hjul, og IKKE ben på det
@@ -3834,13 +4008,42 @@ function resolveGroundContact(dt) {
     const wingRootZWorld = 0.02 * spec.visualScale;
     _groundContactLocalPts[4].set(spec.wingSpan / 2, wingMountYWorld, wingRootZWorld);
     _groundContactLocalPts[5].set(-spec.wingSpan / 2, wingMountYWorld, wingRootZWorld);
-    // 7. punkt: skrogbuken (kabinseksjonens underside, midt på skroget) - punktene over er IKKE
+    // Brukket, hengende vingetupp (se triggerCrash()/brokenWingSide og BROKEN_WING_DROOP_RAD i
+    // updatePlaneVisual) - BUG (rapportert av brukeren: "kollisjon og friksjon må detekteres med
+    // vingetuppen mot bakken også") - den visuelle aileron-hengselen droopet ned til en fast, overdrevet
+    // vinkel ved brudd, MEN kontaktpunktet over lå fortsatt fast ved den ORIGINALE, uknekte
+    // vingehøyden - en brukket, hengende vingetupp kunne dermed synke synlig NED I bakken uten at
+    // fysikken noensinne registrerte kontakt der, siden den fortsatt bare sjekket det gamle,
+    // høyereliggende punktet. Senker kontaktpunktet på DEN skadde siden med en enkel
+    // sin(droop)*wingChordWorld-tilnærming (wingChordWorld som en representativ lengde for hvor langt
+    // rorflaten stikker ut - "for å holde det enkelt", ikke en eksakt geometrisk utledning av selve
+    // hengselplasseringen/spennet).
+    if (planeState.crashed && planeState.brokenWingSide !== 0) {
+        const droopDropY = wingChordWorld * Math.sin(BROKEN_WING_DROOP_RAD);
+        if (planeState.brokenWingSide > 0) _groundContactLocalPts[4].y -= droopDropY;
+        else _groundContactLocalPts[5].y -= droopDropY;
+    }
+    // 7. punkt (NYTT): halespissen - BUG (rapportert av brukeren: "halen glitcher ned gjennom rullebanen
+    // når man krasher og havner med halen ned") - tailSkidZWorld (punkt 2, brukt av bena/bukfinnen over)
+    // sitter et stykke FORAN selve halekjeglens faktiske spiss (den er beregnet fra V-halens korde, ikke
+    // skrogets bakerste punkt) - i en BRATT hale-ned/nese-opp attityde (f.eks. rett etter et krasj som
+    // ender opp med halen ned, se CRASH_PITCH_DEG-fiksen) er det den EKTE, bakerste spissen (der
+    // pusher-propellen er montert, se pusherMount/tailTipZ i buildPlane) som blir skrogets faktisk
+    // LAVESTE punkt - ikke tailSkidZWorld. checkTailStrike lenger ned beregner nøyaktig dette punktet
+    // allerede (samme tailTipZ/tailTipRadius-formel), MEN den funksjonen gir kun en visuell ADVARSEL -
+    // ingen fysisk reaksjon i det hele tatt. Lagt til her som et EKTE, sjette kontaktpunkt (delt formel
+    // med checkTailStrike, samme "aldri la punktene drifte fra hverandre"-prinsipp som resten av
+    // understellet).
+    const tailTipZWorld = (cabinLenWorld / 2 + FUSELAGE_LENGTH_BUILD * TAIL_LEN_RATIO * spec.visualScale);
+    const tailTipRadiusWorld = CABIN_RADIUS_BUILD * TAIL_TIP_RADIUS_RATIO * spec.visualScale;
+    _groundContactLocalPts[6].set(0, -tailTipRadiusWorld, tailTipZWorld);
+    // 8. punkt: skrogbuken (kabinseksjonens underside, midt på skroget) - punktene over er IKKE
     // nødvendigvis skrogets faktisk LAVESTE punkt ved en brå/ekstrem stigning-/krengevinkel (f.eks. rett
     // etter en for hard rotasjon i Q-modus) - uten dette kunne selve skrogbuken svinge ned GJENNOM
     // bakkeplanet mens de andre kontaktpunktene (plassert lenger ut mot vingene/halen/nesa) fortsatt
     // teknisk sto klar, som brukeren rapporterte tidligere ("kroppen glitcher gjennom bakken"). Fortsatt
     // et rent sikkerhetsnett (IKKE med i fjærkraft-/friksjons-loopen under, se kommentaren der).
-    _groundContactLocalPts[6].set(0, -CABIN_RADIUS_BUILD * spec.visualScale, BOOM_CENTER_Z_BUILD * spec.visualScale);
+    _groundContactLocalPts[7].set(0, -CABIN_RADIUS_BUILD * spec.visualScale, BOOM_CENTER_Z_BUILD * spec.visualScale);
     let maxPenetration = -Infinity;
     for (let i = 0; i < GROUND_CONTACT_POINT_COUNT; i++) {
         _groundContactWorldPts[i].copy(_groundContactLocalPts[i])
@@ -3862,7 +4065,7 @@ function resolveGroundContact(dt) {
     // ro (velocity.y er da uansett ~0). Krengevinkel/stigningsvinkel derimot (se rett under) sjekkes
     // UBETINGET, IKKE bare på selve landingsflanken - se BUG-kommentaren der.
     if (!planeState.onGround && planeState.velocity.y < -CRASH_SINK_RATE) {
-        planeState.crashed = true;
+        triggerCrash();
     }
     // BUG (rapportert av brukeren, med skjermbilde: flyet lå med nesa dypt begravd i bakken OG krenget,
     // men fortsatte likevel å akselerere fremover for FULL gass i FBWA i stedet for å telle som en
@@ -3881,7 +4084,7 @@ function resolveGroundContact(dt) {
     // her er kun MAGNITUDEN relevant (nese-ned OG nese-opp er begge en hard/ødeleggende attityde).
     const pitchDeg = Math.abs(-THREE.MathUtils.radToDeg(_groundContactEuler.x));
     if (bankDeg > CRASH_BANK_DEG || pitchDeg > CRASH_PITCH_DEG) {
-        planeState.crashed = true;
+        triggerCrash();
     }
     planeState.onGround = true;
     planeState.position.y += maxPenetration;
@@ -3892,9 +4095,9 @@ function resolveGroundContact(dt) {
     // Den slerpen hindret aktivt flyet i noensinne å tippe over ved en ujevn/skjev horisontal landing
     // (brukeren spurte eksplisitt: "får kraftig friksjon på bena. kanskje vil den tippe over?" - med kun
     // ETT globalt korreksjonspunkt og en garantert nivellering var svaret hardkodet til "aldri", uansett
-    // hvor skjevt landingen faktisk skjedde). Hvert PENETRERENDE punkt (KUN de seks ekte kontaktpunktene
-    // 0-5 - bena/bukfinnen/nesetuppen/vingetuppene - IKKE sikkerhetsnett-punktet på skrogbuken, punkt 6,
-    // som ikke skal bidra med en egen fysisk reaksjon) dytter nå tilbake med en kraft proporsjonal med sin
+    // hvor skjevt landingen faktisk skjedde). Hvert PENETRERENDE punkt (KUN de syv ekte kontaktpunktene
+    // 0-6 - bena/bukfinnen/nesetuppen/vingetuppene/halespissen - IKKE sikkerhetsnett-punktet på skrogbuken,
+    // punkt 7, som ikke skal bidra med en egen fysisk reaksjon) dytter nå tilbake med en kraft proporsjonal med sin
     // EGEN penetrasjonsdybde (som en fjær), akkurat der DET punktet faktisk er i verdensrom - via et EKTE
     // dreiemoment (r×F, transformert til kroppsrom via quaternion-invertering - samme "vektor i stedet for
     // håndplukket fortegn"-prinsipp som lift-/drag-retningene i stepPhysics bruker, "robust mot
@@ -3924,9 +4127,45 @@ function resolveGroundContact(dt) {
         .applyQuaternion(planeState.quaternion);
     _groundContactTorqueAccum.set(0, 0, 0);
     _groundContactLinearAccum.set(0, 0, 0);
-    for (let i = 0; i < 6; i++) {
+    // BUG (rapportert av brukeren, med skjermbilde: flyet ble hengende diagonalt i lufta etter et krasj,
+    // med halen tydelig hevet over bakken - "sklir litt lengre nå. men blir fortsatt hengende i lufta") -
+    // løkkegrensen sto fortsatt på 6 (indeks 0-5: bena/bukfinnen/nesetuppen/vingetuppene) fra FØR
+    // halespiss-kontaktpunktet (indeks 6, se _groundContactLocalPts[6]-oppsettet over) ble lagt til. Selve
+    // halespissen var dermed KUN med i maxPenetration-sjekken (nok til å hindre den fra å synke synlig NED
+    // I bakken) og bank/pitch-krasjsjekken, men ga ALDRI sin egen fjærkraft/friksjon/dreiemoment tilbake -
+    // et fly som skulle hvilt flatt på f.eks. nese+hale kunne dermed finne en falsk likevekt der KUN nesa
+    // (eller et ben/en vingetupp) faktisk dyttet tilbake, mens halepartiet forble "hengende" understøttet av
+    // ingenting. Utvidet til 7 (indeks 0-6) - halespissen deltar nå i akkurat samme fjærkraft-/
+    // friksjonsreaksjon som resten av punktene, se _groundContactLocalPts[6] og bevisst IKKE
+    // punkt 7 (skrogbuken, fortsatt kun sikkerhetsnett).
+    for (let i = 0; i < 7; i++) {
+        // Brukket vingetupp (se triggerCrash()/brokenWingSide) - IKKE lenger et kontaktpunkt i det hele
+        // tatt. BUG (rapportert av brukeren, med skjermbilde: "i noen krasj ruller flyet unaturlig lenge
+        // rundt. vingetippen fungerer som hjul... vingen som slås i bakken må jo knekke av") - roten til
+        // "hjul"-oppførselen er STRUKTURELL, ikke bare svak friksjon: en REN rotasjon rundt et fast
+        // kontaktpunkt (rulling UTEN glidning, akkurat som et ekte hjul) har per definisjon NULL
+        // kontaktpunkt-hastighet - og dermed NULL Coulomb-friksjonskraft, uansett hvor høy
+        // friksjonskoeffisienten er (se pointSpeed-bruken under - en glidnings-basert friksjonsmodell kan
+        // aldri stanse en ekte "rull uten å gli"-rotasjon, akkurat slik et virkelig hjul ikke TRENGER
+        // friksjon for å fortsette å spinne). En EKTE vinge er derimot ikke et glatt, sirkulært hjul - den
+        // ville revet seg løs/deformert strukturelt og dermed FYSISK MISTET selve dreiepunktet nesten
+        // momentant, ikke fortsatt rotert pent rundt et perfekt, uendret pivot-punkt. Fjerner derfor selve
+        // KONTAKTPUNKTET på den brukne siden helt (i stedet for bare å style friksjonen der) - akkurat som
+        // brukeren selv foreslo ("vingen ... må jo knekke av") - flyet mister rett og slett
+        // vingespennet/dreiearmen som holdt rullingen i gang, og synker/glir i stedet naturlig ned mot en
+        // flatere, mer stabil hvilestilling (buken/nesen/halen/det gjenværende benet/vingetuppen) styrt av
+        // de RESTERENDE kontaktpunktene og flyets egen vekt - den "vekt og balanse"-oppførselen brukeren
+        // etterlyste, uten å måtte bygge en egen separat masse-/balansemodell.
+        if (planeState.crashed && ((i === 4 && planeState.brokenWingSide > 0) || (i === 5 && planeState.brokenWingSide < 0))) continue;
         const pen = -_groundContactWorldPts[i].y;
         if (pen <= 0) continue;
+        // Vingetupp-krasj (se WING_STRIKE_CRASH_PEN_M-kommentaren ved konstanten) - punkt 4/5 ER
+        // vingetuppene (se _groundContactLocalPts-oppsettet over). Sjekket FØR selve fjærkraft-/
+        // friksjonsreaksjonen under, slik at et krasj utløst her fortsatt rekker å bli behandlet av
+        // triggerCrash() (og dermed CRASH_FRICTION_MULTIPLIER-oppbremsingen) i AKKURAT denne samme tick.
+        if ((i === 4 || i === 5) && pen > WING_STRIKE_CRASH_PEN_M && planeState.velocity.length() > WING_STRIKE_CRASH_SPEED_MS) {
+            triggerCrash();
+        }
         _groundContactOffsetScratch.copy(_groundContactWorldPts[i]).sub(planeState.position);
 
         // Vertikal fjærkraft (uendret prinsipp fra før) - selve REAKSJONS-kraften som holder flyet oppe.
@@ -3961,7 +4200,10 @@ function resolveGroundContact(dt) {
         _groundContactPointVel.y = 0;
         const pointSpeed = _groundContactPointVel.length();
         if (pointSpeed > 1e-4) {
-            const maxFrictionForceMag = GROUND_SKID_FRICTION_COEFF * frictionNormalForceMag;
+            // CRASH_FRICTION_MULTIPLIER (se konstanten) - et skadet, gravende/gnagende skrog har mye
+            // høyere friksjon enn et intakt understell, se BUG-kommentaren ved konstanten.
+            const crashFrictionScale = planeState.crashed ? CRASH_FRICTION_MULTIPLIER : 1;
+            const maxFrictionForceMag = GROUND_SKID_FRICTION_COEFF * crashFrictionScale * frictionNormalForceMag;
             // Klemt til den kraften som AKKURAT ville stanset DETTE punktets EGEN fart i løpet av ETT
             // tidssteg (samme "aldri overskyt/snu fortegn"-prinsipp den gamle globale friksjonen hadde,
             // nå anvendt per punkt i stedet for på hele flyets gjennomsnittsfart).
@@ -4000,6 +4242,8 @@ function resetPlane() {
     planeState.angularVelocity.yaw = 0;
     planeState.engineOn = true;
     planeState.crashed = false;
+    planeState.brokenWingSide = 0;
+    planeState.brokenPusherProp = false;
     planeState.onGround = true;
     planeState.hasBeenAirborne = false;
     planeState.elevatorTrimDeg = 0;
@@ -4017,7 +4261,15 @@ function resetPlane() {
 }
 
 function toggleEngine() {
-    if (planeState.crashed) return;
+    // BUG (rapportert av brukeren: "og må fortsatt være mulig å styre/stoppe motorene. for treningen sin
+    // del") - denne funksjonen returnerte FØR ubetinget med det samme flyet var krasjet, og LÅSTE dermed
+    // engineOn-bryteren fast i whatever tilstand den hadde idet krasjet inntraff - piloten kunne verken
+    // kutte eller restarte motorene etterpå. For et treningsverktøy er nettopp "kutt motorene umiddelbart
+    // etter et krasj/en hard landing" en reell, viktig prosedyre å kunne øve på - denne skal ALDRI være
+    // utilgjengelig. Ingen krasjet-vakt her lenger: stepPhysics() sin egen "if (planeState.crashed) return"
+    // (se toppen av funksjonen) sørger uansett for at engineOn ikke lenger har NOEN fysisk effekt (gass/
+    // rotorer) mens flyet er krasjet - denne bryteren styrer nå kun selve AV/PÅ-tilstanden/HUD-en, ikke om
+    // det fortsatt er trygt eller mulig å fly videre.
     const wasOff = !planeState.engineOn;
     planeState.engineOn = !planeState.engineOn;
     // KUN på bakken (se onGround-vilkåret) - en motorrestart i LUFTA (brukertilbakemelding: "nytt RTL
@@ -4039,7 +4291,8 @@ function toggleEngine() {
 // tilstand - to separate, diskré knapper (én som ALLTID slår PÅ, én som ALLTID slår AV) er entydige
 // uansett gjeldende tilstand, akkurat som et ekte fly har separate start-/stopp-prosedyrer.
 function setEngine(on) {
-    if (planeState.crashed) return;
+    // Se BUG-kommentaren i toggleEngine over - samme krasjet-vakt fjernet, samme begrunnelse (piloten må
+    // fortsatt kunne kutte/restarte motorene etter et krasj, for treningens skyld).
     // Stigende flanke (AV->PÅ) = QRTL sitt hjem-/batterifangst-øyeblikk, se captureHome i
     // js/simulator-vtol-rtl.js - fanges FØR selve tilstandsendringen under (ren lesbarhet, ingen
     // funksjonell forskjell siden captureHome ikke leser engineOn selv). KUN på bakken - se
@@ -4061,6 +4314,12 @@ function toggleCamera() {
 
 /* ---------- Visuell oppdatering + HUD ---------- */
 const SURFACE_MAX_DEFLECTION_RAD = THREE.MathUtils.degToRad(22);
+// Krasj-skade, rent visuelt (se triggerCrash()-kommentaren for hele bakgrunnen/brukerønsket) - EN fast,
+// overdrevet vinkel per skadet del, godt utenfor normalt bevegelsesspenn, så den tydelig leser som
+// "brukket/hengende" og ikke en vanlig kontrollflate-/propellbevegelse. Ikke live-testet - juster om
+// retningen ser feil ut visuelt.
+const BROKEN_WING_DROOP_RAD = THREE.MathUtils.degToRad(75);
+const BROKEN_PROP_BEND_RAD = THREE.MathUtils.degToRad(50);
 
 function updatePlaneVisual(dt) {
     planeGroup.position.copy(planeState.position);
@@ -4074,11 +4333,25 @@ function updatePlaneVisual(dt) {
     // I en Q-modus er pusheren fysisk avslått (pusherThrottleEff=0 uansett gasspak, se stepPhysics) - den
     // skal derfor stå HELT stille (ikke engang en "tomgangs"-spinn), ikke først rulle i gang idet
     // trekkmotor-modusene (MANUAL/FBWA) tar over under overgangen til fastvinget flukt.
-    const pusherIdleSpin = isQMode(planeState.lastControlMode) ? 0 : 6;
-    const targetSpin = planeState.engineOn ? (pusherIdleSpin + planeState.lastPusherThrottle * 90) : (planeState.onGround ? 0 : 2);
-    const spinSmoothing = planeState.engineOn ? (1 - Math.pow(0.0005, dt)) : (1 - Math.pow(0.05, dt));
-    propSpinSpeed += (targetSpin - propSpinSpeed) * spinSmoothing;
-    planePropeller.rotation.z += propSpinSpeed * dt;
+    // Brukket i krasj (se triggerCrash() - brokenPusherProp settes ALLTID på et krasj) - propellen skal
+    // da stå HELT stille (ikke coaste videre ned over ~1s som en vanlig motorkutt) og henge synlig
+    // bøyd/skjev i stedet for å fortsette å rotere pent.
+    if (planeState.crashed && planeState.brokenPusherProp) {
+        propSpinSpeed = 0;
+        planePropeller.rotation.x = BROKEN_PROP_BEND_RAD;
+    } else {
+        // BUG (rapportert av brukeren etter en krasj+reset): rotation.x ble KUN satt i den brukne grenen
+        // over, aldri nullstilt her - propellen ble derfor stående bøyd for alltid etter en krasj, selv
+        // etter reset (planeState.crashed/brokenPusherProp nullstilles i resetPlane(), men selve
+        // mesh-rotasjonen ble aldri fulgt opp). Satt eksplisitt hver tick i normal drift i stedet for å
+        // stole på en engangs-reset et annet sted.
+        planePropeller.rotation.x = 0;
+        const pusherIdleSpin = isQMode(planeState.lastControlMode) ? 0 : 6;
+        const targetSpin = planeState.engineOn ? (pusherIdleSpin + planeState.lastPusherThrottle * 90) : (planeState.onGround ? 0 : 2);
+        const spinSmoothing = planeState.engineOn ? (1 - Math.pow(0.0005, dt)) : (1 - Math.pow(0.05, dt));
+        propSpinSpeed += (targetSpin - propSpinSpeed) * spinSmoothing;
+        planePropeller.rotation.z += propSpinSpeed * dt;
+    }
 
     // Løftemotorene (fire stk, samme treghetsprinsipp) - FELLES grunnfart styrt av samlet kollektiv gass
     // (lastCollectiveFrac), pluss et PER-MOTOR differensial-tillegg fra kommandert rull/stigning
@@ -4114,6 +4387,20 @@ function updatePlaneVisual(dt) {
     const liftRollMix = liftAuthorityActive ? -planeState.lastRollDeflection * LIFT_PROP_DIFFERENTIAL_GAIN : 0;
     const liftPitchMix = liftAuthorityActive ? -planeState.lastPitchDeflection * LIFT_PROP_DIFFERENTIAL_GAIN : 0;
     planeLiftProps.forEach(function (m) {
+        // Brukket i krasj (se triggerCrash()/brokenWingSide - BEGGE løftemotorene på bommen som traff
+        // hardest, ikke bare vingetuppens egen aileron) - stopp helt og heng synlig bøyd, samme prinsipp
+        // som pusher-propellen over.
+        if (planeState.crashed && m.side === planeState.brokenWingSide) {
+            m.group.rotation.x = BROKEN_PROP_BEND_RAD;
+            return;
+        }
+        // BUG (rapportert av brukeren: "de høyre quad propellene er montert skjevt nå? noe som blir
+        // hengende igjen etter en krasj og reset kanskje?") - samme rotation.x-nullstillings-bug som
+        // pusher-propellen over: grenen over satte rotation.x, men INGEN gren nullstilte den igjen etter
+        // at planeState.crashed gikk tilbake til false (resetPlane() nullstiller kun selve
+        // tilstands-flaggene, ikke denne mesh-rotasjonen) - løftemotorene på siden som sist var brukket
+        // sto derfor værende synlig skjeve for alltid, selv etter et rent reset.
+        m.group.rotation.x = 0;
         const diff = m.side * liftRollMix + (m.front ? 1 : -1) * liftPitchMix;
         const spin = Math.max(0, liftPropSpinSpeed + diff);
         if (spin > 0.05) {
@@ -4134,8 +4421,14 @@ function updatePlaneVisual(dt) {
     // Synlige, bevegelige rorflater - viser faktisk pinne-/autopilot-utslag (se stepPhysics, som lagrer
     // siste avbøyning på planeState hver fysikk-tick).
     // (Fortegn snudd - rorene beveget seg motsatt vei av forventet.)
-    planeAileronLeft.rotation.x = planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
-    planeAileronRight.rotation.x = -planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
+    // Brukket vingetupp i krasj (se triggerCrash()/brokenWingSide) - gjenbruker aileron-hengselet (samme
+    // pivot som normal rullstyring under) i stedet for et helt nytt vinge-rot-hengsel, "for å holde det
+    // enkelt" som brukeren selv ba om. Kun DEN skadde siden fryses i en fast, overdrevet "hengende"
+    // vinkel - den andre (uskadde) siden flyr videre helt normalt.
+    planeAileronLeft.rotation.x = (planeState.crashed && planeState.brokenWingSide < 0)
+        ? BROKEN_WING_DROOP_RAD : planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
+    planeAileronRight.rotation.x = (planeState.crashed && planeState.brokenWingSide > 0)
+        ? BROKEN_WING_DROOP_RAD : -planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
     // V-halens to ruddervatorer: rent visuell mix av stigning+gir (se buildPlane-kommentaren ved
     // vtailPivotBySide - fysikken bruker en egen, abstrakt aerodynamisk modell, uavhengig av denne
     // geometrien) - hver pivot ligger allerede i sin egen VIPPEDE lokale ramme, så EN rotasjon her gir
@@ -4170,6 +4463,7 @@ const hudCamera = document.getElementById("hudCamera");
 const hudPlaneClass = document.getElementById("hudPlaneClass");
 const hudAltitude = document.getElementById("hudAltitude");
 const hudAirspeed = document.getElementById("hudAirspeed");
+const hudGroundSpeed = document.getElementById("hudGroundSpeed");
 const hudThrottle = document.getElementById("hudThrottle");
 const hudTrim = document.getElementById("hudTrim");
 const armToggleBtn = document.getElementById("armToggleBtn");
@@ -4201,6 +4495,15 @@ function updateHud() {
     // IAS, ikke sann luftfart - se lastIndicatedAirspeed-utregningen i stepPhysics (posisjonsfeil fra
     // pitotrørets egen, forover-pekende monteringsakse).
     hudAirspeed.textContent = planeState.lastIndicatedAirspeed.toFixed(1) + " m/s";
+    // GS (Ground Speed) - brukeren ba om en egen, GNSS-basert fartsmåling ved siden av IAS. Rent
+    // posisjons-/hastighetsderivert (planeState.velocity er allerede VERDENS-hastigheten, ETT skritt
+    // nærmere en ekte GNSS-mottakers egen fartsberegning enn IAS er - en GNSS regner fart fra faktisk
+    // BEVEGELSE over bakken, ikke fra luftstrøm/dynamisk trykk) - derfor UTEN vind trukket fra
+    // (currentWindVector inngår IKKE her, i motsetning til airVelWorld/localAirVel i stepPhysics), og KUN
+    // den horisontale komponenten (X/Z) - en ekte GNSS/GPS-fartsmåling rapporterer normalt bakkefart og
+    // klatre-/synkefart (VS) separat, ikke slått sammen til én 3D-magnitude slik IAS-beregningen gjør.
+    const groundSpeed = Math.hypot(planeState.velocity.x, planeState.velocity.z);
+    hudGroundSpeed.textContent = groundSpeed.toFixed(1) + " m/s";
     // Gasspaken styrer ULIKE ting avhengig av modus (kollektiv i Q-moduser, trekkmotor i MANUAL/FBWA) -
     // se stepPhysics - HUD-etiketten OG selve tallet følger derfor hvilken av de to som faktisk er
     // aktiv, ikke bare den rå pinneposisjonen.

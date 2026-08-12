@@ -6,17 +6,27 @@ const STORAGE_KEY = "ffi-uas:sjekkliste-generator";
 // mellomlagret innhold i nettleseren (fra før en oppdatering av sjekkpunktene) ikke stille overskygger
 // nytt innhold. Egne redigeringer forsvinner riktignok samtidig, men det er en villet avveining så lenge
 // malen fortsatt er under aktiv utvikling.
-const SCHEMA_VERSION = 12;
+// Bumpet til 20 selv om selve DEFAULTS-INNHOLDET er uendret siden 19 - mistanke om at "Oppvisning for
+// publikum"-raden (rapportert tom i skjermbilde, til tross for at DEFAULTS fortsatt har riktig verdi, se
+// linje 40) faktisk er GAMMEL, lagret tilstand fra en tidligere (siden fikset) versjon av
+// begrensninger-koden, ikke en fersk bug i gjeldende kode - en versjonsbump her tvinger uansett en frisk
+// innlasting fra DEFAULTS igjen, som et sikkert "reset" uansett hva den egentlige årsaken var.
+const SCHEMA_VERSION = 20;
 
 // Kolonneoverskrifter i sjekkpunkt-tabellen er ulike for normal- vs. contingency/emergency/erp-
 // sjekklister: en normal preflight-sjekk sammenligner mot en forventet status, mens de andre beskriver
 // hvilket tiltak som skal iverksettes for en gitt situasjon. Ingen av fanene bruker sjekkboks lenger -
 // ingen av disse punktene er noe som fysisk skal tikkes av på papiret.
+// showHeader: false på alle fire nå (brukerønske: "Fjern 'Situasjon Tiltak' overskriftene") - text/target
+// brukes fortsatt internt (bl.a. som placeholder-tekst på selve input-feltene, se createItemRow), men
+// selve <thead>-raden med disse to kolonnenavnene vises ikke lenger i sjekklistebyggeren. Utskriften
+// hadde forøvrig ALDRI en slik overskriftsrad i utgangspunktet (se buildSectionBox), så dette er en
+// ren skjerm-endring.
 const ITEM_LABELS = {
     normal: { text: "Sjekkpunkt", target: "Status / grense", checkbox: false, showHeader: false },
-    contingency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: true },
-    emergency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: true },
-    erp: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: true }
+    contingency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false },
+    emergency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false },
+    erp: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false }
 };
 
 const DEFAULTS = {
@@ -86,37 +96,41 @@ const DEFAULTS = {
         title: "Contingency-sjekkliste",
         sections: [
             {
-                title: "Tap av fjernkontroll-lenke", items: [
-                    { text: "Lenke tapt i 3 sekunder", target: "UA klatrer til failsafe-høyde, fortsetter til Home" },
-                    { text: "Lenke fortsatt tapt", target: "Følg innstilt failsafe-modus (RTH / landing / hover)" }
+                // "Tap av C2 link" (tidligere "Tap av fjernkontroll-lenke") - brukerønske. To sett
+                // sjekkpunkter under SAMME overskrift, merket med variant "mak"/"spesifikk" (samme
+                // mekanisme som MÅK/spesifikk-filtreringen på normal-fanen, se ITEM_LABELS/setNormalTemplate
+                // -kommentaren) - kun settet som matcher normal-fanens aktive mal vises om gangen, se
+                // .tab-panel[data-template=...] i css/style.css.
+                title: "Tap av C2 link", items: [
+                    { text: "Mannskap", target: "Informert om \"lost link\"", variant: "mak" },
+                    { text: "C2-link", target: "Forsøk å gjenopprette", variant: "mak" },
+                    { text: "UAS", target: "Monitorer", variant: "mak" },
+                    { text: "RTH-punkt", target: "Klart for landing", variant: "mak" },
+                    { text: "Mannskap", target: "Informer om \"lost link\"", variant: "spesifikk" },
+                    { text: "C2-link", target: "Forsøk å gjenopprette", variant: "spesifikk" },
+                    { text: "Siste posisjon, høyde og retning", target: "Noter", variant: "spesifikk" },
+                    { text: "Radio", target: "Varslet", variant: "spesifikk" },
+                    { text: "RTH-punkt", target: "Klart for landing", variant: "spesifikk" }
                 ]
             },
             {
                 title: "Tap av GNSS", items: [
-                    { text: "GNSS mistet under flyging", target: "Gå til manuell/attitude-modus, fly til åpent område og land" }
+                    { text: "Mannskap", target: "Informer om \"lost GPS\"" },
+                    { text: "Vurder", target: "Om operasjonen skal avbrytes" }
                 ]
             },
             {
-                title: "Lavt batterinivå", items: [
-                    { text: "Batterivarsel utløst", target: "Avslutt operasjon og initier retur" },
-                    { text: "Ingen handling etter 10 sekunder", target: "RTH utløses automatisk" }
-                ]
-            },
-            {
-                title: "Annet luftfartøy / trafikk i området", items: [
-                    { text: "Bemannet luftfartøy observert", target: "Vurder å lande eller fly unna" }
-                ]
-            },
-            {
-                title: "Kraftig endring i vær/vind", items: [
-                    { text: "Vind/vær nær eller over grenseverdi", target: "Avbryt operasjon og land" }
-                ]
-            },
-            {
-                title: "Personer i bakkeområdet", items: [
-                    { text: "Ikke-involvert personell kommer inn i kontrollert bakkeområde", target: "Fly unna / vurder å avbryte og lande" }
+                title: "Lavt batterinivå varsel", items: [
+                    { text: "Auto RTH", target: "Avbryt" },
+                    { text: "Drone", target: "Fly hjem og land" }
                 ]
             }
+            // "Annet luftfartøy / trafikk i området", "Kraftig endring i vær/vind" og "Personer i
+            // bakkeområdet" fjernet - brukerønske ("Er vel overkill med sånne ting? bruke fornuften og
+            // styre unna eller lande. trenger vel ikke sjekkliste for det?") - dette er situasjoner som
+            // krever pilotens generelle dømmekraft/luftfartsforståelse der og da, ikke et fast, forhånds-
+            // definert tiltak slik de andre contingency-punktene (tap av lenke/GNSS/batteri) faktisk har -
+            // en sjekkliste for "bruk sunn fornuft" gir ikke reell verdi.
         ]
     },
     // Emergency: kun det som må håndteres UMIDDELBART mens man er i lufta, for å hindre en ulykke -
@@ -126,49 +140,55 @@ const DEFAULTS = {
         title: "Emergency-sjekkliste",
         sections: [
             {
-                title: "Fly-away / mister kontroll", items: [
-                    { text: "Ingen respons fra fjernkontroll", target: "Killswitch/motor av, helst over område uten personer" }
-                ]
-            },
-            {
-                title: "Motorfeil i lufta", items: [
-                    { text: "Motor stopper eller feiler under flyging", target: "Killswitch/kontrollert nedstyrting, velg område uten personer" }
-                ]
-            },
-            {
-                title: "Batteribrann i lufta", items: [
-                    { text: "Batteri ryker/brenner under flyging", target: "Killswitch/nødlanding snarest, velg område uten personer" }
+                title: "Fly-away / kontrolltap", items: [
+                    { text: "Drone", target: "Forsøk nødlanding" },
+                    { text: "Killswitch", target: "Aktiver" }
                 ]
             }
+            // "Motorfeil i lufta" og "Batteribrann i lufta" fjernet - brukerønske.
         ]
     },
     // ERP (Emergency Response Plan): det som gjøres ETTER en ulykke - sikring, førstehjelp, varsling og
     // rapportering på bakken. Motstykket til emergency, som kun dekker det umiddelbare i lufta.
     erp: {
         title: "Emergency Response Plan (ERP)",
+        // Nødnumrene (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS) FØRST, deretter de øvrige,
+        // ikke-akutte kontaktene - brukerønske ("Ha nødnumrene øverst"). Selve nød-fremhevingen (ikon +
+        // fet/farget navn) er likevel ikke rekkefølge-avhengig i seg selv (den treffer på navnet, se
+        // createLimitRow/buildLimitsBox), men ordenen her er fortsatt det brukeren faktisk ser med mindre
+        // de endrer den manuelt i sjekklistebyggeren.
         limits: [
             { key: "Brann", value: "110" },
+            { key: "Politi", value: "112" },
             { key: "Ambulanse", value: "113" },
             { key: "Legevakt", value: "116 117" },
-            { key: "Politi", value: "112" },
             { key: "Politi (ikke nød)", value: "02800" },
-            { key: "Operativ leder", value: "" },
-            { key: "Ansvarlig leder", value: "" }
+            { key: "Operativ leder", value: "" }
         ],
         sections: [
             {
-                title: "Ulykke / hendelse", items: [
-                    { text: "Umiddelbart", target: "Disarm dronen. Sikre skadestedet og skaff deg oversikt." },
-                    { text: "Prioriter", target: "Varsle nødetat, etabler skadestedsleder (fortrinnsvis fartøysjef), ivareta egen sikkerhet, slukk brann med umiddelbart skadepotensial, gi livreddende førstehjelp." },
-                    { text: "Når du har kapasitet", target: "Varsle operativ leder." }
+                // "Ulykke" (tidligere "Ulykke / hendelse") - brukerønske: rene, nummererte prosedyretrinn i
+                // ÉN kolonne (se singleColumn/createItemRow-kommentaren) i stedet for en situasjon+tiltak-
+                // sammenligning - dette ER selve tiltaket, punkt for punkt, ikke noe å sammenligne mot en
+                // situasjonsbeskrivelse. Trinn 3 sine understreker ("Ikke nødvendigvis i rekkefølge: / -
+                // Livreddende førstehjelp / ...") er bevisst manuelle linjeskift (\n) INNI ett og samme
+                // item.target-felt, ikke egne rader - se print-value-wide/white-space:pre-line i
+                // css/style.css for hvorfor de likevel vises på egne linjer i utskriften.
+                title: "Ulykke", singleColumn: true, items: [
+                    { target: "Disarm dronen" },
+                    { target: "Ta ledelsen, få oversikt" },
+                    { target: "Ikke nødvendigvis i rekkefølge:\n- Livreddende førstehjelp\n- Slukke brann\n- Sikre skadestedet\n- Varsle nødetatene" },
+                    { target: "Varsle operativ leder når du har kapasitet" }
                 ]
             },
             {
-                title: "Fly-away / mistet kontakt", items: [
-                    { text: "Kartlegg", target: "Samle informasjon om siste kjente posisjon, fart, retning, høyde, batteritid og dronetype." },
-                    { text: "Varsle", target: "Vurder om relevant lufttrafikktjeneste og politiet bør varsles." },
-                    { text: "Ved skogbrannfare", target: "Vurder om brannvesenet bør varsles dersom status på dronen er ukjent eller den har tatt fyr - et skadet batteri kan antenne i terrenget der dronen antas å ha krasjet." },
-                    { text: "Følg opp", target: "Varsle operativ leder. Vurder om du skal starte søk etter dronen." }
+                // "Fly-away / mistet kontakt" - samme singleColumn-behandling som "Ulykke" over, se
+                // kommentaren der.
+                title: "Fly-away / mistet kontakt", singleColumn: true, items: [
+                    { target: "Samle informasjon om siste kjente posisjon, fart, retning, høyde, batteritid og dronetype." },
+                    { target: "Vurder varsling av:\n- Lufttrafikktjenesten ved fly-away i kontrollert luftrom\n- Brannvesenet ved skogbrannfare\n- Politiet ved fly-away over bebygd område" },
+                    { target: "Vurder om du skal søke etter dronen." },
+                    { target: "Varsle operativ leder når du har kapasitet" }
                 ]
             }
         ]
@@ -226,25 +246,53 @@ function createEquipmentRow(text) {
 
 // Samme rad-type brukes til to ting: Begrensninger (normal) og Kontaktliste (erp) - derfor
 // parametriserte placeholder-tekster i stedet for hardkodet "Maks vind"-eksempel begge steder.
-function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal) {
+// isErpContacts (nytt) - KUN sann for selve ERP-kontaktlisten (ikke normal-fanens Begrensninger, som
+// gjenbruker akkurat samme radtype) - se ERP_EMERGENCY_CONTACTS-kommentaren for hvorfor nødnumrene der
+// skal skille seg visuelt ut (ikon + fet/farget navn), mens en vanlig begrensningsrad aldri skal det.
+function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal, isErpContacts) {
     const tr = document.createElement("tr");
     const onEdit = isNormal ? function () { saveState(); markNormalCustom(); } : saveState;
 
     const tdKey = document.createElement("td");
     tdKey.className = "limit-key";
-    const keyInput = document.createElement("input");
-    keyInput.type = "text";
+    const keyIcon = document.createElement("i");
+    keyIcon.className = "limit-key-icon";
+    keyIcon.setAttribute("aria-hidden", "true");
+    // BUG-runde 3 (rapportert av brukeren med skjermbilde: "skjeve linjer. og for smal kolonne nr. 2") -
+    // de to foregående rundene (fast prosentbredde, så ch-bredde) begge prøvde å GJETTE riktig fast bredde
+    // for parameter-kolonnen, men den faktiske containeren viste seg smalere enn antatt begge ganger, så
+    // enten gikk verdikolonnen tom for plass, eller (ved en for grådig kolonnebredde) ble bitteliten.
+    // Strukturell fiks i stedet for et nytt gjettet tall: parameter-feltet er nå en auto-voksende
+    // textarea (rows=1), akkurat samme teknikk som item-text/item-target allerede bruker i
+    // createItemRow/autoGrowTextarea - en uvanlig lang parametertekst ("Oppvisning for publikum") får
+    // dermed lov til å BREKKE TIL TO LINJER i stedet for enten å kreve en bred, fast kolonne (som stjeler
+    // plass fra verdikolonnen) eller å klippes. Kolonnebredden (se .limit-key i css/style.css) kan dermed
+    // settes betydelig smalere/mer rimelig uten risiko for at teksten forsvinner.
+    const keyInput = document.createElement("textarea");
+    keyInput.rows = 1;
     keyInput.className = "limit-key-input";
-    keyInput.placeholder = keyPlaceholder || "Parameter (f.eks. Maks vind)";
+    keyInput.placeholder = keyPlaceholder || "F.eks. Maks vind";
     keyInput.value = key || "";
-    keyInput.addEventListener("input", onEdit);
+    // Nødnummer-fremheving (ikon + fet/farget navn, se ERP_EMERGENCY_CONTACTS) oppdateres LIVE mens
+    // brukeren skriver/redigerer selve navnet - ikke bare satt én gang ved oppretting - slik at f.eks. å
+    // skrive inn "Brann" i en tom rad umiddelbart viser flamme-ikonet, i stedet for å kreve en reload.
+    function updateEmergencyEmphasis() {
+        if (!isErpContacts) return;
+        const icon = ERP_EMERGENCY_CONTACTS[keyInput.value.trim()];
+        tr.classList.toggle("limit-row-emergency", !!icon);
+        keyIcon.className = "limit-key-icon" + (icon ? " fa-solid " + icon : "");
+    }
+    keyInput.addEventListener("input", function () { autoGrowTextarea(keyInput); updateEmergencyEmphasis(); onEdit(); });
+    updateEmergencyEmphasis();
+    tdKey.appendChild(keyIcon);
     tdKey.appendChild(keyInput);
 
     const tdValue = document.createElement("td");
+    tdValue.className = "limit-value";
     const valueInput = document.createElement("input");
     valueInput.type = "text";
     valueInput.className = "limit-value-input";
-    valueInput.placeholder = valuePlaceholder || "Verdi (f.eks. 20 knop)";
+    valueInput.placeholder = valuePlaceholder || "F.eks. 15 m/s";
     valueInput.value = value || "";
     valueInput.addEventListener("input", onEdit);
     tdValue.appendChild(valueInput);
@@ -270,7 +318,17 @@ function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal) 
     return tr;
 }
 
-function createItemRow(item, showCheckbox, isNormal) {
+// singleColumn (brukerønske: "Punktene skal kun ha en kolonne" - ERP-delene "Ulykke" og "Fly-away") -
+// noen sjekklistedeler er rene, frittstående prosedyretrinn (evt. med innrykkede understreker som egne
+// linjer inni ETT trinn, f.eks. "Ikke nødvendigvis i rekkefølge: / - Livreddende førstehjelp / - ..."),
+// ikke en situasjon+tiltak-sammenligning slik resten av contingency/emergency/erp er bygget opp - en egen
+// (tom) situasjon-kolonne ved siden av gir ingen mening der. I stedet for en helt egen datamodell for
+// dette (ville brutt "hold det enkelt"-prinsippet resten av filen følger) gjenbrukes samme item.target-
+// felt som resten av tabellen allerede har (fritekst, flerlinjes via autoGrowTextarea, akkurat som
+// "Tiltak" ellers) - text-cellen utelates bare helt fra selve raden når singleColumn er satt, se
+// getState() sin "tr.querySelector('.item-text') finnes kanskje ikke her"-guard og
+// buildSectionBoxesForPrint/buildSectionBox for tilsvarende utskrifts-håndtering.
+function createItemRow(item, showCheckbox, isNormal, singleColumn) {
     item = item || { text: "", target: "", checked: false, variant: "" };
     const tr = document.createElement("tr");
     const onEdit = isNormal ? function () { saveState(); markNormalCustom(); } : saveState;
@@ -299,24 +357,33 @@ function createItemRow(item, showCheckbox, isNormal) {
     tr.appendChild(tdNumber);
 
     // Textarea (ikke input) - vokser vertikalt med innholdet i stedet for å klippe/scrolle lang tekst
-    // (typisk "Tiltak" på contingency/emergency/erp) inni et enlinjes felt, se autoGrowTextarea.
-    const tdText = document.createElement("td");
-    const textInput = document.createElement("textarea");
-    textInput.rows = 1;
-    textInput.className = "item-text";
-    textInput.placeholder = "Sjekkpunkt";
-    textInput.value = item.text || "";
-    textInput.addEventListener("input", function () { autoGrowTextarea(textInput); onEdit(); });
-    tdText.appendChild(textInput);
+    // (typisk "Tiltak" på contingency/emergency/erp) inni et enlinjes felt, se autoGrowTextarea. Utelates
+    // helt (ingen tom kolonne) når singleColumn er satt, se kommentaren over createItemRow.
+    // "let" i funksjonsomfang (ikke "const" inni if-blokken) - removeBtn-lytteren lenger ned må kunne
+    // referere textInput uansett singleColumn eller ikke (den leser kun VERDIEN når singleColumn er
+    // usann, se der, men selve variabelen må fortsatt være i scope for at det uttrykket skal parse).
+    let textInput = null;
+    if (!singleColumn) {
+        const tdText = document.createElement("td");
+        textInput = document.createElement("textarea");
+        textInput.rows = 1;
+        textInput.className = "item-text";
+        textInput.placeholder = "Sjekkpunkt";
+        textInput.value = item.text || "";
+        textInput.addEventListener("input", function () { autoGrowTextarea(textInput); onEdit(); });
+        tdText.appendChild(textInput);
+        tr.appendChild(tdText);
+    }
 
     const tdTarget = document.createElement("td");
     const targetInput = document.createElement("textarea");
     targetInput.rows = 1;
     targetInput.className = "item-target";
-    targetInput.placeholder = "Status / tiltak";
+    targetInput.placeholder = singleColumn ? "Prosedyretrinn" : "Status / tiltak";
     targetInput.value = item.target || "";
     targetInput.addEventListener("input", function () { autoGrowTextarea(targetInput); onEdit(); });
     tdTarget.appendChild(targetInput);
+    tr.appendChild(tdTarget);
 
     const tdRemove = document.createElement("td");
     tdRemove.className = "col-remove";
@@ -326,15 +393,15 @@ function createItemRow(item, showCheckbox, isNormal) {
     removeBtn.title = "Fjern sjekkpunkt";
     removeBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
     removeBtn.addEventListener("click", function () {
-        if (confirmRowRemoval(textInput.value)) {
+        // singleColumn-rader har ingen textInput (se over) - bruk targetInput (eneste feltet) da i stedet,
+        // samme "spør kun hvis raden faktisk har innhold"-prinsipp som før.
+        if (confirmRowRemoval((singleColumn ? targetInput : textInput).value)) {
             tr.remove();
             onEdit();
         }
     });
     tdRemove.appendChild(removeBtn);
 
-    tr.appendChild(tdText);
-    tr.appendChild(tdTarget);
     tr.appendChild(tdRemove);
     return tr;
 }
@@ -347,6 +414,10 @@ function createSectionEl(tabKey, section) {
 
     const box = document.createElement("div");
     box.className = "section checklist-section";
+    // Må overleve en lagre/last-runde (se getState() sin sections-mapping under) - uten dette ville en
+    // singleColumn-del (f.eks. "Ulykke"/"Fly-away" på ERP-fanen) mistet selve singleColumn-egenskapen sin
+    // ved neste sideinnlasting fra localStorage, og falt tilbake til vanlig to-kolonners visning.
+    if (section.singleColumn) box.dataset.singleColumn = "1";
 
     const header = document.createElement("div");
     header.className = "section-header";
@@ -389,7 +460,7 @@ function createSectionEl(tabKey, section) {
     table.appendChild(tbody);
 
     (section.items || []).forEach(function (item) {
-        tbody.appendChild(createItemRow(item, labels.checkbox, isNormal));
+        tbody.appendChild(createItemRow(item, labels.checkbox, isNormal, section.singleColumn));
     });
 
     const footer = document.createElement("div");
@@ -400,7 +471,7 @@ function createSectionEl(tabKey, section) {
     addItemBtn.className = "btn btn-secondary add-row-btn";
     addItemBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Legg til sjekkpunkt';
     addItemBtn.addEventListener("click", function () {
-        const tr = createItemRow(null, labels.checkbox, isNormal);
+        const tr = createItemRow(null, labels.checkbox, isNormal, section.singleColumn);
         tbody.appendChild(tr);
         tr.querySelectorAll("textarea").forEach(autoGrowTextarea);
         onEdit();
@@ -421,16 +492,29 @@ function addEquipment(listKey, text) {
     ul.appendChild(createEquipmentRow(text));
 }
 
+// BUG (rapportert av brukeren: "'Maks hastighet' eksempelteksten i høyre kolonne skrives utenfor boksen
+// sin. og eksempelet skal helst være i m/s") - de gamle placeholderne ("Parameter (f.eks. Maks vind)",
+// "Verdi (f.eks. 20 knop)") var lenger enn selve INNHOLDET de skulle vise et eksempel på (verdikolonnen
+// har typisk KORTE reelle verdier, se DEFAULTS.normal.limits - "10 m/s", "120 m", "20 %" ...), og "knop"
+// stemte heller ikke med resten av appen som konsekvent bruker m/s (se "Maks vind"). Korte, rene "F.eks.
+// ..."-placeholdere i stedet for det lengre "Parameter (f.eks. ...)"/"Verdi (f.eks. ...)"-omslaget -
+// kolonnen VISER allerede at det er et parameter/verdi-par, den doble forklaringen er unødvendig og var
+// selve årsaken til at teksten ikke fikk plass. Se også .limits-table td.limit-key/-value i
+// css/style.css (bredde-fordelingen mellom kolonnene, samme bug).
 const LIMIT_PLACEHOLDERS = {
-    normal: { key: "Parameter (f.eks. Maks vind)", value: "Verdi (f.eks. 20 knop)" },
-    erp: { key: "Navn (f.eks. Operativ leder)", value: "Telefonnummer" }
+    normal: { key: "F.eks. Maks vind", value: "F.eks. 15 m/s" },
+    erp: { key: "F.eks. Operativ leder", value: "Telefonnummer" }
 };
 
 function addLimit(tabKey, key, value) {
     const tbody = document.querySelector('[data-limits="' + tabKey + '"]');
     if (!tbody) return;
     const placeholders = LIMIT_PLACEHOLDERS[tabKey] || {};
-    tbody.appendChild(createLimitRow(key, value, placeholders.key, placeholders.value, tabKey === "normal"));
+    const tr = createLimitRow(key, value, placeholders.key, placeholders.value, tabKey === "normal", tabKey === "erp");
+    tbody.appendChild(tr);
+    // Må gjøres ETTER innsetting i DOM-et - se samme begrunnelse ved addSection/addItemBtn
+    // (scrollHeight, som autoGrowTextarea leser, er upålitelig på løsrevne elementer).
+    tr.querySelectorAll("textarea").forEach(autoGrowTextarea);
 }
 
 function addSection(tabKey, section) {
@@ -447,16 +531,22 @@ function addSection(tabKey, section) {
 
 function getState() {
     const state = {};
+    // Malvalget (MÅK/spesifikk/egendefinert) leses fra normal-panelet - det er fortsatt eneste sted
+    // nedtrekksmenyen selv finnes, og setNormalTemplate holder tabPanel-normal/-contingency synkronisert
+    // (se kommentaren der) - men lagres nå på HVER fane sin tabState (ikke bare normal sin), slik at
+    // buildSectionBoxesForPrint kan filtrere variant-merkede punkter (f.eks. "Tap av C2 link" på
+    // contingency-fanen) riktig ved utskrift, uansett hvilken fane den bygger siden for.
+    const normalPanel = document.getElementById("tabPanel-normal");
+    const activeTemplate = (normalPanel && normalPanel.getAttribute("data-template")) || "mak";
     TAB_KEYS.forEach(function (tabKey) {
         const tabState = {
-            title: (document.getElementById(tabKey + "-title") || {}).value || ""
+            title: (document.getElementById(tabKey + "-title") || {}).value || "",
+            template: activeTemplate
         };
 
         if (tabKey === "normal") {
             tabState.drone = (document.getElementById("normal-drone") || {}).value || "";
             tabState.approvalNumber = (document.getElementById("normal-approval-number") || {}).value || "";
-            const normalPanel = document.getElementById("tabPanel-normal");
-            tabState.template = (normalPanel && normalPanel.getAttribute("data-template")) || "mak";
         }
 
         const eqList = document.querySelector('[data-equipment="' + tabKey + '"]');
@@ -478,10 +568,15 @@ function getState() {
         tabState.sections = sectionsContainer ? Array.from(sectionsContainer.querySelectorAll(".checklist-section")).map(function (box) {
             return {
                 title: box.querySelector(".section-title-input").value,
+                singleColumn: box.dataset.singleColumn === "1",
                 items: Array.from(box.querySelectorAll("tbody tr")).map(function (tr) {
                     const checkbox = tr.querySelector(".item-checked");
+                    // singleColumn-rader (se createItemRow) har ingen .item-text-celle i det hele tatt -
+                    // uten denne guarden ville .value på null kastet en TypeError og knekt HELE lagringen
+                    // (også de andre, ikke-relaterte fanene) hver gang brukeren skrev noe som helst.
+                    const textEl = tr.querySelector(".item-text");
                     return {
-                        text: tr.querySelector(".item-text").value,
+                        text: textEl ? textEl.value : "",
                         target: tr.querySelector(".item-target").value,
                         checked: checkbox ? checkbox.checked : false,
                         variant: tr.dataset.variant || ""
@@ -501,13 +596,21 @@ function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-// Setter aktivt malvalg (MÅK/spesifikk/egendefinert) på normal-fanen: data-template-attributtet på
-// fane-panelet styrer hvilke sjekkpunkter som vises (se CSS-filtreringen på tr[data-variant] - "egendefinert"
-// treffer ingen av filtrene, så da vises alt). Brukes både ved innlasting av lagret tilstand,
-// nedtrekksvalg og automatisk når brukeren begynner å redigere innholdet (se markNormalCustom).
+// Setter aktivt malvalg (MÅK/spesifikk/egendefinert): data-template-attributtet på fane-panelet styrer
+// hvilke sjekkpunkter som vises (se CSS-filtreringen på tr[data-variant] - "egendefinert" treffer ingen av
+// filtrene, så da vises alt). Nedtrekksmenyen selv finnes KUN på normal-fanen, men selve malvalget (MÅK
+// eller spesifikk) er ikke egentlig noe normal-fanen "eier" alene - det er samme operasjonskategori for
+// HELE sjekklistesettet (f.eks. "Tap av C2 link" på contingency-fanen har nå også mak/spesifikk-merkede
+// sjekkpunkter, se DEFAULTS.contingency). Setter derfor attributtet på BEGGE panelene, ikke bare
+// tabPanel-normal - se også getState() (som nå lagrer template-verdien uansett fane) og
+// buildSectionBoxesForPrint (som nå filtrerer variant-merkede punkter på alle faner, ikke bare normal).
+// Brukes både ved innlasting av lagret tilstand, nedtrekksvalg og automatisk når brukeren begynner å
+// redigere innholdet (se markNormalCustom).
 function setNormalTemplate(template) {
     const panel = document.getElementById("tabPanel-normal");
     if (panel) panel.setAttribute("data-template", template);
+    const contingencyPanel = document.getElementById("tabPanel-contingency");
+    if (contingencyPanel) contingencyPanel.setAttribute("data-template", template);
     const select = document.getElementById("normal-template-select");
     if (select && select.value !== template) select.value = template;
 }
@@ -720,7 +823,15 @@ function buildPrintRow(cells, extraClass) {
     cells.forEach(function (cell) {
         const td = document.createElement("td");
         td.className = cell.className || "";
-        if (cell.html !== undefined) td.innerHTML = cell.html;
+        if (cell.iconClass) {
+            // Nødnummer-ikon (se ERP_EMERGENCY_CONTACTS/buildLimitsBox) - egen <i>-node + tekst-node i
+            // stedet for cell.html under, slik at selve nummer-/kontaktnavnet fortsatt settes trygt via
+            // textContent (ingen HTML-injeksjon av det brukeren har skrevet inn i feltet).
+            const icon = document.createElement("i");
+            icon.className = "fa-solid " + cell.iconClass;
+            td.appendChild(icon);
+            td.appendChild(document.createTextNode(" " + (cell.text || "")));
+        } else if (cell.html !== undefined) td.innerHTML = cell.html;
         else td.textContent = cell.text || "";
         tr.appendChild(td);
     });
@@ -739,19 +850,27 @@ const BOX_ICONS = {
     "Før avgang": "fa-plane-departure",
     "Overvåking under flyging": "fa-eye",
     "Etter landing": "fa-flag-checkered",
-    "Tap av fjernkontroll-lenke": "fa-wifi",
+    "Tap av C2 link": "fa-wifi",
     "Tap av GNSS": "fa-satellite-dish",
-    "Lavt batterinivå": "fa-battery-quarter",
-    "Annet luftfartøy / trafikk i området": "fa-plane",
-    "Kraftig endring i vær/vind": "fa-cloud-bolt",
-    "Personer i bakkeområdet": "fa-person-walking",
-    "Fly-away / mister kontroll": "fa-triangle-exclamation",
-    "Motorfeil i lufta": "fa-gear",
-    "Batteribrann i lufta": "fa-fire",
-    "Ulykke / hendelse": "fa-car-burst",
+    "Lavt batterinivå varsel": "fa-battery-quarter",
+    "Fly-away / kontrolltap": "fa-triangle-exclamation",
+    "Ulykke": "fa-car-burst",
     "Fly-away / mistet kontakt": "fa-magnifying-glass-location"
 };
 const DEFAULT_BOX_ICON = "fa-clipboard-list";
+
+// ERP-kontaktlisten - brukerønske ("Ha nødnumrene øverst. noe indikasjon på at de er nødnumre, f.eks
+// med farge eller bold. Men ikke for skrikete... Gjerne med relevant ikon"). Nøkkelen MÅ matche
+// limit.key EKSAKT (samme "kjente standardnavn slår opp et ikon"-prinsipp som BOX_ICONS over) - dette
+// treffer dermed kun de tre REELLE nødnumrene (110/112/113), ikke f.eks. "Politi (ikke nød)" eller
+// "Operativ leder", som bevisst IKKE skal ha samme fremhevede stil (de er reelle kontakter, men ikke
+// nødnumre). Brukt av BÅDE selve sjekklistebyggeren (se createLimitRow) og utskriften (se
+// buildLimitsBox) - samme kilde, ingen risiko for at de to driver fra hverandre.
+const ERP_EMERGENCY_CONTACTS = {
+    "Brann": "fa-fire",
+    "Ambulanse": "fa-truck-medical",
+    "Politi": "fa-shield-halved"
+};
 
 // Setter ikon + tittel i en boks-header trygt (via DOM-noder, ikke innerHTML-sammenslåing) - tittelen
 // kan være fri tekst brukeren har skrevet selv.
@@ -784,7 +903,11 @@ function buildEquipmentBox(equipment) {
     return box;
 }
 
-function buildLimitsBox(limits, title) {
+// isContactList (nytt) - KUN sann for ERP sin Kontaktliste (se buildErpPage), ikke normal-fanens
+// Begrensninger som gjenbruker samme funksjon - se ERP_EMERGENCY_CONTACTS-kommentaren for hvorfor
+// nødnumrene (Brann/Ambulanse/Politi) der skal skille seg visuelt ut (ikon + fet/farget navn) i
+// utskriften, samme fremheving som selve sjekklistebyggeren gir live (se createLimitRow).
+function buildLimitsBox(limits, title, isContactList) {
     const rows = (limits || []).filter(function (l) { return l.key && l.key.trim(); });
     if (!rows.length) return null;
 
@@ -798,8 +921,11 @@ function buildLimitsBox(limits, title) {
     const table = document.createElement("table");
     table.className = "print-rows";
     rows.forEach(function (l) {
+        const emergencyIcon = isContactList ? ERP_EMERGENCY_CONTACTS[l.key.trim()] : null;
+        const keyCell = { className: "print-label print-key" + (emergencyIcon ? " print-key-emergency" : ""), text: l.key };
+        if (emergencyIcon) keyCell.iconClass = emergencyIcon;
         table.appendChild(buildPrintRow([
-            { className: "print-label print-key", text: l.key },
+            keyCell,
             { className: "print-value", text: l.value }
         ]));
     });
@@ -812,7 +938,14 @@ function buildLimitsBox(limits, title) {
 // flesk" - vis kun selve tiltaket/handlingen. Ved flere punkter trengs fortsatt situasjon+tiltak per
 // rad for å skille dem fra hverandre.
 function buildSectionBox(section, showCheckbox) {
-    const items = (section.items || []).filter(function (it) { return it.text && it.text.trim(); });
+    // singleColumn-deler (se createItemRow-kommentaren) legger ALT innholdet i item.target, item.text er
+    // alltid tom der - BUG (ville filtrert bort ALLE punktene i f.eks. ERP sin "Ulykke"/"Fly-away" og vist
+    // "Ingen sjekkpunkter" i utskriften) hvis dette fortsatt filtrerte kun på it.text slik det gjorde før
+    // singleColumn fantes. Filtrerer derfor på target i stedet når singleColumn er satt.
+    const singleColumn = !!section.singleColumn;
+    const items = (section.items || []).filter(function (it) {
+        return singleColumn ? (it.target && it.target.trim()) : (it.text && it.text.trim());
+    });
     if (!items.length && !(section.title && section.title.trim())) return null;
 
     const box = document.createElement("div");
@@ -845,9 +978,36 @@ function buildSectionBox(section, showCheckbox) {
         if (showCheckbox) {
             cells.push({ className: "print-check", html: '<span class="print-checkbox-box' + (item.checked ? " checked" : "") + '"></span>' });
         }
-        cells.push({ className: "print-number", text: (index + 1) + "." });
-        cells.push({ className: "print-label", text: item.text });
-        cells.push({ className: "print-value", text: item.target || "" });
+        // BUG (rapportert av brukeren: "tallet 3. og 2. skal være stilt øverst i raden. ikke midten") -
+        // .print-rows td er (med god grunn, se kommentaren ved regelen i css/style.css) MIDTJUSTERT som
+        // standard for de vanlige situasjon/tiltak-radene - fint for en kort label ved siden av en lengre
+        // verdi, men et flerlinjes singleColumn-trinn (f.eks. "Ikke nødvendigvis i rekkefølge:" med fire
+        // understreker under) gjorde selve raden mye høyere, og nummeret havnet synlig midt i, ikke ved
+        // siden av FØRSTE linje slik en vanlig nummerert liste ellers ville gjort. print-number-top (KUN
+        // lagt på for singleColumn) toppjusterer akkurat disse radene, uten å røre den bevisste
+        // midtjusteringen på resten av utskriften.
+        cells.push({ className: "print-number" + (singleColumn ? " print-number-top" : ""), text: (index + 1) + "." });
+        if (singleColumn) {
+            // Ren, bred énkolonne-celle (se createItemRow-kommentaren) - ingen situasjon/tiltak-splitt,
+            // kun selve prosedyretrinnet. print-value-wide (se css/style.css) bruker white-space:pre-line
+            // slik at manuelle linjeskift i teksten (f.eks. understreker under "Ikke nødvendigvis i
+            // rekkefølge:") faktisk vises som egne linjer i utskriften, ikke slås sammen til én lang linje.
+            cells.push({ className: "print-value print-value-wide", text: item.target || item.text || "" });
+        } else {
+            // print-label-situation (BUG: rapportert av brukeren - "Drone og propeller" på normal-sidens
+            // "Før avgang"/"Etter landing" brøt til to linjer i utskriften selv om det burde vært plass) -
+            // ren tabell-auto-layout deler kolonnebredden mellom label/verdi basert på ALT innhold i HELE
+            // tabellen (alle rader under ett), ikke rad for rad - en annen rads lange verditekst kunne
+            // dermed stjele nok bredde til å presse EN KORT label i en helt annen rad til å brekke, selv om
+            // den totale radbredden i seg selv hadde vært mer enn nok om kolonnene ble fordelt annerledes.
+            // Situasjon/Sjekkpunkt-siden (item.text) er alltid en kort, fast kategoribetegnelse ("Batteri",
+            // "System", "Drone og propeller" ...) som ALDRI skal brekke - se .print-label-situation i
+            // css/style.css (white-space:nowrap, KUN på denne kombinasjonen, ikke generisk .print-label -
+            // den brukes også av f.eks. utstyrslisten, der lange varenavn fortsatt skal få brekke normalt).
+            // Verdi-siden (item.target) kan derimot være en hel setning - den skal fortsatt kunne brekke.
+            cells.push({ className: "print-label print-label-situation", text: item.text });
+            cells.push({ className: "print-value", text: item.target || "" });
+        }
         table.appendChild(buildPrintRow(cells));
     });
     box.appendChild(table);
@@ -918,11 +1078,12 @@ function buildSectionBoxesForPrint(tabKey, data) {
     const template = data.template || "mak";
     const boxes = [];
     (data.sections || []).forEach(function (section) {
-        let items = section.items || [];
-        if (tabKey === "normal") {
-            items = items.filter(function (it) { return !it.variant || it.variant === template; });
-        }
-        const sectionBox = buildSectionBox({ title: section.title, items: items }, showCheckbox);
+        // Variant-filtreringen gjaldt FØR kun normal-fanen (den eneste som hadde mak/spesifikk-merkede
+        // punkter). Nå har contingency-fanen også slike (se "Tap av C2 link" i DEFAULTS.contingency), så
+        // filteret kjøres nå uansett tabKey - harmløst for faner uten variant-merkede punkter (it.variant
+        // er da alltid tom, og filteret slipper gjennom alt akkurat som før).
+        const items = (section.items || []).filter(function (it) { return !it.variant || it.variant === template; });
+        const sectionBox = buildSectionBox({ title: section.title, items: items, singleColumn: section.singleColumn }, showCheckbox);
         if (sectionBox) boxes.push(sectionBox);
     });
     return boxes;
@@ -1016,20 +1177,46 @@ function buildCombinedHalf(tabKey, data) {
     return half;
 }
 
-// Contingency og emergency deler én side, hver sin halvdel (med egen farget tittelbanner og sidefelt) -
-// i stedet for hver sin egen fulle A4-side. .print-columns-half bruker column-width (ikke et fast
-// column-count) slik at halvdelen selv kan falle tilbake til én kolonne i det trange rommet, eller
-// bruke flere kolonner hvis det skulle være plass. Kalles kun når combinedHalvesFit sier det er nok
-// plass - se buildAllPrintPages.
-function buildCombinedPage(contingencyData, emergencyData) {
-    const page = document.createElement("div");
-    page.className = "print-page print-page-combined";
-
+// Selve raden (contingency/emergency side ved side) - egen funksjon (tidligere inlinet i
+// buildCombinedPage) slik at BÅDE selve siden og målingene (combinedHalvesFit/combinedAllFit) bygger
+// nøyaktig samme markup, ikke to steder som kan drifte fra hverandre.
+function buildCombinedRow(contingencyData, emergencyData) {
     const row = document.createElement("div");
     row.className = "print-combined-row";
     row.appendChild(buildCombinedHalf("contingency", contingencyData));
     row.appendChild(buildCombinedHalf("emergency", emergencyData));
-    page.appendChild(row);
+    return row;
+}
+
+// Contingency og emergency deler én side, hver sin halvdel (med egen farget tittelbanner og sidefelt) -
+// i stedet for hver sin egen fulle A4-side. .print-columns-half bruker column-width (ikke et fast
+// column-count) slik at halvdelen selv kan falle tilbake til én kolonne i det trange rommet, eller
+// bruke flere kolonner hvis det skulle være plass. Kalles kun når combinedHalvesFit sier det er nok
+// plass (og combinedAllFit IKKE strakk til for å få ERP med også, se buildAllPrintPages) - ERP får da sin
+// egen side i stedet, se buildErpPage.
+function buildCombinedPage(contingencyData, emergencyData) {
+    const page = document.createElement("div");
+    page.className = "print-page print-page-combined";
+    page.appendChild(buildCombinedRow(contingencyData, emergencyData));
+    page.appendChild(buildPageDateStamp());
+    return page;
+}
+
+// Brukerønske ("Hvis det er plass kan ERP være på samme side som contingency og emergency. ta nedre
+// halvdel av siden f.eks.") - én og samme side med contingency+emergency øverst (som buildCombinedPage)
+// OG hele ERP-innholdet (sjekklistedeler + kontaktliste) stablet under, i stedet for at ERP alltid får
+// sin egen fulle side for seg selv. Kalles kun når combinedAllFit sier alt tre faktisk får plass - ellers
+// faller buildAllPrintPages tilbake til den vanlige to-delte combined-siden (eller enda lenger ned,
+// separate sider) pluss en egen ERP-side, se der.
+function buildCombinedTriplePage(contingencyData, emergencyData, erpData) {
+    const page = document.createElement("div");
+    page.className = "print-page print-page-combined";
+    page.appendChild(buildCombinedRow(contingencyData, emergencyData));
+    const erpBody = buildErpBody(erpData);
+    if (erpBody) {
+        erpBody.classList.add("print-combined-bottom");
+        page.appendChild(erpBody);
+    }
     page.appendChild(buildPageDateStamp());
     return page;
 }
@@ -1068,16 +1255,17 @@ function buildSingleTabPage(tabKey, data) {
 // er satt med noe margin siden font-rendering kan variere marginalt mellom nettlesere/OS.
 const MM_TO_PX = 96 / 25.4;
 const COMBINED_HALF_MAX_HEIGHT_MM = 210;
+// Full sidebredde tilgjengelig for INNHOLD (A4 210mm - @page-margen 15mm x 2 - .print-page sin egen
+// padding 2mm x 2, se css/style.css) - samme breddemål probene under (og selve den ferdige siden) faktisk
+// får, slik at en probe-måling stemmer overens med virkeligheten.
+const PRINT_CONTENT_WIDTH_MM = 176;
 
 function combinedHalvesFit(contingencyData, emergencyData) {
     const probe = document.createElement("div");
-    probe.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:176mm; display:block;";
+    probe.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + PRINT_CONTENT_WIDTH_MM + "mm; display:block;";
     document.body.appendChild(probe);
 
-    const row = document.createElement("div");
-    row.className = "print-combined-row";
-    row.appendChild(buildCombinedHalf("contingency", contingencyData));
-    row.appendChild(buildCombinedHalf("emergency", emergencyData));
+    const row = buildCombinedRow(contingencyData, emergencyData);
     probe.appendChild(row);
 
     const maxHeightPx = COMBINED_HALF_MAX_HEIGHT_MM * MM_TO_PX;
@@ -1090,28 +1278,63 @@ function combinedHalvesFit(contingencyData, emergencyData) {
     return fits;
 }
 
-// ERP (etter-ulykke-siden): samme oppbygning som normal-siden - sjekklistedeler fast til venstre,
-// men med Kontaktliste (telefonnumre) i stedet for utstyr/begrensninger til høyre. Returnerer null hvis
-// fanen er helt tom (ingen sjekkpunkter og ingen kontakter) - ERP-siden skal da ikke være med i det
-// hele tatt i utskriften, ikke vises som en side med kun en "tom"-melding.
-function buildErpPage(data) {
+// Brukerønske ("Hvis det er plass kan ERP være på samme side som contingency og emergency. ta nedre
+// halvdel av siden f.eks. Pass på at det ikke blir med tomme sider på utskriften") - samme måle-prinsipp
+// som combinedHalvesFit over, men på HELE den foreslåtte tredelte siden (rad + ERP stablet under) under
+// ETT, siden det her er snakk om total sidehøyde, ikke to uavhengige halvdeler side ved side.
+// PRINT_ALL_MAX_HEIGHT_MM er satt lavere enn selve .print-page sin egen 267mm-budsjett (se der) - samme
+// "noe margin siden font-rendering kan variere"-begrunnelse som COMBINED_HALF_MAX_HEIGHT_MM over, men
+// mindre margin enn den (57mm) trenger, siden risikoen her hovedsakelig gjelder selve
+// contingency/emergency-raden (samme kolonnebasert-layout-usikkerhet som over) - ERP sin egen
+// .print-grid er en vanlig, forutsigbar to-kolonners grid, ikke en auto-balanserende multi-kolonne-layout.
+const PRINT_ALL_MAX_HEIGHT_MM = 245;
+
+function combinedAllFit(contingencyData, emergencyData, erpData) {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + PRINT_CONTENT_WIDTH_MM + "mm; display:block;";
+    document.body.appendChild(probe);
+
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(buildCombinedRow(contingencyData, emergencyData));
+    const erpBody = buildErpBody(erpData);
+    if (erpBody) {
+        erpBody.classList.add("print-combined-bottom");
+        wrapper.appendChild(erpBody);
+    }
+    probe.appendChild(wrapper);
+
+    const fits = wrapper.scrollHeight <= PRINT_ALL_MAX_HEIGHT_MM * MM_TO_PX;
+
+    document.body.removeChild(probe);
+    return fits;
+}
+
+// Selve ERP-innholdet (tittelbanner + sjekklistedeler til venstre/Kontaktliste til høyre) - egen
+// funksjon (tidligere inlinet i buildErpPage) slik at det samme innholdet kan gjenbrukes BÅDE på ERP sin
+// egen, frittstående side (buildErpPage under) OG stablet nederst på en delt side med contingency/
+// emergency (buildCombinedTriplePage) - uten å bygge to steder som kan drifte fra hverandre. data-theme
+// er satt på selve wrapper-elementet her (ikke lenger på en ytre .print-page), samme mønster som
+// buildCombinedHalf allerede bruker for contingency/emergency sine halvdeler - CSS-selektorene
+// ([data-theme="erp"] .print-header) treffer uansett hvor dypt/grunt attributtet sitter i treet, se
+// buildPrintHeader. Returnerer null hvis fanen er helt tom (ingen sjekkpunkter og ingen kontakter) - ERP
+// skal da ikke være med i utskriften i det hele tatt, verken som egen side eller stablet.
+function buildErpBody(data) {
     const leftCol = document.createElement("div");
     leftCol.className = "print-col";
     const rightCol = document.createElement("div");
     rightCol.className = "print-col";
 
     if (data.limits) {
-        const contactBox = buildLimitsBox(data.limits, "Kontaktliste");
+        const contactBox = buildLimitsBox(data.limits, "Kontaktliste", true);
         if (contactBox) rightCol.appendChild(contactBox);
     }
     buildSectionBoxesForPrint("erp", data).forEach(function (box) { leftCol.appendChild(box); });
 
     if (!leftCol.children.length && !rightCol.children.length) return null;
 
-    const page = document.createElement("div");
-    page.className = "print-page";
-    page.setAttribute("data-theme", "erp");
-    page.appendChild(buildPrintHeader("erp", data));
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("data-theme", "erp");
+    wrapper.appendChild(buildPrintHeader("erp", data));
 
     const grid = document.createElement("div");
     grid.className = "print-grid";
@@ -1121,7 +1344,19 @@ function buildErpPage(data) {
     const body = document.createElement("div");
     body.className = "print-page-body";
     body.appendChild(grid);
-    page.appendChild(body);
+    wrapper.appendChild(body);
+    return wrapper;
+}
+
+// ERP som egen, frittstående A4-side - fallback når den IKKE fikk plass sammen med contingency/emergency
+// (se combinedAllFit/buildAllPrintPages). Returnerer null hvis fanen er helt tom, se buildErpBody.
+function buildErpPage(data) {
+    const erpBody = buildErpBody(data);
+    if (!erpBody) return null;
+
+    const page = document.createElement("div");
+    page.className = "print-page";
+    page.appendChild(erpBody);
     page.appendChild(buildPageDateStamp());
     return page;
 }
@@ -1134,11 +1369,25 @@ function buildAllPrintPages() {
     if (normalPage) container.appendChild(normalPage);
 
     // Contingency/emergency deler én side hvis det er plass - hvis ikke (for mye innhold til å få plass
-    // side ved side), får de hver sin fulle side i stedet. Se combinedHalvesFit. Er BEGGE helt tomme,
-    // hoppes den delte siden over helt (samme "ingen blanke sider"-prinsipp som ERP-siden under) i
-    // stedet for å vise en side med to "tom"-meldinger.
+    // side ved side), får de hver sin fulle side i stedet. Er BEGGE helt tomme, hoppes den delte siden
+    // over helt (samme "ingen blanke sider"-prinsipp som ERP-siden under) i stedet for å vise en side med
+    // to "tom"-meldinger.
     const hasContingency = buildSectionBoxesForPrint("contingency", state.contingency).length > 0;
     const hasEmergency = buildSectionBoxesForPrint("emergency", state.emergency).length > 0;
+    const hasErp = !!buildErpBody(state.erp);
+
+    // Brukerønske ("Hvis det er plass kan ERP være på samme side som contingency og emergency. ta nedre
+    // halvdel av siden f.eks. Pass på at det ikke blir med tomme sider på utskriften") - forsøkes FØRST,
+    // før den vanlige contingency/emergency-sidelogikken under: får alle tre plass stablet på ÉN side
+    // (se combinedAllFit), er den siden komplett i seg selv - hverken en egen contingency/emergency-side
+    // eller en egen ERP-side skal da også lages (return under). Er det ikke plass til alle tre (eller ERP
+    // er tom), faller det helt tilbake til den opprinnelige logikken - contingency/emergency på egen delt
+    // side (eller separate sider) OG en egen ERP-side, akkurat som før denne endringen.
+    if ((hasContingency || hasEmergency) && hasErp && combinedAllFit(state.contingency, state.emergency, state.erp)) {
+        container.appendChild(buildCombinedTriplePage(state.contingency, state.emergency, state.erp));
+        return;
+    }
+
     if (hasContingency || hasEmergency) {
         if (combinedHalvesFit(state.contingency, state.emergency)) {
             container.appendChild(buildCombinedPage(state.contingency, state.emergency));
