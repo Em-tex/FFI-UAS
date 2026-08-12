@@ -1641,6 +1641,17 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
         width: 100%;
         background: white;
     }
+    /* BUG (rapportert av brukeren: "jeg velger last ned som PDF, men får to blanke sider til slutt") -
+       visibility:hidden (regelen over) gjør resten av siden USYNLIG, men den beholder fortsatt sin egen
+       LAYOUT-HØYDE (i motsetning til display:none) - #printView er riktignok position:absolute og dermed
+       tatt UT av selve dokumentflyten, men det gjør IKKE det opprinnelige, nå usynlige skjemaet (alle fire
+       faner sitt fulle, redigerbare innhold, inni .container) - siden BEHOLDER dermed sin fulle,
+       usynlige høyde, og nettleserens sideoppdeling for selve utskriften regner fortsatt DEN høyden med.
+       Er det usynlige skjemaet høyere enn selve print-view sine reelle sider (fullt sannsynlig med fire
+       faner), blir overskytende høyde til akkurat de tomme sidene brukeren rapporterte. Fjerner resten av
+       .container fullstendig fra layout under utskrift (display:none, ikke bare usynlig) - da er det
+       INGENTING igjen å regne inn utover selve print-view sine egne, ekte sider. */
+    body.printing-checklist .container > *:not(.print-view) { display: none !important; }
 }
 
 .print-page {
