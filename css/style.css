@@ -476,6 +476,9 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 .sim-status-value.sim-armed { color: #6fdc8c; }
 .sim-status-value.sim-killed { color: #ff6b6b; }
+/* Rundetider (race3, se exerciseHudLapTimes) - opptil tre tider på én linje ved siden av totaltiden,
+   litt mindre skrift enn de andre HUD-verdiene så raden ikke blir bredere enn nødvendig. */
+.sim-status-value-sm { font-size: 0.8rem; white-space: nowrap; }
 /* Kort gult blink på hudMode ved modusbytte (se modeFlashUntil i simulator-vtol.js) - ren CSS-animasjon
    i stedet for en JS-drevet fargeovergang, siden klassen kun står på i ~400ms (ett engangsblink, ikke
    en vedvarende tilstand som sim-armed/sim-killed over). */

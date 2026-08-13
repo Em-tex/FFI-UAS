@@ -618,7 +618,6 @@ const EXERCISES = {
         droneClass: "racing",
         forceCameraMode: "fpv",
         forceFlightMode: "acro",
-        forceFpvTiltDeg: 30,
         freeCameraToggle: true, // C (kamerabytte) er IKKE låst til VLOS her, se toggleCamera
         shortDescription: "Fly gjennom alle portene på racingbanen så fort du kan - klokken starter når du krysser start/mål.",
         startHint: "Fly gjennom porten for å starte tiden.",
@@ -646,7 +645,6 @@ const EXERCISES = {
         droneClass: "racing",
         forceCameraMode: "fpv",
         forceFlightMode: "acro",
-        forceFpvTiltDeg: 30,
         freeCameraToggle: true,
         shortDescription: "Fullfør 3 sammenhengende runder så fort du kan - totaltiden (og hver rundetid) telles.",
         startHint: "Fly gjennom porten for å starte tiden. 3 runder på rad.",
@@ -4382,8 +4380,10 @@ const exerciseState = {
     // Racingbanen (ex-race1) - se "Øvelser: racing-tilstandsmaskin". Gjenbruker wpIndex/engaged (samme
     // felt som løype-øvelsene) for hvilken port som er neste/om start/mål er krysset minst én gang.
     raceStartTime: 0, // tidspunkt inneværende runde startet (0 = klokken går ikke ennå)
-    savedFlightMode: null, // flightMode slik den var før en øvelse tvang sin egen (racingbanen: Acro)
-    savedFpvTiltDeg: null // FPV-kameravinkelen slik den var før en øvelse tvang sin egen (racingbanen: 30°)
+    savedFlightMode: null // flightMode slik den var før en øvelse tvang sin egen (racingbanen: Acro)
+    // NB: FPV-kameravinkelen (settings.fpvTiltDeg) har bevisst INGEN tilsvarende saved/tving-mekanisme -
+    // den skal alltid være brukerens egen, lagrede innstilling, uansett hvilken øvelse som pågår (se
+    // kommentaren i startExercise). Ingen exercise setter forceFpvTiltDeg akkurat nå.
 };
 let exerciseGuideHandle = null;
 
@@ -4912,6 +4912,8 @@ const exerciseHudHeadingErrorEl = document.getElementById("exerciseHudHeadingErr
 const exerciseHudHeadingErrorItemEl = document.getElementById("exerciseHudHeadingErrorItem");
 const exerciseHudTimerItemEl = document.getElementById("exerciseHudTimerItem");
 const exerciseHudTimerEl = document.getElementById("exerciseHudTimer");
+const exerciseHudLapTimesItemEl = document.getElementById("exerciseHudLapTimesItem");
+const exerciseHudLapTimesEl = document.getElementById("exerciseHudLapTimes");
 
 function updateExerciseHud() {
     const showBanner = performance.now() < exerciseState.warningUntil;
@@ -4941,6 +4943,12 @@ function updateExerciseHud() {
     // Merk runden som "teller ikke" så snart et avvik har skjedd i den - synlig konsekvens med en gang.
     const lapSuffix = (stage && exerciseState.lapHasViolation) ? " (runden teller ikke)" : "";
     const returnSuffix = exerciseState.landingPhase ? " - land på H" : "";
+    // Racingbanen med flere runder (race3): "fremdrift" skal bare si HVILKEN runde man er på akkurat
+    // nå (ikke portnummeret - det er for detaljert til å følge med på i farta) - se exerciseHudLapTimes
+    // like under for selve rundetidene underveis. Enkeltrunde (race1, lapsRequired 1) beholder den gamle
+    // port-/kryssingsteksten, som fortsatt er nyttig der siden det ikke finnes noe "runde X av Y" å vise.
+    const raceLapsRequired = (stage && stage.type === "racing") ? (stage.lapsRequired || 1) : 1;
+    const isMultiLapRacing = stage && stage.type === "racing" && raceLapsRequired > 1;
     exerciseHudLapsEl.textContent = !stage
         ? (exerciseState.awaitingNext ? "Se oppsummering" : "Land på H")
         : (stage.type === "hover"
@@ -4950,8 +4958,22 @@ function updateExerciseHud() {
                 : stage.type === "killswitch"
                     ? killswitchStatusText()
                     : stage.type === "racing"
-                        ? (exerciseState.engaged ? "Port " + exerciseState.wpIndex + "/" + RACE_GATE_CENTERS_2.length : "Kryss start/mål")
+                        ? (isMultiLapRacing
+                            ? "Runde " + Math.min(exerciseState.raceLapSplits.length + 1, raceLapsRequired) + " av " + raceLapsRequired
+                            : (exerciseState.engaged ? "Port " + exerciseState.wpIndex + "/" + RACE_GATE_CENTERS_2.length : "Kryss start/mål"))
                         : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
+
+    // Rundetidene som allerede er i boks denne økten (race3) - vises kompakt oppe til venstre sammen
+    // med totaltiden (samme HUD-bar som exerciseHudTimerItem), ikke i den store Fremdrift-boksen (som
+    // nå bare viser "Runde X av Y", se over) - da hadde den store boksen blitt for full/rotete.
+    if (isMultiLapRacing && exerciseState.raceLapSplits.length > 0) {
+        exerciseHudLapTimesItemEl.style.display = "";
+        exerciseHudLapTimesEl.textContent = exerciseState.raceLapSplits
+            .map(function (s) { return formatExerciseTime(s, 2); })
+            .join(" · ");
+    } else {
+        exerciseHudLapTimesItemEl.style.display = "none";
+    }
 
     // Racing har verken avviks-telling eller nese-krav (fri stil) - begge feltene er bare støy der,
     // se stage.type === "racing" i updateRacingStage.
@@ -5064,19 +5086,16 @@ function startExercise(id) {
     exerciseState.savedDroneClass = droneState.droneClass;
     exerciseState.savedCameraModeIndex = cameraModeIndex;
     exerciseState.savedFlightMode = droneState.flightMode;
-    exerciseState.savedFpvTiltDeg = settings.fpvTiltDeg;
     // De aller fleste øvelsene flys i Middels/VLOS - racingbanen (ex-race1) er unntaket: Racing-klasse,
-    // Acro-modus, FPV-kamera med et lavere standard kameravinkel (se exercise.forceFpvTiltDeg) egnet for
-    // racing. Alt lagres her og gjenopprettes i stopExercise, akkurat som vind/skydekke under.
+    // Acro-modus og FPV-kamera. FPV-vinkelen (settings.fpvTiltDeg) tvinges bevisst ALDRI her, i motsetning
+    // til klasse/kameramodus/flight mode under - den skal alltid følge brukerens egen lagrede innstilling,
+    // uansett hvilken øvelse som pågår (kameraet leser den live, se animate). Alt annet lagres her og
+    // gjenopprettes i stopExercise, akkurat som vind/skydekke under.
     setDroneClassEphemeral(exercise.droneClass || "mid");
     const forcedCameraMode = exercise.forceCameraMode || "vlos";
     cameraModeIndex = CAMERA_MODES.indexOf(forcedCameraMode);
     activeCamera = (forcedCameraMode === "chase") ? chaseCamera : (forcedCameraMode === "fpv") ? fpvCamera : vlosCamera;
     if (exercise.forceFlightMode) droneState.flightMode = exercise.forceFlightMode;
-    if (exercise.forceFpvTiltDeg !== undefined) {
-        settings.fpvTiltDeg = exercise.forceFpvTiltDeg;
-        fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
-    }
 
     // Vind-øvelser tvinger sin egen vind mens øvelsen pågår - brukerens innstillinger huskes og
     // settes tilbake i stopExercise. Ingen saveSettings her: tvangen skal aldri lekke til localStorage.
@@ -5145,11 +5164,6 @@ function stopExercise() {
     if (exerciseState.savedFlightMode) {
         droneState.flightMode = exerciseState.savedFlightMode;
         exerciseState.savedFlightMode = null;
-    }
-    if (exerciseState.savedFpvTiltDeg !== undefined && exerciseState.savedFpvTiltDeg !== null) {
-        settings.fpvTiltDeg = exerciseState.savedFpvTiltDeg;
-        fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
-        exerciseState.savedFpvTiltDeg = null;
     }
     if (exerciseState.savedClouds) {
         settings.cloudsEnabled = exerciseState.savedClouds.enabled;
@@ -5677,6 +5691,9 @@ function updateRacingStage(stage, dt, now) {
 // baneendringer som gjør gamle tider usammenlignbare kan bumpe denne på nytt samme måte.
 const RACING_LEADERBOARD_KEY = "ffi-uas:racing-leaderboard-v2";
 const RACING_LEADERBOARD_MAX_ENTRIES = 20;
+// Hvor lenge etter at en rekord ble satt navnet kan endres - se renderRacingLeaderboard (skjuler
+// endre-ikonet etter dette) og renameRacingLeaderboardEntry (sperrer selve endringen som ekstra sikring).
+const RACING_LEADERBOARD_RENAME_WINDOW_MS = 60 * 60 * 1000;
 // entries3 lagt til her (samme lagringsnøkkel/versjon fortsatt - Sim.loadJSON fyller inn manglende felt
 // fra denne default-strukturen, se defaults-merge-mønsteret, så et EKSISTERENDE v2-lagret objekt uten
 // entries3 fra før race3 fantes får den tom i stedet for undefined, uten behov for en ny nøkkel/versjon).
@@ -5772,16 +5789,21 @@ function renderRacingLeaderboard() {
         }
         // Endre-knapp for en allerede lagret tid (ikke feltet øverst - det setter kun navnet på
         // FREMTIDIGE runder) - for å rette et feilskrevet navn i etterkant, se renameRacingLeaderboardEntry.
-        const editBtn = document.createElement("button");
-        editBtn.type = "button";
-        editBtn.className = "sim-racing-lb-edit";
-        editBtn.title = "Endre navn på denne tiden";
-        editBtn.innerHTML = '<i class="fa-solid fa-pen"></i>';
-        editBtn.addEventListener("click", function () { renameRacingLeaderboardEntry(i); });
+        // Kun tilgjengelig i RACING_LEADERBOARD_RENAME_WINDOW_MS etter at rekorden ble satt - deretter
+        // forsvinner ikonet, slik at man ikke kan gå tilbake og endre navn på gamle/andres tider.
+        const ageMs = entry.dateISO ? (Date.now() - new Date(entry.dateISO).getTime()) : Infinity;
         row.appendChild(rank);
         row.appendChild(name);
         row.appendChild(time);
-        row.appendChild(editBtn);
+        if (ageMs <= RACING_LEADERBOARD_RENAME_WINDOW_MS) {
+            const editBtn = document.createElement("button");
+            editBtn.type = "button";
+            editBtn.className = "sim-racing-lb-edit";
+            editBtn.title = "Endre navn på denne tiden";
+            editBtn.innerHTML = '<i class="fa-solid fa-pen"></i>';
+            editBtn.addEventListener("click", function () { renameRacingLeaderboardEntry(i); });
+            row.appendChild(editBtn);
+        }
         listEl.appendChild(row);
         if (splitsEl) listEl.appendChild(splitsEl);
     });
@@ -5794,6 +5816,8 @@ function renderRacingLeaderboard() {
 function renameRacingLeaderboardEntry(i) {
     const entry = racingEntriesFor()[i];
     if (!entry) return;
+    const ageMs = entry.dateISO ? (Date.now() - new Date(entry.dateISO).getTime()) : Infinity;
+    if (ageMs > RACING_LEADERBOARD_RENAME_WINDOW_MS) return; // fristen for å endre navn er ute
     const ok = window.confirm(
         "Endre navnet på denne tiden (" + formatExerciseTime(entry.timeSec, 2) + ", satt av \"" + entry.name +
         "\")?\n\nBruk dette kun til å rette DITT EGET feilskrevne navn - ikke for å jukse til deg æren for andres runder!"
@@ -6028,6 +6052,10 @@ function animate(now) {
     updateKillswitchVisuals(now, frameDt);
 
     updateDroneVisual(frameDt);
+    // Sikrer at FPV-kameraet faktisk står i den lagrede/husk­ede vinkelen kontinuerlig (ikke bare når
+    // den ble satt via initScene/øvelsesstart/slideren) - uten denne kunne kameraet vise 0° etter en
+    // reload helt til man dro i fpvTiltInput-slideren selv, selv om innstillingen viste riktig verdi.
+    fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
     chaseCameraController.update(frameDt, droneState.position, droneState.quaternion);
     updateVlosCamera();
     updateWindsockVisual(now);
