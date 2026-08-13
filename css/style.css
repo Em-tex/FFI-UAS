@@ -1523,6 +1523,20 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    Begrensninger), som beholder den nøytrale mørke standardfargen. */
 .checklist-section { margin-bottom: 20px; }
 .checklist-section .section-header { background-color: var(--ffi-blue); }
+/* Dra-og-slipp-håndtak for å endre rekkefølge på sjekklistedelene (brukerønske) - se
+   initSectionDragAndDrop/createSectionEl i js/sjekkliste-bygger.js. "grab"/"grabbing" (ikke
+   standard pointer) signaliserer at boksen kan dras, ikke bare klikkes. */
+.drag-section-handle {
+    color: rgba(255,255,255,0.75);
+    cursor: grab;
+    padding: 4px 8px;
+    flex-shrink: 0;
+}
+.drag-section-handle:active { cursor: grabbing; }
+/* Boksen som faktisk dras - halvtransparent, slik at man ser hvor den "kommer fra" mens man ser
+   resten av boksene omorganisere seg live rundt den (se dragover-lytteren, som flytter selve
+   DOM-noden løpende under draget). */
+.checklist-section.dragging { opacity: 0.4; }
 .builder-item-table { width: 100%; border-collapse: collapse; }
 .builder-item-table th {
     background-color: var(--ffi-blue);

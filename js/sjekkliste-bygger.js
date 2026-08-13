@@ -428,8 +428,39 @@ function createSectionEl(tabKey, section) {
     // ved neste sideinnlasting fra localStorage, og falt tilbake til vanlig to-kolonners visning.
     if (section.singleColumn) box.dataset.singleColumn = "1";
 
+    // Dra-og-slipp for å endre rekkefølgen på boksene (brukerønske) - box.draggable slås KUN på mens
+    // brukeren faktisk har musen nedtrykt på selve grep-håndtaket (dragHandle under), ikke permanent på
+    // hele boksen. Uten denne begrensningen ville draggable="true" på hele boksen kapret vanlig
+    // tekstmarkering/dra-og-slipp INNI section-title-input og textareaene under (mousedown der ville
+    // startet en boks-drag i stedet for tekstmarkering) - se dragHandle sin mousedown/mouseup-håndtering.
+    // Selve flyttingen skjer live mens man drar (se getDragTargetSection/dragover-lytteren på
+    // [data-sections]-containeren i DOMContentLoaded), IKKE først ved drop - drop trenger derfor ikke
+    // gjøre noe utover å hindre nettleserens standard drop-handling.
+    box.draggable = false;
+    box.addEventListener("dragstart", function (e) {
+        box.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        // Uten setData nekter i alle fall Firefox å starte selve draget.
+        e.dataTransfer.setData("text/plain", "");
+    });
+    box.addEventListener("dragend", function () {
+        box.classList.remove("dragging");
+        box.draggable = false;
+        onEdit();
+    });
+
     const header = document.createElement("div");
     header.className = "section-header";
+
+    const dragHandle = document.createElement("span");
+    dragHandle.className = "drag-section-handle no-print";
+    dragHandle.title = "Dra for å endre rekkefølge på denne delen";
+    dragHandle.setAttribute("aria-hidden", "true");
+    dragHandle.innerHTML = '<i class="fa-solid fa-grip-vertical"></i>';
+    // "mouseup" (ikke bare dragend over) rydder opp igjen for det vanlige tilfellet der brukeren klikker
+    // håndtaket uten å faktisk dra noe sted - da fyres aldri dragstart/dragend i det hele tatt.
+    dragHandle.addEventListener("mousedown", function () { box.draggable = true; });
+    dragHandle.addEventListener("mouseup", function () { box.draggable = false; });
 
     const titleInput = document.createElement("input");
     titleInput.type = "text";
@@ -450,6 +481,7 @@ function createSectionEl(tabKey, section) {
         }
     });
 
+    header.appendChild(dragHandle);
     header.appendChild(titleInput);
     header.appendChild(removeSectionBtn);
 
@@ -491,6 +523,59 @@ function createSectionEl(tabKey, section) {
     box.appendChild(table);
     box.appendChild(footer);
     return box;
+}
+
+// Finner hvilken av de ANDRE sjekklistedel-boksene i containeren musepekeren er nærmest, og om den
+// dragede boksen skal settes FØR eller ETTER den boksen - brukt live under selve draget (se
+// dragover-lytteren på [data-sections] i DOMContentLoaded). Avstand måles til boksens MIDTPUNKT (ikke
+// bare vertikal posisjon), slik at dette fungerer noe fornuftig BÅDE for normal/erp sin rene
+// én-kolonne-liste (.builder-col) OG for contingency/emergency sin to-kolonners "aviskolonne"-flyt
+// (.builder-columns, se css/style.css) - ren y-sammenligning alene ville stokket boksene tilfeldig når
+// de ligger side ved side i to kolonner.
+function getDragTargetSection(container, x, y, dragging) {
+    let closest = null;
+    let closestDist = Infinity;
+    Array.from(container.children).forEach(function (el) {
+        if (el === dragging || !el.classList.contains("checklist-section")) return;
+        const rect = el.getBoundingClientRect();
+        const dx = x - (rect.left + rect.width / 2);
+        const dy = y - (rect.top + rect.height / 2);
+        const dist = dx * dx + dy * dy;
+        if (dist < closestDist) {
+            closestDist = dist;
+            closest = el;
+        }
+    });
+    if (!closest) return null;
+    const rect = closest.getBoundingClientRect();
+    return { element: closest, before: y < rect.top + rect.height / 2 };
+}
+
+// Kobler på selve dra-og-slipp-omorganiseringen for én [data-sections]-container - kalt én gang per
+// fane-container i DOMContentLoaded (containerne finnes fast i HTML-en, opprettes ikke på nytt), ikke
+// per boks (boksene selv har bare dragstart/dragend, se createSectionEl).
+function initSectionDragAndDrop(container) {
+    container.addEventListener("dragover", function (e) {
+        const dragging = container.querySelector(".checklist-section.dragging");
+        if (!dragging) return;
+        // Må avbryte nettleserens standard dragover-håndtering for at containeren skal kunne motta en
+        // drop i det hele tatt.
+        e.preventDefault();
+        const target = getDragTargetSection(container, e.clientX, e.clientY, dragging);
+        if (!target) {
+            if (container.lastElementChild !== dragging) container.appendChild(dragging);
+            return;
+        }
+        if (target.before) {
+            if (dragging.nextSibling !== target.element) container.insertBefore(dragging, target.element);
+        } else {
+            const after = target.element.nextSibling;
+            if (dragging.nextSibling !== after) container.insertBefore(dragging, after);
+        }
+    });
+    // Selve flyttingen skjer allerede live i dragover over - drop trenger bare å hindre nettleserens
+    // standard håndtering (f.eks. å åpne teksten som en "fil").
+    container.addEventListener("drop", function (e) { e.preventDefault(); });
 }
 
 /* ---------- Legg til-knapper ---------- */
@@ -1546,6 +1631,8 @@ document.addEventListener("DOMContentLoaded", function () {
             if (tabKey === "normal") markNormalCustom();
         });
     });
+
+    document.querySelectorAll("[data-sections]").forEach(initSectionDragAndDrop);
 
     document.querySelectorAll("[data-add-section]").forEach(function (btn) {
         btn.addEventListener("click", function () {
