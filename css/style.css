@@ -463,6 +463,23 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     flex-direction: column;
     min-width: 70px;
 }
+/* Usynlig knapp lagt OVENPÅ hele .sim-status-item (via position:absolute inset:0 - se .sim-dropdown sin
+   position:relative rett over, som gir denne sitt positisjoneringsgrunnlag) - selve klikkeflaten for
+   modus-popoveren (buildModePopover). Erstattet et tidligere forsøk på å gjøre SELVE cellen (en <div>) til
+   klikkeflaten via event-bubling fra tekstene inni - upålitelig på tvers av nettlesere/oppsett (brukeren
+   rapporterte gjentatte ganger at kun selve modus-teksten reagerte). En ekte, native <button> med et
+   entydig, garantert rektangulært treffområde (via inset:0) er robust uansett hvilket barn som "egentlig"
+   ligger under et gitt punkt. */
+.sim-mode-toggle-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+}
 .sim-status-label {
     font-size: 0.68rem;
     text-transform: uppercase;

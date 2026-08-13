@@ -17,23 +17,30 @@ const VERTICAL_DRAG_MULTIPLIER = 1.6;
 // propellstrømmen - det som faktisk bremser en quad som "seiler" sakte avgårde etter en dytt), dragQuad
 // dominerer i høy fart (v² - "veggen" nær toppfart). Kun kvadratisk ledd ga null bremsing i lav fart
 // og en drone som fløt evig videre etter et lite puff.
+// maxYawRateDeg: øvre TAK på yaw-rate uansett hva brukeren selv setter i Rates-panelet (se
+// effectiveYawRates lenger ned) - inertiaYaw ALENE (over) gir riktig RETNING (tyngre klasser er tregere å
+// spinne opp/ned i yaw), men uten et eget tak ville de likevel til slutt nådd akkurat samme TOPPFART som
+// Racing gitt nok tid, siden selve rates.yaw.maxRate er én delt verdi for alle klasser. Ekte cinematic-
+// rigger konfigureres typisk til en MYE lavere maks yaw-rate enn racing-droner (gjerne 60-150°/s, uavhengig
+// av selve treg-/rakskheten) - både fordi rask yaw på en tung rigg er upraktisk/ukontrollert, og fordi jevne,
+// rolige panoreringer er selve poenget med cinematic-opptak.
 const DRONE_CLASSES = {
     racing: {
         label: "Racing (rask, lett)",
         mass: 0.5, maxThrust: 18,
-        inertiaRollPitch: 0.025, inertiaYaw: 0.05,
+        inertiaRollPitch: 0.025, inertiaYaw: 0.05, maxYawRateDeg: 800, // høyt nok til i praksis ikke begrense noen vanlig Rates-instilling
         dragLinear: 0.2, dragQuad: 0.006, visualScale: 0.72 // kun visuell størrelse - massen er uendret
     },
     mid: {
         label: "Middels",
         mass: 1.2, maxThrust: 24,
-        inertiaRollPitch: 0.07, inertiaYaw: 0.14,
+        inertiaRollPitch: 0.07, inertiaYaw: 0.14, maxYawRateDeg: 250,
         dragLinear: 0.35, dragQuad: 0.02, visualScale: 1.3
     },
     cinematic: {
         label: "Cinematic (stor, treg)",
         mass: 2.6, maxThrust: 35,
-        inertiaRollPitch: 0.16, inertiaYaw: 0.32,
+        inertiaRollPitch: 0.16, inertiaYaw: 0.32, maxYawRateDeg: 120,
         dragLinear: 0.55, dragQuad: 0.07, visualScale: 2.3
     }
 };
@@ -140,6 +147,98 @@ const MAX_SELF_LEVEL_ANGLE = 35;    // grader
 const MAX_CLIMB_RATE = 4;           // m/s, Alt Hold
 const ALT_GAIN = 6;                 // N per (m/s) avvik i Alt Hold
 const ALT_HOLD_DEADBAND = 0.12;     // ±12% rundt 50% gass regnes som "hold høyde"
+// Loiter (posisjonsholding, se stepPhysics) - TRE faser, matcher ArduCopters egen todeling mellom BREMSING
+// og POSISJONSHOLDING (brukeren delte skjermbilder av Mission Planner: "Position XY (Dist to Speed)" ->
+// "Velocity XY (Vel to Accel)", OG Loiter-wikisiden sine egne LOIT_BRK_*-parametre for selve bremsingen):
+//  1) FLYGING (pinnen utslått, se LOITER_STICK_DEADBAND): pinnen kommanderer farten direkte, som før.
+//     Holdepunktet (loiterTargetPos) flyttes kontinuerlig med droneen.
+//  2) BREMSING (pinnen sluppet, men farten fortsatt over LOITER_TARGET_LOCK_SPEED): ØNSKET fart er rett og
+//     slett 0 - INGEN posisjonsledd ennå. Holdepunktet fortsetter å flyttes med droneen. BUG rettet: forrige
+//     versjon brukte posisjons-P-leddet (fase 3) med samme LØSE holdepunkt som var "frosset" akkurat idet
+//     pinnen ble sluppet, mens droneen fortsatt hadde full fart - det tvang en aktiv "flyging TILBAKE" mot
+//     et gammelt punkt langt bak, i stedet for bare å bremse rett ned, og kunne bygge opp fart i MOTSATT
+//     retning idet den for-aggressivt jaget punktet (bruker rapporterte nettopp dette).
+//  3) HOLDING (farten har falt under LOITER_TARGET_LOCK_SPEED - droneen har reelt stanset): HER, og først
+//     HER, låses holdepunktet til der den faktisk endte, og posisjons-P-leddet (LOITER_POS_P_GAIN) tar over
+//     for å rette opp SMÅ, vedvarende avvik (vind) - ikke store transportetapper.
+// 2) og 3) sin fart-feil mates uansett inn i samme fart-P-I-D-lookk (LOITER_VEL_TO_LEAN_DEG/-WIND_I_GAIN/
+// -VEL_D_GAIN) som omsetter den til krengevinkel.
+const LOITER_MAX_SPEED = 12;        // m/s, maks kommandert horisontal fart ved fullt pinneutslag (ArduCopter
+// sin egen LOIT_SPEED_MS er ofte tunet opp mot 12-13 m/s på raske droner, se skjermbildet - langt over
+// default på 5 m/s).
+// Dødsone rundt sentrert pinne (0..1, samme skala som stick.pitch/roll) - under denne regnes pinnen som
+// "sluppet" og bremse-/holdefasen (over) tar over. Litt strammere enn f.eks. FBWB_STICK_DEADBAND i
+// VTOL-simmen (0.05) siden roll/pitch her - i motsetning til der - skal føles direkte responsivt for enhver
+// reell utslag, ikke bare store/bevisste bevegelser.
+const LOITER_STICK_DEADBAND = 0.03;
+// Fartsterskel (m/s) som utløser overgangen fra BREMSING (fase 2) til HOLDING (fase 3) - se
+// droneState.loiterHolding i stepPhysics. Lav nok til at overgangen selv ikke er merkbar, høy nok til at
+// den faktisk nås i praksis i stedet for å henge like under toppfart i lang tid.
+// BUG rettet: forrige versjon sjekket denne terskelen PÅ NYTT hver eneste tick (ingen egen "har vi allerede
+// låst?"-tilstand) - selv en LETT vindkast-lerp fikk farten til å krysse frem og tilbake over 0.5 m/s, og
+// hver gang den krysset OPP falt simmen tilbake til fase 2 (som IKKE korrigerer posisjon, bare farten) og
+// FLYTTET holdepunktet til der den akkurat da befant seg - i praksis kunne droneen dermed aldri "låse seg"
+// ordentlig i vind, og drev umerkelig fra tick til tick uten at noe FAKTISK dro den tilbake ("flyter" -
+// rapportert av brukeren). droneState.loiterHolding er nå en ekte TILSTAND (ikke en terskel som sjekkes på
+// nytt hver tick): når den først blir true, blir den TIL PILOTEN FLYR AKTIVT IGJEN (fase 1) - en forbigående
+// fartsøkning fra et vindkast midt i holdefasen slår den ALTSÅ ikke tilbake til fase 2 lenger, posisjons-
+// P-leddet fortsetter i stedet å jobbe mot det samme, faste holdepunktet gjennom hele kastet.
+const LOITER_TARGET_LOCK_SPEED = 0.5;
+// ArduCopters egen PSC_NE_POS_P ("Position XY (Dist to Speed)") er nettopp P=1.0 i sine egne cm/cm-per-s-
+// enheter - samme forholdstall (1 m/s ønsket fart per meter avvik) er en velprøvd verdi å gjenbruke direkte
+// her. Klemmes uansett til LOITER_MAX_SPEED (se stepPhysics), så et stort avvik gir aldri et urealistisk
+// fartshopp - i praksis er avvikene som når fram til DENNE loopen nå uansett små (kun fase 3, se over), så
+// det sjeldent er relevant.
+const LOITER_POS_P_GAIN = 0.9;      // (m/s) per m avvik
+// BUG rettet (AVGJØRENDE runde - se flightlogg brukeren limte inn): 7 var rett og slett for MYE lukket-
+// lookk-forsterkning oppå de allerede tunede vinkel-/rate-lookkene (ANGLE_P_GAIN/TORQUE_GAIN) - loggen viste
+// en VEDVARENDE, IKKE-avtagende svingning i BÅDE bank og pitch, med ren pinneP=1.00/pinneR≈0.00 (ingen
+// gir-input involvert i det hele tatt store deler av loggen), periode ~1-1.5s, som gjentatte ganger slo i
+// taket ±45°. Det er en ekte ustabilitet (for lite faseskudd-margin i den sammensatte lookken), IKKE støy -
+// et lavpassfilter hjelper ALDRI mot dette (svingningen ligger godt UNDER filterets grensefrekvens), og et
+// D-ledd på et FILTRERT (dermed faseforsinket) signal kan faktisk FORVERRE stabiliteten ved akkurat denne
+// frekvensen i stedet for å dempe den. Redusert kraftig i stedet for å filtrere/dempe mer.
+const LOITER_VEL_TO_LEAN_DEG = 3.5; // grader krengevinkel per m/s fartsavvik (P-ledd), klemmes til LOITER_MAX_LEAN_ANGLE
+// Egen (høyere) krengevinkel-takk enn MAX_SELF_LEVEL_ANGLE - Loiter skal kunne kaste inn mer krengning enn
+// Stabilized/Alt Hold for å faktisk klare å holde posisjonen i sterk vind (se LOITER_MAX_WIND_SPEED) og
+// følge et pinneutslag helt til LOITER_MAX_SPEED. 45° gir god margin: nødvendig vinkel for å stå stille i
+// LOITER_MAX_WIND_SPEED vind (utregnet fra drag-modellen per droneklasse) ligger på 29-32°, og for å FLY
+// LOITER_MAX_SPEED i marsjfart på 37-42° - begge godt innenfor taket, uten å måtte gå til et urealistisk
+// ekstremt "racing"-aktig lenevinkel-tak.
+const LOITER_MAX_LEAN_ANGLE = 45;   // grader
+// I-ledd (se loiterIntegralFwd/-Right i stepPhysics) - et RENT P-ledd krever en VEDVARENDE fartsFEIL for
+// å holde en gitt krengevinkel oppe, så mot en konstant vind ville droneen aldri stoppe helt opp (den
+// måtte stadig drifte litt for at feilen skal holde korreksjonsvinkelen aktiv) - I-leddet bygger sakte opp
+// en egen vinkel-bias som til slutt bærer HELE motvirkningen alene, slik at fartsfeilen (og dermed driften)
+// kan gå mot null selv i vedvarende vind. Klemt til LOITER_WIND_I_MAX_DEG for å unngå "integral windup" -
+// BUG rettet: klemt til kun 15° tidligere, mens opptil ~32° faktisk trengs for å stå stille i sterk vind,
+// så I-leddet kunne ALDRI ta over hele jobben og en liten, vedvarende drift ble stående igjen uansett hvor
+// lenge man ventet. LOITER_WIND_I_MAX_DEG matcher derfor nå LOITER_MAX_LEAN_ANGLE - samme prinsipp som
+// ArduCopters egen IMAX (satt langt over det som normalt trengs, ikke stramt rundt et anslått behov).
+const LOITER_WIND_I_GAIN = 1.0;     // grader/s opphopet bias per m/s vedvarende fartsfeil
+const LOITER_WIND_I_MAX_DEG = LOITER_MAX_LEAN_ANGLE;
+// D-ledd (se loiterVelFwdFilt/-RightFilt i stepPhysics) - dempning på selve FARTSENDRINGEN (akselerasjonen),
+// ikke feilen: bremser INN mot null idet farten nærmer seg ønsket verdi, slik at en rask oppbremsing (f.eks.
+// rett etter pinnen slippes i fart) stopper PRESIST i stedet for å suse forbi og måtte hentes tilbake.
+// BUG rettet (AVGJØRENDE runde - se LOITER_VEL_TO_LEAN_DEG-kommentaren): et D-ledd som virker på et FILTRERT
+// (dermed faseFORSINKET) signal legger til akkurat den galt-tidede korreksjonen som kan FORVERRE en
+// svingning i stedet for å dempe den, ved frekvenser nær filterets grensefrekvens - stikk i strid med D sin
+// vanlige jobb. Holdt lav med VILJE av denne grunnen (i tillegg til at det - som notert tidligere - uansett
+// bidrar 0 til selve steady-state-holde-presisjonen, den bæres av P+I).
+const LOITER_VEL_D_GAIN = 0.4;      // grader per m/s² (filtrert) fartsendring
+// Løsnet fra 0.08 (som la til betydelig faseforsinkelse, se LOITER_VEL_D_GAIN-kommentaren og hoved-BUG-
+// notatet ved LOITER_VEL_TO_LEAN_DEG) - fanger fortsatt opp ekte tick-til-tick-måle-jitter, uten å forsinke
+// D-leddet nok til å bli en destabiliserende faktor i seg selv ved svingefrekvensen som faktisk ble observert.
+const LOITER_VEL_FILTER_ALPHA = 0.25; // eksponensiell glatting, samme mønster som windGustOffset sin egen
+// Sim.computeWind-lerp - ved 120Hz gir dette en tidskonstant på ~40ms (grensefrekvens ~4 Hz).
+// Fartsbegrensning (grader/s) på selve DEN KOMMANDERTE lenevinkelen (desiredPitchAngle/-RollAngle over) - et
+// sikkerhetstak mot at én enkelt tick kan hoppe til FULL krengevinkel momentant. Dempet noe tilbake fra 150
+// (som i praksis knapt begrenset noe, og dermed ikke bidro med noen ekstra dempings-margin mot ustabiliteten
+// beskrevet ved LOITER_VEL_TO_LEAN_DEG) - fortsatt raskere enn de opprinnelige, "sluggish"-rapporterte 40°/s.
+const LOITER_MAX_ANGLE_RATE = 60;   // grader/s
+// Vindstyrke Loiter er dimensjonert for å holde posisjon i (se vindwarning i updateHud) - ved sterkere
+// vind enn dette kan I-leddet/krengevinkeltaket over bli utilstrekkelige, og piloten varsles.
+const LOITER_MAX_WIND_SPEED = 10;   // m/s
 const DEFAULT_FPV_TILT_DEG = -15;   // typisk oppovervinklet FPV-kamera-montering
 const GROUND_CLEARANCE = 0.08;      // m, bakkekontakt
 const CRASH_SINK_RATE = 6;          // m/s - synkefart ved bakkeberøring som regnes som en hard krasj
@@ -168,7 +267,18 @@ const LINK_RANGE_FULL = 60;         // m - full linkkvalitet innenfor denne avst
 const LINK_RANGE_ZERO = 150;        // m - linken er helt død her (uten hindring)
 const LINK_OBSTRUCTION_PENALTY = 0.12; // multiplikator når siktlinjen til bygget er blokkert
 
-const MODE_LABELS = { acro: "Acro", stabilized: "Stabilized", althold: "Alt Hold" };
+// Rekkefølge følger tastesnarveiene (1/2/3/4, se Digit1-4-håndteringen lenger ned) - avgjør også
+// rekkefølgen i modus-popoveren (buildModePopover), siden den bare looper Object.keys(MODE_LABELS).
+const MODE_LABELS = { stabilized: "Stabilized", althold: "Alt Hold", loiter: "Loiter", acro: "Acro" };
+// Tastesnarveier og forklaringstekst til modus-popoveren (klikk på "Modus" i HUD-en, se buildModePopover
+// lenger ned) - samme mønster/tekst-kilde som helpPanel sitt "1 / 2 / 3 / 4"-punkt, bare brutt ut per modus.
+const MODE_KEY_LABELS = { acro: "4", stabilized: "1", althold: "2", loiter: "3" };
+const MODE_DESCRIPTIONS = {
+    acro: "Rate-styrt, ingen selvnivellering - stikken styrer rotasjonsraten direkte.",
+    stabilized: "Selvnivellerende krengning/stigning - slipp stikken og droneen retter seg selv opp. Gasspaken styrer trekkraft direkte.",
+    althold: "Som Stabilized + Alt Hold - gasspak rundt 50 % holder høyden, utenfor justeres ønsket stigefart.",
+    loiter: "Som Alt Hold + posisjonsholding (GPS) - slipp stikkene for å bremse opp og holde posisjonen, korrigerer selv for vind opp til ca. " + LOITER_MAX_WIND_SPEED + " m/s (varsel ved mer)."
+};
 const AXIS_LABELS = { roll: "Roll", pitch: "Pitch", yaw: "Yaw" };
 const CHANNEL_LABELS = { roll: "Roll", pitch: "Pitch", yaw: "Yaw", throttle: "Gass" };
 
@@ -192,11 +302,11 @@ const DEFAULT_GAMEPAD_MAP = {
     roll: { axis: 1, reverse: false, scale: 1 },
     pitch: { axis: 2, reverse: false, scale: 1 },
     yaw: { axis: 3, reverse: false, scale: 1 },
-    buttons: { kill: null, modeAcro: null, modeStabilized: null, modeAltHold: null, reset: null }
+    buttons: { kill: null, modeAcro: null, modeStabilized: null, modeAltHold: null, modeLoiter: null, reset: null }
 };
 const BUTTON_ACTION_LABELS = {
     kill: "Kill/Arm", modeAcro: "Modus: Acro", modeStabilized: "Modus: Stabilized", modeAltHold: "Modus: Alt Hold",
-    reset: "Reset (R)"
+    modeLoiter: "Modus: Loiter", reset: "Reset (R)"
 };
 
 const DEFAULT_WIND = { enabled: false, speed: 5, directionDeg: 0, gust: 0.3 };
@@ -724,7 +834,34 @@ const droneState = {
     grounded: false, // i bakkekontakt denne fysikk-ticken - vind skal ikke drifte den mens den står
     crashed: false, // hard landing (se CRASH_SINK_RATE) - killswitch slår automatisk inn, varsel i HUD
     injured: false, // droneen har truffet en person (VLOS-pilot eller forbipasserende) - eget varsel (legevakt/ambulanse), R for restart
-    injuredTarget: null // "pilot" | "bystander" - styrer kun bannerteksten, se updateHud
+    injuredTarget: null, // "pilot" | "bystander" - styrer kun bannerteksten, se updateHud
+    // Loiter sitt vindkorreksjon-I-ledd (se LOITER_WIND_I_GAIN-kommentaren) - nullstilles i stepPhysics
+    // hver tick simmen IKKE er i Loiter (anti-windup, samme mønster som VTOL-simmens fbwbClimbIntegral).
+    loiterIntegralFwd: 0,
+    loiterIntegralRight: 0,
+    // Lavpassfiltrert fwd-/right-fart (se LOITER_VEL_FILTER_ALPHA) - DETTE, ikke de rå fwdSpeed/rightSpeed-
+    // målingene, er hva fwdError/rightError (P- og I-leddet) OG D-leddets deriverte faktisk regnes fra. null
+    // betyr "ingen gyldig verdi ennå" (akkurat gått inn i Loiter, eller nettopp forlatt den) - stepPhysics
+    // tolker det som "initialiser filteret til nåværende fart i stedet for å rulle dit fra en gammel/
+    // urelatert verdi (eller 0)".
+    loiterVelFwdFilt: null,
+    loiterVelRightFilt: null,
+    // Holdepunktet (verdens-XZ) Loiter faktisk navigerer TILBAKE til når pinnen er sluppet (se
+    // LOITER_POS_P_GAIN) - satt til gjeldende posisjon idet Loiter velges, og flyttet kontinuerlig med
+    // droneen mens piloten aktivt flyr (pinnen utenfor LOITER_STICK_DEADBAND), se stepPhysics.
+    loiterTargetPos: new THREE.Vector3(),
+    // Har droneen faktisk LÅST SEG til loiterTargetPos (fase 3 - se LOITER_TARGET_LOCK_SPEED-kommentaren)?
+    // Ekte, vedvarende tilstand (ikke en terskel som sjekkes på nytt hver tick) - forblir true gjennom
+    // forbigående fartsøkninger fra vindkast, nullstilles kun når piloten flyr aktivt igjen (fase 1).
+    loiterHolding: false,
+    // Selve DEN KOMMANDERTE lenevinkelen akkurat nå (se LOITER_MAX_ANGLE_RATE) - null betyr "ingen gyldig
+    // forrige verdi ennå" (samme null-mønster som loiterVelFwdFilt over), som stepPhysics tolker som
+    // "hopp rett til det utregnede målet denne ticken" i stedet for å rulle dit fra en gammel/urelatert verdi.
+    loiterCmdPitchAngle: null,
+    loiterCmdRollAngle: null,
+    // Kun til observasjon/feilsøking (js/simulator-flightlog.js) - hvilken av de tre Loiter-fasene
+    // (flying/braking/holding) stepPhysics faktisk brukte SIST tick. Påvirker ingen fysikk selv.
+    loiterPhase: "-"
 };
 
 let linkQuality = 1;
@@ -754,6 +891,18 @@ const treeSwayManager = Sim.createTreeSwayManager();
 
 function currentDroneSpec() {
     return DRONE_CLASSES[droneState.droneClass];
+}
+
+// Klasse-taket (spec.maxYawRateDeg, se DRONE_CLASSES-kommentaren) på TOPP av brukerens egne rates.yaw -
+// begge parter skal begrense: en Racing-pilot som setter yaw-raten lavt i Rates-panelet skal fortsatt få
+// akkurat DEN lave raten, og en Cinematic-pilot som (feilaktig) setter den høyt skal likevel klemmes til
+// klassens eget tak. Skalerer centerSensitivity proporsjonalt ned også når taket faktisk klipper noe, slik
+// at selve KURVEFORMEN (senterfølsomhet relativt til toppfart) bevares i stedet for at bare enden hugges av.
+function effectiveYawRates() {
+    const capDeg = currentDroneSpec().maxYawRateDeg;
+    if (rates.yaw.maxRate <= capDeg) return rates.yaw;
+    const scale = capDeg / rates.yaw.maxRate;
+    return { expo: rates.yaw.expo, centerSensitivity: rates.yaw.centerSensitivity * scale, maxRate: capDeg };
 }
 
 // Etter klassebytte mens droneen står på bakken: den nye modellen har annen benhøyde/skala, så
@@ -801,7 +950,7 @@ const keys = new Set();
 const GAME_KEY_CODES = new Set([
     "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE",
     "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space",
-    "Digit1", "Digit2", "Digit3",
+    "Digit1", "Digit2", "Digit3", "Digit4",
     "KeyK", "KeyR", "KeyC", "KeyT", "KeyH", "KeyO", "KeyM"
 ]);
 
@@ -3307,14 +3456,25 @@ function getActiveGamepad() {
 const readStickAxis = Sim.readStickAxis;
 const readThrottleAxis = Sim.readThrottleAxis;
 
+// modeFlashUntil: brukt av updateHud til å legge på ".mode-flash"-CSS-klassen (kort gult blink, se
+// style.css) på hudMode et lite øyeblikk hver gang modusen FAKTISK endres via setFlightMode - samme
+// mønster som VTOL-simmen (js/simulator-vtol.js sin trySetFlightMode). Kun satt ved et EKTE bytte
+// (mode !== droneState.flightMode), ikke ved f.eks. gjentatte trykk på samme tast/knapp.
+let modeFlashUntil = 0;
+function setFlightMode(mode) {
+    if (mode !== droneState.flightMode) modeFlashUntil = performance.now() + 400;
+    droneState.flightMode = mode;
+}
+
 /* ---------- Gamepad knappemapping (kill/arm + flymodus-brytere) ---------- */
 // Se Sim.createButtonBindingManager i simulator-common.js for læringsflyten (bryter kan komme
 // som HID-knapp eller som en akse - fungerer med enhver sender i USB-joystick-modus).
 const BUTTON_ACTIONS = {
     kill: function () { toggleKill("gamepad"); },
-    modeAcro: function () { droneState.flightMode = "acro"; },
-    modeStabilized: function () { droneState.flightMode = "stabilized"; },
-    modeAltHold: function () { droneState.flightMode = "althold"; },
+    modeAcro: function () { setFlightMode("acro"); },
+    modeStabilized: function () { setFlightMode("stabilized"); },
+    modeAltHold: function () { setFlightMode("althold"); },
+    modeLoiter: function () { setFlightMode("loiter"); },
     // handleResetRequest er en function-DECLARATION lenger ned i filen - fullt hoistet, så referansen
     // her (i en funksjonskropp som først kjører når bryteren faktisk trigges) er trygg selv om den
     // tekstuelt står før definisjonen. Samme funksjon som R-tasten kaller.
@@ -3438,22 +3598,165 @@ function stepPhysics(dt) {
         if (droneState.flightMode === "acro") {
             desiredRateDeg.roll = computeRate(stick.roll, rates.roll);
             desiredRateDeg.pitch = computeRate(stick.pitch, rates.pitch);
-            desiredRateDeg.yaw = computeRate(stick.yaw, rates.yaw);
+            desiredRateDeg.yaw = computeRate(stick.yaw, effectiveYawRates());
             thrustForce = throttleShaped * spec.maxThrust;
         } else {
-            // Stabilized / Alt Hold: selvnivellerende ytre lookk for roll/pitch.
+            // Stabilized / Alt Hold / Loiter: selvnivellerende ytre lookk for roll/pitch.
             // (euler.x/euler.z negeres - se merknad om aksekonvensjon lenger ned.)
             const euler = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ");
             const currentPitchDeg = -THREE.MathUtils.radToDeg(euler.x);
             const currentRollDeg = -THREE.MathUtils.radToDeg(euler.z);
-            const desiredPitchAngle = stick.pitch * MAX_SELF_LEVEL_ANGLE;
-            const desiredRollAngle = stick.roll * MAX_SELF_LEVEL_ANGLE;
+            let desiredPitchAngle, desiredRollAngle;
+            if (droneState.flightMode === "loiter") {
+                // Loiter: pinnen kommanderer en ØNSKET horisontal fart (kropp-relativt forover/sideveis)
+                // i stedet for en krengevinkel direkte - se LOITER_MAX_SPEED-kommentaren ved konstanten.
+                // bodyForwardFlat/bodyRightFlat er nesens/høyre-siden sin retning FLATET til
+                // horisontalplanet (ikke en full 3D-projeksjon via quaternion-invertering, som ville
+                // blandet inn gjeldende krengning/stigning i selve fartsMÅLINGEN).
+                const bodyForwardFlat = new THREE.Vector3(0, 0, -1).applyQuaternion(droneState.quaternion);
+                bodyForwardFlat.y = 0;
+                if (bodyForwardFlat.lengthSq() < 1e-6) bodyForwardFlat.set(0, 0, -1); else bodyForwardFlat.normalize();
+                const bodyRightFlat = new THREE.Vector3(1, 0, 0).applyQuaternion(droneState.quaternion);
+                bodyRightFlat.y = 0;
+                if (bodyRightFlat.lengthSq() < 1e-6) bodyRightFlat.set(1, 0, 0); else bodyRightFlat.normalize();
+
+                // droneState.velocity er den FAKTISKE bakkefarten (inkluderer allerede vindavdrift, se
+                // vind-håndteringen lenger ned i denne funksjonen) - fartsFEILEN loopen regulerer på
+                // inneholder derfor automatisk en vindkorreksjon, uten noen egen vind-spesifikk term.
+                const groundVelFlat = new THREE.Vector3(droneState.velocity.x, 0, droneState.velocity.z);
+                const fwdSpeed = groundVelFlat.dot(bodyForwardFlat);
+                const rightSpeed = groundVelFlat.dot(bodyRightFlat);
+
+                // "Nettopp entret Loiter" (samme flagg som fartsfilteret under bruker) - holdepunktet OG
+                // fartsfilteret må initialiseres til NÅVÆRENDE posisjon/fart her, første tick, ellers ville
+                // de stått igjen på (0,0,0)/null fra objekt-opprettelsen og droneen prøvd å kjøre dit,
+                // eller filteret rukket å "rulle inn" fra 0 i stedet for å starte på faktisk fart.
+                if (droneState.loiterVelFwdFilt === null) {
+                    droneState.loiterTargetPos.set(droneState.position.x, 0, droneState.position.z);
+                    droneState.loiterVelFwdFilt = fwdSpeed;
+                    droneState.loiterVelRightFilt = rightSpeed;
+                }
+
+                let desiredFwdSpeed, desiredRightSpeed;
+                if (Math.hypot(stick.pitch, stick.roll) > LOITER_STICK_DEADBAND) {
+                    // FASE 1 - Flyging: piloten styrer aktivt, direkte fartskommando fra pinnen. Holdepunktet
+                    // flyttes KONTINUERLIG med droneen mens dette skjer, og HOLDING-tilstanden nullstilles -
+                    // et senere slipp starter alltid med en frisk bremsefase (fase 2), ikke et gammelt lås.
+                    desiredFwdSpeed = stick.pitch * LOITER_MAX_SPEED;
+                    desiredRightSpeed = stick.roll * LOITER_MAX_SPEED;
+                    droneState.loiterTargetPos.set(droneState.position.x, 0, droneState.position.z);
+                    droneState.loiterHolding = false;
+                    droneState.loiterPhase = "flying";
+                    // BUG rettet (se flightlogg brukeren limte inn - "litt treg å bremse opp?"): I-leddet er
+                    // KUN ment som vindkorreksjon mens droneen faktisk står stille (fase 3, se kommentaren
+                    // der) - under aktiv flyging (her) holder fwdError seg gjerne POSITIV i flere sekunder
+                    // mens farten bygger seg opp mot pinnens kommanderte marsjfart, og I-leddet hopet seg
+                    // derfor opp med en stor, positiv "fremover"-bias. Ble den STÅENDE ved et senere slipp
+                    // (fase 2), kjempet den stale bias-en MOT den nye, sterkt NEGATIVE bremsekommandoen i
+                    // flere sekunder før den rakk å "vikle seg ut" - selve bremsingen føltes treg selv om
+                    // P-leddet i seg selv kommanderte en bratt vinkel med det samme. Nullstilles derfor her
+                    // OGSÅ (ikke bare når Loiter forlates helt), slik at bremsingen alltid starter fra en
+                    // ren, umiddelbart korrekt I-tilstand.
+                    droneState.loiterIntegralFwd = 0;
+                    droneState.loiterIntegralRight = 0;
+                } else if (!droneState.loiterHolding && groundVelFlat.length() > LOITER_TARGET_LOCK_SPEED) {
+                    // FASE 2 - Bremsing: pinnen sluppet, men farten fra flygingen henger fortsatt igjen -
+                    // ØNSKET fart er rett og slett 0 (ren oppbremsing, se fart-P-I-D-loopen under). INGEN
+                    // posisjonsledd her ennå, og holdepunktet fortsetter å flyttes med droneen (samme linje
+                    // som fase 1) - droneen bygger derfor ALDRI opp fart i motsatt retning for å jage et
+                    // gammelt punkt bak seg, den bare bremser rett ned der den er. I-leddet holdes OGSÅ 0 her
+                    // (se fase 1-kommentaren over) - selve oppbremsingen skal være P(+D)-leddets jobb alene;
+                    // I-leddet kobles først inn når droneen faktisk har stanset (fase 3).
+                    desiredFwdSpeed = 0;
+                    desiredRightSpeed = 0;
+                    droneState.loiterTargetPos.set(droneState.position.x, 0, droneState.position.z);
+                    droneState.loiterPhase = "braking";
+                    droneState.loiterIntegralFwd = 0;
+                    droneState.loiterIntegralRight = 0;
+                } else {
+                    // FASE 3 - Holding: droneen har reelt stanset (under LOITER_TARGET_LOCK_SPEED) - HER, og
+                    // først her, får holdepunktet lov til å stå FAST (oppdateres ikke lenger over). Selve
+                    // OVERGANGEN inn i denne fasen (loiterHolding blir true) skjer bare ÉN gang; den blir
+                    // værende true til piloten flyr aktivt igjen (fase 1) - en forbigående fartsøkning fra et
+                    // vindkast MIDT i holdefasen slår den altså ikke tilbake til fase 2 og "glemmer"
+                    // holdepunktet, se LOITER_TARGET_LOCK_SPEED-kommentaren. Posisjons-P-leddet ("Position XY
+                    // (Dist to Speed)" i ArduCopter) retter opp avviket fra akkurat DER den stanset.
+                    droneState.loiterHolding = true;
+                    droneState.loiterPhase = "holding";
+                    const toTarget = new THREE.Vector3().subVectors(droneState.loiterTargetPos,
+                        new THREE.Vector3(droneState.position.x, 0, droneState.position.z));
+                    const desiredWorldSpeed = toTarget.multiplyScalar(LOITER_POS_P_GAIN);
+                    if (desiredWorldSpeed.length() > LOITER_MAX_SPEED) desiredWorldSpeed.setLength(LOITER_MAX_SPEED);
+                    desiredFwdSpeed = desiredWorldSpeed.dot(bodyForwardFlat);
+                    desiredRightSpeed = desiredWorldSpeed.dot(bodyRightFlat);
+                }
+                // Lavpassfiltrer selve fartsMÅLINGEN (se LOITER_VEL_FILTER_ALPHA-kommentaren) FØR den brukes
+                // noe sted under - fjerner tick-til-tick-støy ved KILDEN i stedet for å lappe hvert enkelt
+                // ledd som bruker den. prevFiltered fanges FØR selve oppdateringen, til bruk i D-leddets
+                // deriverte lenger ned.
+                const prevFilteredFwd = droneState.loiterVelFwdFilt;
+                const prevFilteredRight = droneState.loiterVelRightFilt;
+                droneState.loiterVelFwdFilt += (fwdSpeed - droneState.loiterVelFwdFilt) * LOITER_VEL_FILTER_ALPHA;
+                droneState.loiterVelRightFilt += (rightSpeed - droneState.loiterVelRightFilt) * LOITER_VEL_FILTER_ALPHA;
+                // Samme fortegn som den direkte pinne->vinkel-kommandoen under (stick.pitch/roll ->
+                // desiredPitchAngle/-RollAngle direkte) - dette ER akkurat den kommandoen, bare med et
+                // fartsAVVIK (nå av den FILTRERTE farten) i stedet for selve pinneposisjonen som P-leddets
+                // inngang.
+                const fwdError = desiredFwdSpeed - droneState.loiterVelFwdFilt;
+                const rightError = desiredRightSpeed - droneState.loiterVelRightFilt;
+                // I-ledd (se LOITER_WIND_I_GAIN-kommentaren ved konstanten): bygger sakte opp en egen
+                // vinkel-bias fra den VEDVARENDE fartsfeilen, slik at en konstant vind til slutt kan
+                // motvirkes helt uten at posisjonen selv trenger å drifte for å holde P-leddet aktivt.
+                droneState.loiterIntegralFwd = clamp(
+                    droneState.loiterIntegralFwd + fwdError * LOITER_WIND_I_GAIN * dt,
+                    -LOITER_WIND_I_MAX_DEG, LOITER_WIND_I_MAX_DEG
+                );
+                droneState.loiterIntegralRight = clamp(
+                    droneState.loiterIntegralRight + rightError * LOITER_WIND_I_GAIN * dt,
+                    -LOITER_WIND_I_MAX_DEG, LOITER_WIND_I_MAX_DEG
+                );
+                // D-ledd (se LOITER_VEL_D_GAIN-kommentaren): derivert på den FILTRERTE farten (ikke feilen,
+                // som ville gitt et "derivative kick" hver gang stick.pitch/roll hopper, og ikke den rå
+                // fwdSpeed/rightSpeed - se LOITER_VEL_FILTER_ALPHA-kommentaren for hvorfor).
+                const fwdAccel = (droneState.loiterVelFwdFilt - prevFilteredFwd) / dt;
+                const rightAccel = (droneState.loiterVelRightFilt - prevFilteredRight) / dt;
+                const rawPitchTarget = clamp(fwdError * LOITER_VEL_TO_LEAN_DEG + droneState.loiterIntegralFwd - fwdAccel * LOITER_VEL_D_GAIN, -LOITER_MAX_LEAN_ANGLE, LOITER_MAX_LEAN_ANGLE);
+                const rawRollTarget = clamp(rightError * LOITER_VEL_TO_LEAN_DEG + droneState.loiterIntegralRight - rightAccel * LOITER_VEL_D_GAIN, -LOITER_MAX_LEAN_ANGLE, LOITER_MAX_LEAN_ANGLE);
+                // Fartsbegrens selve UTSLAGET (se LOITER_MAX_ANGLE_RATE) - P+I+D over kan fortsatt regne ut
+                // et stort momentant behov, men den kommanderte vinkelen ruller jevnt dit i stedet for å
+                // hoppe på én tick. loiterCmdPitchAngle === null (nettopp entret Loiter) hopper rett til
+                // målet første tick i stedet for å rulle fra en gammel/urelatert verdi.
+                const maxAngleStep = LOITER_MAX_ANGLE_RATE * dt;
+                droneState.loiterCmdPitchAngle = droneState.loiterCmdPitchAngle === null ? rawPitchTarget :
+                    droneState.loiterCmdPitchAngle + clamp(rawPitchTarget - droneState.loiterCmdPitchAngle, -maxAngleStep, maxAngleStep);
+                droneState.loiterCmdRollAngle = droneState.loiterCmdRollAngle === null ? rawRollTarget :
+                    droneState.loiterCmdRollAngle + clamp(rawRollTarget - droneState.loiterCmdRollAngle, -maxAngleStep, maxAngleStep);
+                desiredPitchAngle = droneState.loiterCmdPitchAngle;
+                desiredRollAngle = droneState.loiterCmdRollAngle;
+            } else {
+                desiredPitchAngle = stick.pitch * MAX_SELF_LEVEL_ANGLE;
+                desiredRollAngle = stick.roll * MAX_SELF_LEVEL_ANGLE;
+                // Nullstill Loiter sitt I-ledd og D-leddets fart-historikk så lenge vi IKKE er i Loiter
+                // (anti-windup - unngår at et gammelt, opphopet bidrag fra en TIDLIGERE Loiter-økt påvirker
+                // de aller første tickene neste gang Loiter velges igjen), se samme mønster i VTOL-simmens
+                // fbwbClimbIntegral.
+                droneState.loiterIntegralFwd = 0;
+                droneState.loiterIntegralRight = 0;
+                droneState.loiterVelFwdFilt = null;
+                droneState.loiterVelRightFilt = null;
+                droneState.loiterHolding = false;
+                droneState.loiterCmdPitchAngle = null;
+                droneState.loiterCmdRollAngle = null;
+                droneState.loiterPhase = "-";
+            }
             desiredRateDeg.pitch = ANGLE_P_GAIN * (desiredPitchAngle - currentPitchDeg);
             desiredRateDeg.roll = ANGLE_P_GAIN * (desiredRollAngle - currentRollDeg);
-            desiredRateDeg.yaw = computeRate(stick.yaw, rates.yaw);
+            desiredRateDeg.yaw = computeRate(stick.yaw, effectiveYawRates());
 
-            if (droneState.flightMode === "althold") {
-                // Gass rundt 50% (innenfor dødsone) holder høyden; utenfor justeres ønsket stigefart proporsjonalt.
+            if (droneState.flightMode === "althold" || droneState.flightMode === "loiter") {
+                // Gass rundt 50% (innenfor dødsone) holder høyden; utenfor justeres ønsket stigefart
+                // proporsjonalt - samme Alt Hold-kollektiv som Alt Hold-modus (Loiter er Alt Hold +
+                // posisjonsholding, se desiredPitchAngle/-RollAngle over).
                 const centered = stick.throttle - 0.5;
                 const magnitude = Math.abs(centered);
                 let climbInput = 0;
@@ -3491,7 +3794,7 @@ function stepPhysics(dt) {
         };
         const rollNorm = axisTorqueNorm(rates.roll);
         const pitchNorm = axisTorqueNorm(rates.pitch);
-        const yawNorm = axisTorqueNorm(rates.yaw);
+        const yawNorm = axisTorqueNorm(effectiveYawRates());
         const rollCmd = clamp(desiredTorqueCmd.roll / rollNorm, -1, 1);
         const pitchCmd = clamp(desiredTorqueCmd.pitch / pitchNorm, -1, 1);
         const yawCmd = clamp(desiredTorqueCmd.yaw / yawNorm, -1, 1);
@@ -3584,6 +3887,9 @@ function stepPhysics(dt) {
     updatePropStrikes(dt, impactVelocity);
     updatePilotCollision();
     updateBystanderCollision();
+    // logFlightSample defineres i js/simulator-flightlog.js, lastet ETTER denne filen - samme "forover-
+    // referanse, løses ved kall-tidspunkt"-mønster som VTOL-simmens egen flightlogg-integrasjon.
+    logFlightSample(dt);
 }
 
 function droneHasLandingLegs(classKey) {
@@ -4041,6 +4347,13 @@ function resetDrone() {
     droneState.batteryPercent = 100;
     droneState.injured = false;
     droneState.injuredTarget = null;
+    droneState.loiterIntegralFwd = 0;
+    droneState.loiterIntegralRight = 0;
+    droneState.loiterVelFwdFilt = null;
+    droneState.loiterVelRightFilt = null;
+    droneState.loiterHolding = false;
+    droneState.loiterCmdPitchAngle = null;
+    droneState.loiterCmdRollAngle = null;
     groundContactBlend = 0;
     repairAllProps(); // reset er også "propellbytte"
     // Sett direkte i ro på avgangsplassen (samme utregning som settleDroneOnGround) - tidligere ble
@@ -4116,6 +4429,9 @@ function updateDroneVisual(dt) {
 }
 
 const hudMode = document.getElementById("hudMode");
+// Selve klikkeflaten for modus-popoveren (buildModePopover) er HELE HUD-cellen (label + verdi), ikke bare
+// hudMode-teksten - en usynlig "knapp" over hele #modeToggle, større og lettere å treffe enn kun teksten.
+const modeToggle = document.getElementById("modeToggle");
 const hudArmed = document.getElementById("hudArmed");
 const hudInput = document.getElementById("hudInput");
 const hudCamera = document.getElementById("hudCamera");
@@ -4130,6 +4446,8 @@ const hudLink = document.getElementById("hudLink");
 const crashBanner = document.getElementById("crashBanner");
 const injuryBanner = document.getElementById("injuryBanner");
 const injuryBannerTitle = document.getElementById("injuryBannerTitle");
+const loiterWindBanner = document.getElementById("loiterWindBanner");
+const loiterWindBannerText = document.getElementById("loiterWindBannerText");
 const INJURY_TITLES = {
     pilot: "AU AU! DU HAR SKADET DEG SELV!",
     bystander: "DU HAR SKADET EN PERSON I PUBLIKUM!"
@@ -4137,6 +4455,7 @@ const INJURY_TITLES = {
 
 function updateHud() {
     hudMode.textContent = MODE_LABELS[droneState.flightMode];
+    hudMode.classList.toggle("mode-flash", performance.now() < modeFlashUntil);
     hudArmed.textContent = droneState.injured ? "Skadet" : (droneState.crashed ? "Krasjet" : (droneState.armed ? "Armed" : "Killed"));
     hudArmed.className = "sim-status-value " + ((droneState.armed && !droneState.crashed && !droneState.injured) ? "sim-armed" : "sim-killed");
     // Personskade-varselet vinner over det vanlige krasj-varselet (droneen kan godt hard-lande ETTER
@@ -4146,6 +4465,17 @@ function updateHud() {
     if (droneState.injured) injuryBannerTitle.textContent = INJURY_TITLES[droneState.injuredTarget] || INJURY_TITLES.pilot;
     injuryBanner.classList.toggle("show", droneState.injured);
     crashBanner.classList.toggle("show", droneState.crashed && !droneState.injured);
+    // Loiter er dimensjonert (I-ledd + LOITER_MAX_LEAN_ANGLE, se konstantene) for å holde posisjonen i
+    // opptil LOITER_MAX_WIND_SPEED - over det kan krengevinkeltaket bli utilstrekkelig til å motvirke
+    // vinden helt, og piloten varsles i stedet for å bare drifte uforklarlig.
+    const currentWindSpeed = currentWindVector.length();
+    const showWindWarning = droneState.flightMode === "loiter" && droneState.armed && !droneState.crashed
+        && !droneState.injured && currentWindSpeed > LOITER_MAX_WIND_SPEED;
+    if (showWindWarning) {
+        loiterWindBannerText.textContent = currentWindSpeed.toFixed(1) + " m/s vind - Loiter er dimensjonert for opptil "
+            + LOITER_MAX_WIND_SPEED + " m/s og kan miste posisjonen";
+    }
+    loiterWindBanner.classList.toggle("show", showWindWarning);
     hudInput.textContent = inputState.source === "gamepad" ? "Gamepad" : "Tastatur";
     hudCamera.textContent = CAMERA_MODE_LABELS[CAMERA_MODES[cameraModeIndex]];
     hudDroneClass.textContent = currentDroneSpec().label.split(" ")[0];
@@ -4169,9 +4499,33 @@ function updateHud() {
 }
 
 /* ---------- Paneler (rates / drone-kamera / vind / gamepad / hjelp) ---------- */
-const ALL_PANEL_IDS = ["ratesPanel", "droneCameraPanel", "windPanel", "gamepadPanel", "helpPanel", "exercisesPanel"];
+// Sim.togglePanel lukker selv alt annet meny-UI (andre paneler OG åpne dropdowns som Settings/modus-
+// popoveren, se closeAllMenus i simulator-common.js) - ingen egen panel-ID-liste å vedlikeholde her.
 function togglePanel(panel) {
-    Sim.togglePanel(panel, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
+    Sim.togglePanel(panel);
+}
+
+/* ---------- Modus-popover (klikk på "Modus" i HUD-en) ----------
+   Samme tastatursnarveier/rekkefølge som Digit1-4-håndteringen over, og samme forklaringstekst som
+   helpPanel sitt "1/2/3/4"-punkt - ETT sted å oppdatere om en modus' oppførsel endres. Samme mekanikk som
+   VTOL-simmen sin buildModePopover (js/simulator-vtol.js) og som Settings-menyen (Sim.setupDropdown):
+   åpne/lukke, lukk ved klikk utenfor, lukk andre åpne dropdowns/paneler.*/
+function buildModePopover() {
+    const popover = document.getElementById("modePopover");
+    popover.innerHTML = "";
+    Object.keys(MODE_LABELS).forEach(function (mode) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "sim-dropdown-item";
+        btn.title = MODE_DESCRIPTIONS[mode] || "";
+        btn.innerHTML = '<span style="opacity:0.6; min-width:14px; display:inline-block;">' + MODE_KEY_LABELS[mode] + '</span> ' + MODE_LABELS[mode];
+        btn.addEventListener("click", function () {
+            setFlightMode(mode);
+            popover.classList.remove("open");
+        });
+        popover.appendChild(btn);
+    });
+    Sim.setupDropdown(modeToggle, popover);
 }
 
 /* ---------- Rates-panel (rate-kurver + gass-expo, se Sim.buildRateAxisBox/buildThrottleExpoBox) ---------- */
@@ -6079,6 +6433,8 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("fpvHudBtn").innerHTML =
         '<i class="fa-solid fa-crosshairs"></i> OSD: ' + FPV_HUD_MODE_LABELS[settings.fpvHudMode] + " (O)";
     buildRatesPanel();
+    buildModePopover();
+    initFlightLogPanel();
     renderExerciseList();
 
     document.getElementById("resetRatesBtn").addEventListener("click", function () {
@@ -6119,22 +6475,22 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("armToggleBtn").addEventListener("click", function () { toggleKill("button"); });
 
     const settingsMenuEl = document.getElementById("settingsMenu");
-    Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl,
-        ["ratesPanel", "droneCameraPanel", "windPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
+    Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl);
     Sim.wirePanelCloseButtons(settingsMenuEl);
+    // Fortsatt i bruk under (clearExerciseTimesBtn) - den knappen åpner ikke et panel (så togglePanel sin
+    // egen closeAllMenus-lukking trigges aldri), bare kjører en direkte handling og må derfor lukke
+    // Settings-menyen selv. toggleRatesBtn/-DroneCameraBtn/-WindBtn/-GamepadBtn trengte tidligere samme
+    // manuelle kall, men togglePanel (se over) lukker nå selv Settings-menyen som en del av closeAllMenus.
     function closeSettingsMenu() { settingsMenuEl.classList.remove("open"); }
 
     document.getElementById("toggleRatesBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("ratesPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleDroneCameraBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("droneCameraPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleWindBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("windPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("clearExerciseTimesBtn").addEventListener("click", function () {
         closeSettingsMenu();
@@ -6194,7 +6550,9 @@ document.addEventListener("DOMContentLoaded", function () {
     renderRacingLeaderboard();
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));
-        closeSettingsMenu();
+    });
+    document.getElementById("toggleFlightLogBtn").addEventListener("click", function () {
+        togglePanel(document.getElementById("flightLogPanel"));
     });
     document.getElementById("fpvHudBtn").addEventListener("click", toggleFpvHud);
 
@@ -6202,7 +6560,9 @@ document.addEventListener("DOMContentLoaded", function () {
     Object.keys(DRONE_CLASSES).forEach(function (key) {
         const opt = document.createElement("option");
         opt.value = key;
-        opt.textContent = DRONE_CLASSES[key].label;
+        // Vekten (DRONE_CLASSES sin mass, kg) tatt med i selve valg-teksten - brukeren ba om at den skal
+        // være synlig der man faktisk velger droneklasse, ikke bare implisitt i fysikken.
+        opt.textContent = DRONE_CLASSES[key].label + " - " + DRONE_CLASSES[key].mass.toFixed(1) + " kg";
         if (key === droneState.droneClass) opt.selected = true;
         droneClassSelect.appendChild(opt);
     });
@@ -6324,9 +6684,10 @@ document.addEventListener("DOMContentLoaded", function () {
         keys.add(e.code);
         if (e.repeat) return;
         switch (e.code) {
-            case "Digit1": droneState.flightMode = "stabilized"; break;
-            case "Digit2": droneState.flightMode = "althold"; break;
-            case "Digit3": droneState.flightMode = "acro"; break;
+            case "Digit1": setFlightMode("stabilized"); break;
+            case "Digit2": setFlightMode("althold"); break;
+            case "Digit3": setFlightMode("loiter"); break;
+            case "Digit4": setFlightMode("acro"); break;
             case "KeyK": toggleKill("keyboard"); break;
             case "KeyR": handleResetRequest(); break;
             case "KeyC": toggleCamera(); break;

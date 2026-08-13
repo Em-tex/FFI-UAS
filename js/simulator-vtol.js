@@ -4455,6 +4455,9 @@ function updatePlaneVisual(dt) {
 }
 
 const hudMode = document.getElementById("hudMode");
+// Selve klikkeflaten for modus-popoveren (buildModePopover) er HELE HUD-cellen (label + verdi), ikke bare
+// hudMode-teksten - en usynlig "knapp" over hele #modeToggle, større og lettere å treffe enn kun teksten.
+const modeToggle = document.getElementById("modeToggle");
 const hudAssist = document.getElementById("hudAssist");
 const hudThrottleLabel = document.getElementById("hudThrottleLabel");
 const hudArmed = document.getElementById("hudArmed");
@@ -4558,13 +4561,14 @@ function buildModePopover() {
         });
         popover.appendChild(btn);
     });
-    Sim.setupDropdown(hudMode, popover, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
+    Sim.setupDropdown(modeToggle, popover);
 }
 
 /* ---------- Paneler (rates / fly-kamera / vind / gamepad / hjelp) ---------- */
-const ALL_PANEL_IDS = ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "rtlPanel", "flightLogPanel", "gamepadPanel", "helpPanel"];
+// Sim.togglePanel lukker selv alt annet meny-UI (andre paneler OG åpne dropdowns som Settings/modus-
+// popoveren, se closeAllMenus i simulator-common.js) - ingen egen panel-ID-liste å vedlikeholde her.
 function togglePanel(panel) {
-    Sim.togglePanel(panel, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
+    Sim.togglePanel(panel);
 }
 
 function buildRatesPanel() {
@@ -4727,38 +4731,31 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("armToggleBtn").addEventListener("click", toggleEngine);
 
     const settingsMenuEl = document.getElementById("settingsMenu");
-    Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl,
-        ["ratesPanel", "flyCameraPanel", "windPanel", "vtolPanel", "rtlPanel", "flightLogPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
+    Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl);
     Sim.wirePanelCloseButtons(settingsMenuEl);
-    function closeSettingsMenu() { settingsMenuEl.classList.remove("open"); }
 
+    // togglePanel (se Sim.togglePanel/closeAllMenus i simulator-common.js) lukker selv Settings-menyen som
+    // en del av "kun ÉN meny av gangen" - ingen eget closeSettingsMenu()-kall trengs lenger her.
     document.getElementById("toggleRatesBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("ratesPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleFlyCameraBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("flyCameraPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleWindBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("windPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleVtolBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("vtolPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleRtlBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("rtlPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleFlightLogBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("flightLogPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleHelpBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("helpPanel"));

@@ -1067,9 +1067,24 @@
     }
 
     /* ---------- Panel/dropdown-UI ---------- */
-    function togglePanel(panel, allPanels) {
+    // Lukker ALT annet meny-UI som måtte stå åpent - alle .sim-panel-overlegg (Rates/Vind/Hjelp/osv, uansett
+    // hvilken side/simulator de tilhører) OG alle åpne .sim-dropdown-menu (Settings, modus-popoveren) -
+    // ETT sted for "kun ÉN meny/ett panel av gangen"-regelen, brukt av både togglePanel og setupDropdown
+    // under (i stedet for at hver side selv må huske en fullstendig, oppdatert panel-ID-liste - se
+    // BUG-notatet ved den gamle panelsToCloseOnOpen-parameteren, fjernet herfra: settingsMenyens egen
+    // liste manglet f.eks. helpPanel/exercisesPanel, så de kunne bli stående åpne SAMTIDIG som Settings).
+    // exceptEl (valgfri): elementet som selv skal forbli urørt (panelet/menyen som akkurat åpnes).
+    function closeAllMenus(exceptEl) {
+        document.querySelectorAll(".sim-dropdown-menu.open").forEach(function (m) {
+            if (m !== exceptEl) m.classList.remove("open");
+        });
+        document.querySelectorAll(".sim-panel").forEach(function (p) {
+            if (p !== exceptEl && p.style.display !== "none") p.style.display = "none";
+        });
+    }
+    function togglePanel(panel) {
         const wasOpen = panel.style.display !== "none";
-        allPanels.forEach(function (p) { p.style.display = "none"; });
+        closeAllMenus(panel);
         panel.style.display = wasOpen ? "none" : "block";
     }
 
@@ -1098,29 +1113,42 @@
         });
     }
 
-    // Kobler en verktøylinje-"Settings"-knapp til en dropdown-meny: klikk åpner/lukker,
-    // klikk utenfor lukker. Flere dropdowns på samme side lukker hverandre automatisk.
-    // panelsToCloseOnOpen (valgfri): sim-panel-elementer som skal lukkes når selve dropdown-menyen åpnes -
-    // ellers kan et undermeny-panel (Rates/Vind/osv.) fra en tidligere åpning fortsatt henge synlig
-    // samtidig som Settings-menyen vises oppå, som ser rotete/dobbelt ut.
-    function setupDropdown(toggleBtnEl, menuEl, panelsToCloseOnOpen) {
+    // Kobler en verktøylinje-knapp (Settings, "Modus" i HUD-en, ...) til en dropdown-meny: klikk åpner/
+    // lukker, klikk utenfor lukker. Åpning lukker automatisk ALT annet meny-UI (se closeAllMenus over) -
+    // andre dropdowns OG ethvert åpent sim-panel (Rates/Vind/Hjelp/osv.), uansett side.
+    function setupDropdown(toggleBtnEl, menuEl) {
         toggleBtnEl.addEventListener("click", function (e) {
+            // toggleBtnEl kan omslutte menuEl (f.eks. #modeToggle - hele HUD-cellen er selve klikkeflaten,
+            // se simulator.html/-vtol.html, i stedet for kun modus-teksten) i stedet for å stå som en ren
+            // SØSKEN av den - et klikk på et VALG inni menyen bobler da opp GJENNOM toggleBtnEl også. Uten
+            // denne sjekken ville den koden under sett "open"-klassen menyens EGEN item-knapp nettopp
+            // fjernet, tolket det som "menyen var lukket" og øyeblikkelig åpnet den igjen - modusvalget så
+            // ut til ikke å bli registrert (menyen lukket seg aldri) selv om selve valget faktisk gikk
+            // gjennom.
+            if (menuEl.contains(e.target)) return;
             e.stopPropagation();
-            const isOpen = menuEl.classList.contains("open");
-            document.querySelectorAll(".sim-dropdown-menu.open").forEach(function (m) {
-                if (m !== menuEl) m.classList.remove("open");
-            });
-            const willOpen = !isOpen;
+            const willOpen = !menuEl.classList.contains("open");
+            if (willOpen) closeAllMenus(menuEl);
             menuEl.classList.toggle("open", willOpen);
-            if (willOpen && panelsToCloseOnOpen) {
-                panelsToCloseOnOpen.forEach(function (p) { if (p) p.style.display = "none"; });
-            }
         });
         document.addEventListener("click", function (e) {
             if (menuEl.contains(e.target) || toggleBtnEl.contains(e.target)) return;
             menuEl.classList.remove("open");
         });
     }
+
+    // Ett globalt "klikk utenfor alt meny-UI lukker alt"-klikk, felles for alle sidene som laster denne
+    // filen - ingen egen oppkobling trengs per side. Ekskluderer klikk INNI et åpent panel (.sim-panel),
+    // INNI en dropdown-wrapper (.sim-dropdown - dekker både åpne-knappen og selve menyen, f.eks. Settings-
+    // eller modus-knappen) og på enhver knapp (button) - knappenes EGNE klikk-håndterere styrer allerede
+    // riktig åpen/lukket-tilstand selv (bl.a. via togglePanel/setupDropdown over), så uten dette unntaket
+    // ville dette globale klikket lukket igjen panelet/menyen SAMME klikk nettopp åpnet (klikket bobler
+    // videre til document rett etter at knappens egen handler har kjørt). Det som faktisk trigger lukking
+    // her er et klikk i selve 3D-scenen/HUD-en - "bildet" - eller andre ikke-interaktive områder.
+    document.addEventListener("click", function (e) {
+        if (e.target.closest(".sim-panel, .sim-dropdown, button")) return;
+        closeAllMenus();
+    });
 
     global.Sim = {
         STICK_RAMP_TIME: STICK_RAMP_TIME,
@@ -1163,6 +1191,7 @@
         createChaseCameraController: createChaseCameraController,
         drawFpvCrosshair: drawFpvCrosshair,
         drawFpvHorizonFromAngles: drawFpvHorizonFromAngles,
+        closeAllMenus: closeAllMenus,
         togglePanel: togglePanel,
         wirePanelCloseButtons: wirePanelCloseButtons,
         setupDropdown: setupDropdown

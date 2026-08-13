@@ -14,14 +14,14 @@
          se samme forklaring over. En vanlig omlasting henter samme HTML (som selv aldri caches, se over),
          men uten en ny query-streng her kunne nettleseren likevel gjenbrukt en cachet KOPI av selve
          css/js-filene fra forrige gang de ble lastet med SAMME URL. -->
-    <link rel="stylesheet" href="css/style.css?v=20260805093751">
+    <link rel="stylesheet" href="css/style.css?v=20260813260000">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="js/menu.js?v=20260805093751"></script>
+    <script src="js/menu.js?v=20260813260000"></script>
 </head>
 <body>
 
@@ -44,10 +44,16 @@
         <div class="sim-warning-banner" id="exerciseWarningBanner">
             <span class="sim-crash-title" id="exerciseWarningText"></span>
         </div>
+        <div class="sim-warning-banner" id="loiterWindBanner">
+            <span class="sim-crash-title">STERK VIND</span>
+            <span class="sim-crash-hint" id="loiterWindBannerText">Loiter kan miste posisjonen</span>
+        </div>
         <div class="sim-status-bar">
-            <div class="sim-status-item">
+            <div class="sim-status-item sim-dropdown">
+                <button type="button" class="sim-mode-toggle-overlay" id="modeToggle" title="Klikk for modusoversikt" aria-label="Modusoversikt"></button>
                 <span class="sim-status-label">Modus</span>
                 <span id="hudMode" class="sim-status-value">Stabilized</span>
+                <div class="sim-dropdown-menu" id="modePopover" style="right:auto; left:0;"></div>
             </div>
             <div class="sim-status-item">
                 <span class="sim-status-label">Status</span>
@@ -124,6 +130,7 @@
                     <button type="button" class="sim-dropdown-item" id="toggleDroneCameraBtn"><i class="fa-solid fa-helicopter"></i> Drone og kamera</button>
                     <button type="button" class="sim-dropdown-item" id="toggleWindBtn"><i class="fa-solid fa-wind"></i> Vær</button>
                     <button type="button" class="sim-dropdown-item" id="toggleGamepadBtn" style="display:none;"><i class="fa-solid fa-gamepad"></i> Kontroller</button>
+                    <button type="button" class="sim-dropdown-item" id="toggleFlightLogBtn"><i class="fa-solid fa-list"></i> Flightlogg</button>
                     <button type="button" class="sim-dropdown-item" id="clearExerciseTimesBtn"><i class="fa-solid fa-trash-can"></i> Nullstill øvelsestider</button>
                 </div>
             </div>
@@ -235,6 +242,22 @@
             </div>
         </div>
 
+        <div class="sim-panel" id="flightLogPanel" style="display:none; width:min(90vw, 620px);">
+            <div class="sim-panel-header">
+                <button type="button" class="sim-panel-back" title="Tilbake"><i class="fa-solid fa-arrow-left"></i></button>
+                <h3>Flightlogg</h3>
+                <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p class="sim-panel-hint" style="margin-top:0;">Siste 30 sekunder, samplet ca. hvert 0.15s. Fryses automatisk ved krasj (starter igjen ved Reset). Nyttig for feilrapportering (inkl. Loiter-tuning) - kopier og lim inn.</p>
+            <textarea id="flightLogText" readonly spellcheck="false" style="width:100%; height:260px; font-family:monospace; font-size:0.75rem; white-space:pre; overflow:auto; resize:vertical; background:rgba(0,0,0,0.35); color:#e4e4e4; border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:6px;"></textarea>
+            <div class="sim-rate-row" style="gap:8px; margin-top:8px;">
+                <button type="button" class="sim-btn" id="flightLogRefreshBtn"><i class="fa-solid fa-rotate"></i> Oppdater</button>
+                <button type="button" class="sim-btn sim-btn-primary" id="flightLogCopyBtn"><i class="fa-solid fa-copy"></i> Kopier</button>
+                <button type="button" class="sim-btn" id="flightLogClearBtn"><i class="fa-solid fa-trash"></i> Tøm</button>
+            </div>
+            <p class="sim-panel-hint" id="flightLogStatus" style="margin-bottom:0;"></p>
+        </div>
+
         <div class="sim-panel" id="helpPanel" style="display:none;">
             <div class="sim-panel-header">
                 <h3>Tastaturkontroller</h3>
@@ -245,8 +268,9 @@
                 <li><strong>A / D</strong><span>Roll venstre / høyre</span></li>
                 <li><strong>Q / E</strong><span>Yaw venstre / høyre</span></li>
                 <li><strong>Shift / Ctrl</strong><span>Gass opp / ned</span></li>
-                <li><strong>1 / 2 / 3</strong><span>Acro / Stabilized / Alt Hold</span></li>
+                <li><strong>1 / 2 / 3 / 4</strong><span>Stabilized / Alt Hold / Loiter / Acro (også klikkbart i "Modus" i HUD-en)</span></li>
                 <li><strong>Alt Hold</strong><span>Gass ±12 % rundt 50 % holder høyden, utenfor justeres stigefart</span></li>
+                <li><strong>Loiter</strong><span>Som Alt Hold + posisjonsholding (GPS) - slipp stikkene for å bremse opp og holde posisjonen, korrigerer selv for vind opp til ca. 10 m/s (varsel ved mer)</span></li>
                 <li><strong>K</strong><span>Killswitch (arm/disarm), samme som knappen øverst</span></li>
                 <li><strong>C</strong><span>Bytt kamera (Chase → FPV → VLOS)</span></li>
                 <li><strong>VLOS</strong><span>Kamera fast ved avgangsplassen, følger droneen med blikket</span></li>
@@ -255,19 +279,10 @@
                 <li><strong>H</strong><span>Vis/skjul denne hjelpen</span></li>
                 <li><strong>O</strong><span>Bytt FPV-HUD (Crosshair → Kunstig horisont → Ingen)</span></li>
                 <li><strong>Settings</strong><span>Samler Rates, Drone og kamera, Vind, Kontroller og OSD</span></li>
-                <li><strong>Rate-kurve</strong><span>Dra blått/rødt punkt på kurven for å justere direkte</span></li>
                 <li><strong>Drone-type</strong><span>Velg Racing/Middels/Cinematic i Drone og kamera-panelet - ulikt utseende og oppførsel</span></li>
-                <li><strong>Landingsben</strong><span>Middels/Cinematic kan lande på bena eller tippe over ved skjev/hard landing</span></li>
-                <li><strong>Propellskade</strong><span>Propeller som treffer bakke, vegg eller port skades og mister trekkraft - hardt treff ødelegger helt, lette berøringer akkumulerer. R reparerer</span></li>
-                <li><strong>Veltet drone</strong><span>Ligger den på siden/opp ned kan den ikke rulles opp med pinnene - velter den helt rundt regnes det som krasj (R for reset)</span></li>
-                <li><strong>Skraping</strong><span>Å dra understellet langs bakken i fart er ustabilt - bena hekter, nesa graver seg ned og den velter til slutt</span></li>
-                <li><strong>Piloten/folkemengden</strong><span>Ikke fly i deg selv eller inn i folkemengden ved bilen - begge gir personskade, ikke bare krasj</span></li>
                 <li><strong>Realistisk modus</strong><span>Batteri/link i Drone og kamera-panelet; link svekkes med avstand og bak bygget</span></li>
                 <li><strong>Airmode</strong><span>I Drone og kamera-panelet - beholder rull/pitch/yaw-autoritet nær 0 %/100 % gass</span></li>
                 <li><strong>Vind</strong><span>Aktiver i Vær-panelet - stabil vind + kast, vis retning/styrke på vindpølsen</span></li>
-                <li><strong>Fjell/skog/skyer</strong><span>Bakgrunnslandskap uten kollisjon - skyene driver med styrke/retning fra Vær-panelet, der skydekke også justeres</span></li>
-                <li><strong>Racing-bane</strong><span>Stor, slynget løype med porter og en låve du flyr gjennom</span></li>
-                <li><strong>Landingsplasser</strong><span>"H"-merket ved avgangspunktet og på bygningstaket</span></li>
                 <li><strong>M</strong><span>Øvelser - elleve treningsøvelser, fra hover og firkant til åttetall i vind og uforutsette hendelser</span></li>
             </ul>
         </div>
@@ -383,7 +398,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="js/simulator-common.js?v=20260805093751"></script>
-<script src="js/simulator.js?v=20260805093751"></script>
+<script src="js/simulator-common.js?v=20260813260000"></script>
+<script src="js/simulator.js?v=20260813260000"></script>
+<script src="js/simulator-flightlog.js?v=20260813260000"></script>
 </body>
 </html>

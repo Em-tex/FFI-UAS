@@ -2842,9 +2842,10 @@ function updateHud() {
 }
 
 /* ---------- Paneler (rates / fly-kamera / vind / gamepad / hjelp) ---------- */
-const ALL_PANEL_IDS = ["ratesPanel", "flyCameraPanel", "windPanel", "gamepadPanel", "helpPanel"];
+// Sim.togglePanel lukker selv alt annet meny-UI (andre paneler OG en åpen Settings-meny, se
+// closeAllMenus i simulator-common.js) - ingen egen panel-ID-liste å vedlikeholde her.
 function togglePanel(panel) {
-    Sim.togglePanel(panel, ALL_PANEL_IDS.map(function (id) { return document.getElementById(id); }));
+    Sim.togglePanel(panel);
 }
 
 function buildRatesPanel() {
@@ -3001,26 +3002,22 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("armToggleBtn").addEventListener("click", toggleEngine);
 
     const settingsMenuEl = document.getElementById("settingsMenu");
-    Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl,
-        ["ratesPanel", "flyCameraPanel", "windPanel", "gamepadPanel"].map(function (id) { return document.getElementById(id); }));
+    Sim.setupDropdown(document.getElementById("settingsToggleBtn"), settingsMenuEl);
     Sim.wirePanelCloseButtons(settingsMenuEl);
-    function closeSettingsMenu() { settingsMenuEl.classList.remove("open"); }
 
+    // togglePanel (se Sim.togglePanel/closeAllMenus i simulator-common.js) lukker selv Settings-menyen som
+    // en del av "kun ÉN meny av gangen" - ingen eget closeSettingsMenu()-kall trengs lenger her.
     document.getElementById("toggleRatesBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("ratesPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleFlyCameraBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("flyCameraPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleWindBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("windPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));
-        closeSettingsMenu();
     });
     document.getElementById("toggleHelpBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("helpPanel"));
