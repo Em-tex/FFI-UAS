@@ -1965,13 +1965,23 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    tabellen (og dermed .print-box sin stiplede kant, som følger tabellens egen bredde) bredere enn selve
    boksen når kolonnen fikk white-space:nowrap. table-layout:fixed + en fast prosentbredde på nettopp
    denne kolonnen løser dette permanent: bredden er nå den samme uansett innhold, så et uvanlig langt
-   sjekkpunkt brekker til flere linjer i stedet for å sprenge tabellen ut over kanten. 62% er valgt romslig
-   nok til at de vanlige, korte kategorinavnene fortsatt får plass på én linje uten å brekke unødvendig -
-   samme visuelle resultat som før for det vanlige tilfellet. Kun denne tabellen (print-rows-situasjon,
-   satt KUN i buildSectionBox) - generisk .print-rows (uten -situasjon) brukes også av f.eks. utstyrsliste
-   og kontaktliste, som beholder table-layout:auto uendret. */
+   sjekkpunkt brekker til flere linjer i stedet for å sprenge tabellen ut over kanten.
+   BUG-runde 2 (rapportert av brukeren, med skjermbilde: "FFI-UAS merket liggende over sjekklisten. og det
+   ble en tom side etterpå") - 62% til label-kolonnen var BAKVENDT: label-siden er normalt KORT (ett-to
+   ord), mens verdi-siden (item.target) ofte er en hel setning (se kommentaren ved cells.push i
+   buildSectionBox, js/sjekkliste-bygger.js - "Verdi-siden kan derimot være en hel setning - den skal
+   fortsatt kunne brekke"). Med 62% til label ble
+   verdikolonnen for smal til vanlige, lange verdier som "Rapportert landet / ikke relevant" - den brakk
+   unødvendig til 3-4 linjer i stedet for én, som la nok ekstra sidehøyde til at innholdet fløt over på en
+   ny, nesten blank side (og det faste hjørnestempelet - se buildAllPrintPages - kolliderte da rett oppi
+   den siste, nå unormalt høye boksen). Snudd til 38% (label) / resten til verdi - gir fortsatt god plass
+   til de vanlige, korte kategorinavnene (lengste reelle: "Synlige faremomenter"/"Batteri og radiolink",
+   begge under 38%-budsjettet), men mye mer albuerom til de normalt lengre verdiene, som dermed sjelden
+   trenger å brekke i det hele tatt. Kun denne tabellen (print-rows-situasjon, satt KUN i buildSectionBox) -
+   generisk .print-rows (uten -situasjon) brukes også av f.eks. utstyrsliste og kontaktliste, som beholder
+   table-layout:auto uendret. */
 .print-rows-situasjon { table-layout: fixed; }
-.print-rows-situasjon td.print-label-situation { width: 62%; white-space: normal; }
+.print-rows-situasjon td.print-label-situation { width: 38%; white-space: normal; }
 /* Nødnummer-fremheving i selve utskriften (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS,
    js/sjekkliste-bygger.js) - print-key gir allerede fet skrift til ALLE kontakter/begrensninger (regelen
    over), så her legges kun fargen til (samme røde ERP-temafarge som resten av fanen, ikke en ny/vilkårlig
