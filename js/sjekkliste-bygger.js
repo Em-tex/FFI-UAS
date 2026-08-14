@@ -11,7 +11,11 @@ const STORAGE_KEY = "ffi-uas:sjekkliste-generator";
 // linje 40) faktisk er GAMMEL, lagret tilstand fra en tidligere (siden fikset) versjon av
 // begrensninger-koden, ikke en fersk bug i gjeldende kode - en versjonsbump her tvinger uansett en frisk
 // innlasting fra DEFAULTS igjen, som et sikkert "reset" uansett hva den egentlige årsaken var.
-const SCHEMA_VERSION = 22;
+// Bumpet til 23: la til "UAS SITS" og "UAS Autorisasjonstelefon" i ERP-kontaktlisten (se DEFAULTS.erp.limits)
+// - HUSK å bumpe dette tallet igjen ved enhver fremtidig DEFAULTS-endring, ellers overskygger brukernes
+// egen mellomlagrede localStorage-tilstand stille den nye standardmalen (se loadState) helt til de selv
+// nullstiller fanen manuelt.
+const SCHEMA_VERSION = 23;
 
 // Kolonneoverskrifter i sjekkpunkt-tabellen er ulike for normal- vs. contingency/emergency/erp-
 // sjekklister: en normal preflight-sjekk sammenligner mot en forventet status, mens de andre beskriver
@@ -163,7 +167,9 @@ const DEFAULTS = {
             { key: "Ambulanse", value: "113" },
             { key: "Legevakt", value: "116 117" },
             { key: "Politi (ikke nød)", value: "02800" },
-            { key: "Operativ leder", value: "" }
+            { key: "Operativ leder", value: "" },
+            { key: "UAS SITS", value: "520 7563 / 692 37 563 (sivilt innvalg)" },
+            { key: "UAS Autorisasjonstelefon", value: "458 72 017" }
         ],
         sections: [
             {
