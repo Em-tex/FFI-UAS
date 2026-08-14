@@ -1908,8 +1908,20 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-rows tr:last-child { border-bottom: none; }
 /* vertical-align: middle - alle rader/kolonner i en linje skal stå midtstilt i høyden i forhold til
    hverandre, ikke toppjustert (så en ettordslinje ikke henger øverst mens en lengre, flerlinjes
-   nabocelle strekker raden nedover). */
-.print-rows td { padding: 2px 8px; font-size: 8.5pt; vertical-align: middle; line-height: 1.4; }
+   nabocelle strekker raden nedover).
+   BUG (rapportert av brukeren - se print-rows-situasjon-kommentaren ved buildSectionBox i js/sjekkliste-
+   bygger.js for selve breddefiksen der): den fiksen løste kun brekk VED MELLOMROM - ett eneste
+   sammenhengende ord/streng UTEN mellomrom (f.eks. en lang, mellomromsløs innskriving ved uhell) har
+   fortsatt ingen naturlig bruddplass, og rant derfor rett forbi cellen/boksen uansett hvor smal
+   kolonnebredden var satt. hyphens:auto orddeler med ekte bindestrek på gyldige stavelsesgrenser
+   (lang="no" på <html>, se sjekkliste-bygger.html, styrer hvilket språks orddelingsregler nettleseren
+   bruker) - naturlig utseende for ekte, lange ord. overflow-wrap:break-word er sikkerhetsnettet for de
+   sjeldne tilfellene der ordet ikke er et gyldig norsk ord i det hele tatt (som i brukerens test -
+   "NOTAMgdfg..." har ingen stavelsesgrenser en orddelingsordliste kjenner igjen) - da tvinges et brudd der
+   det er nødvendig, i stedet for at cellen bare lar teksten flyte videre ut. Satt på selve den generiske
+   .print-rows td (alle celletyper - sjekkpunkt, verdi, utstyrsliste, kontaktliste), ikke bare
+   situasjon-kolonnen, siden samme problem i prinsippet kan ramme enhver av dem. */
+.print-rows td { padding: 2px 8px; font-size: 8.5pt; vertical-align: middle; line-height: 1.4; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
 .print-rows td.print-check { width: 12px; padding-right: 2px; }
 .print-rows td.print-number { width: 14px; text-align: right; padding-right: 3px; font-weight: 700; white-space: nowrap; }
 /* Se print-number-top-kommentaren ved buildSectionBox i js/sjekkliste-bygger.js - kun singleColumn-rader
