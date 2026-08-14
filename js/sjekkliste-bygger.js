@@ -1149,8 +1149,9 @@ function buildSectionBox(section, showCheckbox) {
 
 // Overskriften er nå kun én linje (tittelen) - den viste tidligere også et eget "Contingency"/
 // "Emergency"-merke ved siden av, som gjorde at f.eks. "Contingency-sjekkliste" + "Contingency" sto der
-// to ganger. Datoen er flyttet ut til ett enkelt hjørnestempel per side (se buildPageDateStamp), i
-// stedet for gjentatt i hver overskrift/halvdel.
+// to ganger. Datoen er flyttet ut til ett enkelt hjørnestempel, bygget kun én gang for hele utskriften og
+// vist på hver fysiske side (se buildPageDateStamp/buildAllPrintPages), i stedet for gjentatt i hver
+// overskrift/halvdel.
 // Reservetittel hvis navnefeltet er tomt - "ERP-sjekkliste" var misvisende, ERP er navnet på selve
 // planen (Emergency Response Plan), ikke en type "sjekkliste".
 const FALLBACK_TITLES = { contingency: "Contingency-sjekkliste", emergency: "Emergency-sjekkliste", erp: "Emergency Response Plan (ERP)" };
@@ -1172,9 +1173,8 @@ function buildPrintHeader(tabKey, data) {
     // Autorisasjonsnummeret sto tidligere her også (høyrestilt) - brukerønske ("FFI-UAS nummeret blir
     // ikke skrevet ut nå, ender bare med ... siden det ikke er plass") etter at banneren ble halvert
     // (se .print-header-half i css/style.css) - for lite bredde igjen til BÅDE dronenavn og nummer ved
-    // siden av tittelen. Flyttet til et eget, grått hjørnestempel på hver side i stedet, se
-    // buildApprovalStamp - samme plass-uavhengige løsning som allerede fantes for datoen
-    // (buildPageDateStamp).
+    // siden av tittelen. Flyttet til et eget, grått hjørnestempel i stedet, se buildApprovalStamp -
+    // samme plass-uavhengige løsning som allerede fantes for datoen (buildPageDateStamp).
     const drone = tabKey === "normal" && data.drone && data.drone.trim() ? data.drone : "";
     if (drone) {
         header.classList.add("print-header-with-meta");
@@ -1191,10 +1191,10 @@ function buildPrintHeader(tabKey, data) {
 
 // FFI-UAS-autorisasjonsnummeret sto tidligere flankert i selve tittelbanneret (se buildPrintHeader) -
 // flyttet til et eget, grått hjørnestempel (samme idé som buildPageDateStamp, men nederst til VENSTRE i
-// stedet for høyre, så de to stemplene ikke kolliderer) - vist på ALLE sider (ikke bare normal-siden,
-// der selve feltet ligger), siden nummeret gjelder hele oppdraget/utskriften, ikke bare
-// normal-fanens egen sjekkliste. Returnerer null (ikke et tomt stempel) når feltet er tomt - samme
-// "vis kun det som faktisk finnes"-prinsipp som resten av utskriften.
+// stedet for høyre, så de to stemplene ikke kolliderer) - bygget kun én gang og vist på ALLE sider (ikke
+// bare normal-siden der selve feltet ligger, se buildAllPrintPages), siden nummeret gjelder hele
+// oppdraget/utskriften, ikke bare normal-fanens egen sjekkliste. Returnerer null (ikke et tomt stempel)
+// når feltet er tomt - samme "vis kun det som faktisk finnes"-prinsipp som resten av utskriften.
 function buildApprovalStamp(approvalNumber) {
     if (!approvalNumber || !approvalNumber.trim()) return null;
     const el = document.createElement("div");
@@ -1310,9 +1310,6 @@ function buildNormalPage(data) {
     body.className = "print-page-body";
     body.appendChild(grid);
     page.appendChild(body);
-    page.appendChild(buildPageDateStamp());
-    const approvalStamp = buildApprovalStamp(data.approvalNumber);
-    if (approvalStamp) page.appendChild(approvalStamp);
     return page;
 }
 
@@ -1378,13 +1375,10 @@ function buildCombinedRow(contingencyData, emergencyData) {
 // bruke flere kolonner hvis det skulle være plass. Kalles kun når combinedHalvesFit sier det er nok
 // plass (og combinedAllFit IKKE strakk til for å få ERP med også, se buildAllPrintPages) - ERP får da sin
 // egen side i stedet, se buildErpPage.
-function buildCombinedPage(contingencyData, emergencyData, approvalNumber) {
+function buildCombinedPage(contingencyData, emergencyData) {
     const page = document.createElement("div");
     page.className = "print-page print-page-combined";
     page.appendChild(buildCombinedRow(contingencyData, emergencyData));
-    page.appendChild(buildPageDateStamp());
-    const approvalStamp = buildApprovalStamp(approvalNumber);
-    if (approvalStamp) page.appendChild(approvalStamp);
     return page;
 }
 
@@ -1394,7 +1388,7 @@ function buildCombinedPage(contingencyData, emergencyData, approvalNumber) {
 // sin egen fulle side for seg selv. Kalles kun når combinedAllFit sier alt tre faktisk får plass - ellers
 // faller buildAllPrintPages tilbake til den vanlige to-delte combined-siden (eller enda lenger ned,
 // separate sider) pluss en egen ERP-side, se der.
-function buildCombinedTriplePage(contingencyData, emergencyData, erpData, approvalNumber) {
+function buildCombinedTriplePage(contingencyData, emergencyData, erpData) {
     const page = document.createElement("div");
     page.className = "print-page print-page-combined";
     page.appendChild(buildCombinedRow(contingencyData, emergencyData));
@@ -1403,15 +1397,12 @@ function buildCombinedTriplePage(contingencyData, emergencyData, erpData, approv
         erpBody.classList.add("print-combined-bottom");
         page.appendChild(erpBody);
     }
-    page.appendChild(buildPageDateStamp());
-    const approvalStamp = buildApprovalStamp(approvalNumber);
-    if (approvalStamp) page.appendChild(approvalStamp);
     return page;
 }
 
 // Fallback når contingency/emergency IKKE får plass side ved side (se combinedHalvesFit): egen,
 // frittstående A4-side per fane, samme oppbygning som ERP-siden (full bredde, ikke halvdelt).
-function buildSingleTabPage(tabKey, data, approvalNumber) {
+function buildSingleTabPage(tabKey, data) {
     const boxes = buildSectionBoxesForPrint(tabKey, data);
     if (!boxes.length) return null;
 
@@ -1436,9 +1427,6 @@ function buildSingleTabPage(tabKey, data, approvalNumber) {
     if (sidebar) body.appendChild(sidebar);
 
     page.appendChild(body);
-    page.appendChild(buildPageDateStamp());
-    const approvalStamp = buildApprovalStamp(approvalNumber);
-    if (approvalStamp) page.appendChild(approvalStamp);
     return page;
 }
 
@@ -1549,16 +1537,13 @@ function buildErpBody(data) {
 
 // ERP som egen, frittstående A4-side - fallback når den IKKE fikk plass sammen med contingency/emergency
 // (se combinedAllFit/buildAllPrintPages). Returnerer null hvis fanen er helt tom, se buildErpBody.
-function buildErpPage(data, approvalNumber) {
+function buildErpPage(data) {
     const erpBody = buildErpBody(data);
     if (!erpBody) return null;
 
     const page = document.createElement("div");
     page.className = "print-page";
     page.appendChild(erpBody);
-    page.appendChild(buildPageDateStamp());
-    const approvalStamp = buildApprovalStamp(approvalNumber);
-    if (approvalStamp) page.appendChild(approvalStamp);
     return page;
 }
 
@@ -1570,8 +1555,7 @@ function buildAllPrintPages() {
     if (normalPage) container.appendChild(normalPage);
 
     // Autorisasjonsnummeret ligger kun på normal-fanens data (se getState), men gjelder utskriften som
-    // helhet - lest ut én gang her og sendt videre til hver enkelt sidebygger under (se
-    // buildApprovalStamp), i stedet for at hver av dem må vite om normal-fanens interne feltnavn selv.
+    // helhet, akkurat som datostempelet - se stempel-kommentaren nederst i denne funksjonen.
     const approvalNumber = state.normal && state.normal.approvalNumber ? state.normal.approvalNumber : "";
 
     // Contingency/emergency deler én side hvis det er plass - hvis ikke (for mye innhold til å få plass
@@ -1582,6 +1566,22 @@ function buildAllPrintPages() {
     const hasEmergency = buildSectionBoxesForPrint("emergency", state.emergency).length > 0;
     const hasErp = !!buildErpBody(state.erp);
 
+    // BUG (rapportert av brukeren, med skjermbilde: "en helt tom side etter normale sjekklisten og før
+    // contingency") - dato-/autorisasjonsstempelet ble TIDLIGERE bygget og satt inn PER side, posisjonert
+    // absolutt i forhold til den ENKELTE .print-page sin egen (nå, etter float-fiksen over, marginalt
+    // upresise) totalhøyde - en side som ble bare noen millimeter høyere enn én fysisk arkhøyde dro dermed
+    // stempelet, alene, med seg over på en ellers blank ekstra side. Stemplene viser uansett IDENTISK
+    // innhold på hver side (samme dato, samme autorisasjonsnummer for HELE utskriften, ikke per fane) - de
+    // trengte dermed aldri å bygges på nytt per side i utgangspunktet. Bygges nå kun ÉN gang og settes inn
+    // direkte på selve #printView (ikke på en spesifikk .print-page), med position:fixed (se
+    // .print-page-date/.print-page-approval i css/style.css) - en fixed-posisjonert utskriftselement
+    // gjentas automatisk av nettleseren i nøyaktig samme hjørne på HVER fysiske utskriftsside, uavhengig av
+    // hvor høy hver enkelt side sitt eget innhold blir. Løser dermed bugen strukturelt (stempelet kan ikke
+    // lenger "overflowe" til en egen side) i stedet for nok en gjettet mm-justering.
+    container.appendChild(buildPageDateStamp());
+    const approvalStamp = buildApprovalStamp(approvalNumber);
+    if (approvalStamp) container.appendChild(approvalStamp);
+
     // Brukerønske ("Hvis det er plass kan ERP være på samme side som contingency og emergency. ta nedre
     // halvdel av siden f.eks. Pass på at det ikke blir med tomme sider på utskriften") - forsøkes FØRST,
     // før den vanlige contingency/emergency-sidelogikken under: får alle tre plass stablet på ÉN side
@@ -1590,22 +1590,22 @@ function buildAllPrintPages() {
     // er tom), faller det helt tilbake til den opprinnelige logikken - contingency/emergency på egen delt
     // side (eller separate sider) OG en egen ERP-side, akkurat som før denne endringen.
     if ((hasContingency || hasEmergency) && hasErp && combinedAllFit(state.contingency, state.emergency, state.erp)) {
-        container.appendChild(buildCombinedTriplePage(state.contingency, state.emergency, state.erp, approvalNumber));
+        container.appendChild(buildCombinedTriplePage(state.contingency, state.emergency, state.erp));
         return;
     }
 
     if (hasContingency || hasEmergency) {
         if (combinedHalvesFit(state.contingency, state.emergency)) {
-            container.appendChild(buildCombinedPage(state.contingency, state.emergency, approvalNumber));
+            container.appendChild(buildCombinedPage(state.contingency, state.emergency));
         } else {
-            const contingencyPage = buildSingleTabPage("contingency", state.contingency, approvalNumber);
+            const contingencyPage = buildSingleTabPage("contingency", state.contingency);
             if (contingencyPage) container.appendChild(contingencyPage);
-            const emergencyPage = buildSingleTabPage("emergency", state.emergency, approvalNumber);
+            const emergencyPage = buildSingleTabPage("emergency", state.emergency);
             if (emergencyPage) container.appendChild(emergencyPage);
         }
     }
 
-    const erpPage = buildErpPage(state.erp, approvalNumber);
+    const erpPage = buildErpPage(state.erp);
     if (erpPage) container.appendChild(erpPage);
 }
 

@@ -1772,8 +1772,16 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 }
 .print-header-meta-right { text-align: right; }
 
+/* BUG (rapportert av brukeren, med skjermbilde: "en helt tom side etter normale sjekklisten og før
+   contingency") - position:absolute (ankret til den enkelte .print-page sin egen totalhøyde, satt inn på
+   nytt PER side) var tidligere her - se stempel-kommentaren ved buildAllPrintPages i js/sjekkliste-
+   bygger.js for hvorfor det var sårbart (og hvorfor det uansett var unødvendig, siden stempelet viser
+   identisk innhold på alle sider). position:fixed er den riktige teknikken for et hjørnestempel som skal
+   gjentas identisk på HVER fysiske utskriftsside - nettleseren tegner et fixed-posisjonert element i
+   utskrift på nytt i samme hjørne av hvert ark, uavhengig av innholdshøyden på den enkelte siden. Bygges nå
+   kun ÉN gang for hele utskriften (ikke per side), se buildAllPrintPages. */
 .print-page-date {
-    position: absolute;
+    position: fixed;
     bottom: 3mm;
     right: 4mm;
     font-size: 8pt;
@@ -1782,10 +1790,11 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 
 /* Autorisasjonsnummeret sto tidligere flankert i selve tittelbanneret (print-header-meta-right, nå
    fjernet) - flyttet hit, samme stempel-idé som datoen over, men nederst til VENSTRE (ikke samme
-   hjørne som datoen) - vises nå på ALLE sider, ikke bare normal-siden, se buildApprovalStamp i
-   js/sjekkliste-bygger.js. */
+   hjørne som datoen) - vises på ALLE sider (position:fixed, se BUG-kommentaren ved .print-page-date
+   over), ikke bare normal-siden der selve feltet ligger, se buildApprovalStamp i js/sjekkliste-
+   bygger.js. */
 .print-page-approval {
-    position: absolute;
+    position: fixed;
     bottom: 3mm;
     left: 4mm;
     font-size: 8pt;
