@@ -1295,7 +1295,12 @@ function buildNormalPage(data) {
         const limitsBox = buildLimitsBox(data.limits);
         if (limitsBox) rightCol.appendChild(limitsBox);
     }
-    buildSectionBoxesForPrint("normal", data).forEach(function (box) { leftCol.appendChild(box); });
+    // layoutNormalColumns (ikke et rent .forEach(...leftCol.appendChild) lenger) - brukerønske ("den
+    // sjekklisteboksen... havner på neste side. Men her passer det vel bedre å ha den over på neste
+    // kolonne når det er plass der?") - se kommentaren ved funksjonen (rett før combinedHalvesFit) for
+    // hvordan den avgjør om en sjekklistedel som ikke får plass i venstre kolonne heller kan flyttes
+    // nederst i høyre kolonne, i stedet for å alltid hoppe rett til en ny side.
+    layoutNormalColumns(leftCol, rightCol, buildSectionBoxesForPrint("normal", data));
 
     if (!leftCol.children.length && !rightCol.children.length) return null;
 
@@ -1449,6 +1454,90 @@ const COMBINED_HALF_MAX_HEIGHT_MM = 210;
 // padding 2mm x 2, se css/style.css) - samme breddemål probene under (og selve den ferdige siden) faktisk
 // får, slik at en probe-måling stemmer overens med virkeligheten.
 const PRINT_CONTENT_WIDTH_MM = 176;
+
+// Bredden ÉN .print-col faktisk får (se calc(50% - 7mm) i css/style.css - 7mm er halve brette-mellomrommet
+// på 14mm, se .print-grid-kommentaren der) - samme regnestykke, slik at en probe-måling i denne bredden
+// stemmer med hvordan kolonnen faktisk brytes/vokser i den ferdige utskriften.
+const NORMAL_COL_WIDTH_MM = PRINT_CONTENT_WIDTH_MM / 2 - 7;
+// Tilgjengelig høyde for INNHOLDET i én kolonne (267mm sideminstehøyde - 4mm topp-/10mm bunnpadding på
+// .print-page - ca. 18-19mm for selve tittelbanneret+dens egen bunnmarg, se buildPrintHeader/.print-header
+// i css/style.css) - med noe margin, samme "font-rendering kan variere marginalt"-begrunnelse som
+// COMBINED_HALF_MAX_HEIGHT_MM over.
+const NORMAL_COLUMN_MAX_HEIGHT_MM = 220;
+
+// Brukerønske ("jeg lurer på overflowen til den sjekklisteboksen. den havner på neste side. Men her passer
+// det vel bedre å ha den over på neste kolonne når det er plass der?") - venstre kolonne (sjekklistedeler)
+// kan bli høyere enn det som er igjen av arkhøyden, mens høyre kolonne (utstyr+begrensninger) ofte er langt
+// kortere og har ledig plass igjen nederst. I stedet for å la sjekklistedelen(e) som ikke får plass hoppe
+// rett til en ny, nesten tom side, måles (samme skjulte probe-teknikk som combinedHalvesFit/combinedAllFit
+// under) om de heller får plass i høyre kolonne. KUN de sjekklistedelene som faktisk ikke får plass i
+// venstre kolonne flyttes (aldri en fri, auto-balanserende flyt av ALT innhold på tvers av kolonnene - se
+// combinedHalvesFit-kommentaren for hvorfor ren CSS-multikolonne unngås i utskrift), uendret rekkefølge på
+// sjekklistedelene seg imellom.
+// Brukerpresisering ("den sjekklisten som overflower skal komme OVER utstyrsliste og begrensninger. utstyr
+// og begrensninger skal ikke være øverst hvis det er sjekklisteboks i samme kolonne") - overflow-boksene
+// settes derfor inn ØVERST i høyre kolonne (foran utstyr/begrensninger), ikke nederst. Sjekklistedelen(e)
+// er det aktive, tidskritiske innholdet - utstyr/begrensninger er ren referanseinfo som naturlig kan stå
+// under når kolonnen må deles.
+// Får overflow-boksene heller ikke plass i høyre kolonne (sjelden, men mulig hvis begge kolonner allerede
+// er nesten fulle), beholdes de i venstre kolonne som før denne fiksen - samme "hopp til ny side"-oppførsel
+// som tidligere, aldri verre enn utgangspunktet.
+function layoutNormalColumns(leftCol, rightCol, sectionBoxes) {
+    if (!sectionBoxes.length) return;
+    const maxHeightPx = NORMAL_COLUMN_MAX_HEIGHT_MM * MM_TO_PX;
+    const probeStyle = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + NORMAL_COL_WIDTH_MM + "mm; display:block;";
+
+    const probe = document.createElement("div");
+    probe.style.cssText = probeStyle;
+    document.body.appendChild(probe);
+
+    // 1) Høyre kolonnes egen, faste høyde (utstyr+begrensninger, allerede satt inn av buildNormalPage) -
+    // målt FØR sjekklistedelene vurderes, siden det er DEN gjenværende plassen en ev. overflyttet del må
+    // dele med. Boksene flyttes midlertidig inn i proben for målingen (appendChild FLYTTER, ikke
+    // kopierer), og tilbake til rightCol umiddelbart etterpå.
+    const rightBoxes = Array.from(rightCol.children);
+    rightBoxes.forEach(function (box) { probe.appendChild(box); });
+    const rightUsedPx = rightBoxes.length ? probe.scrollHeight : 0;
+    rightBoxes.forEach(function (box) { rightCol.appendChild(box); });
+    probe.innerHTML = "";
+
+    // 2) Hvor mange sjekklistedeler (i rekkefølge, fra toppen) får plass i venstre kolonne innenfor
+    // sidebudsjettet?
+    let fitCount = sectionBoxes.length;
+    for (let i = 0; i < sectionBoxes.length; i++) {
+        probe.appendChild(sectionBoxes[i]);
+        if (probe.scrollHeight > maxHeightPx) { fitCount = i; break; }
+    }
+    probe.innerHTML = "";
+    document.body.removeChild(probe);
+
+    const fitting = sectionBoxes.slice(0, fitCount);
+    const overflowing = sectionBoxes.slice(fitCount);
+    fitting.forEach(function (box) { leftCol.appendChild(box); });
+    if (!overflowing.length) return;
+
+    // 3) Får overflow-delen(e) plass i høyre kolonne, sammen med den ledige høyden som er igjen der?
+    const probe2 = document.createElement("div");
+    probe2.style.cssText = probeStyle;
+    document.body.appendChild(probe2);
+    overflowing.forEach(function (box) { probe2.appendChild(box); });
+    const overflowHeightPx = probe2.scrollHeight;
+    document.body.removeChild(probe2);
+
+    if (overflowHeightPx <= maxHeightPx - rightUsedPx) {
+        // Settes inn ØVERST i høyre kolonne, foran utstyr/begrensninger (ikke appendChild/nederst) -
+        // brukerpresisering: sjekklisteboksen som overflower skal komme OVER utstyr/begrensninger, som
+        // aldri skal stå øverst i en kolonne den deler med en sjekklisteboks. rightAnchor er hentet FØR
+        // innsettingen starter og endrer seg dermed aldri underveis - insertBefore(box, rightAnchor)
+        // plasserer hver overflow-boks rett før akkurat DEN opprinnelige første boksen (uansett om den er
+        // null, dvs. høyre kolonne var tom fra før - insertBefore(node, null) tilsvarer da appendChild),
+        // så overflow-boksene havner i egen, uendret rekkefølge over det opprinnelige innholdet.
+        const rightAnchor = rightCol.firstChild;
+        overflowing.forEach(function (box) { rightCol.insertBefore(box, rightAnchor); });
+    } else {
+        overflowing.forEach(function (box) { leftCol.appendChild(box); });
+    }
+}
 
 function combinedHalvesFit(contingencyData, emergencyData) {
     const probe = document.createElement("div");
