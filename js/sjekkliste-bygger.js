@@ -933,10 +933,18 @@ function downloadJson(filename, dataObj) {
    redigerbare skjemaet direkte - gir full kontroll på layouten (tette bokser i to kolonner per side,
    fargekode per sjekklistetype) uavhengig av hvordan redigeringsvisningen ser ut. */
 
+// sidebarLabel (BEREDSKAP/NØD) FJERNET (brukerønske: "kan fjernes. så er det mer plass i bredden for
+// sjekklistene") - den loddrette fargede stripen (se buildPrintSidebar) tok en fast 9mm + 5mm mellomrom
+// fra hver av contingency/emergency sine allerede trange halvsider (se .print-columns-half). Satt til
+// null (samme som normal-fanen, som aldri hadde noen sidefelt) i stedet for å fjerne selve
+// buildPrintSidebar-mekanismen - den er fortsatt i bruk til bl.a. erp, og kan gjenbrukes igjen for andre
+// faner ved å sette en tekst her på nytt. .print-columns-half (flex:1, eneste gjenværende barn i
+// .print-page-body når sidebar er null) utvider seg automatisk til å fylle plassen sidebaren tidligere
+// tok - ingen ekstra CSS-endring nødvendig.
 const TAB_META = {
     normal: { label: "Normal", sidebarLabel: null },
-    contingency: { label: "Contingency", sidebarLabel: "BEREDSKAP" },
-    emergency: { label: "Emergency", sidebarLabel: "NØD" },
+    contingency: { label: "Contingency", sidebarLabel: null },
+    emergency: { label: "Emergency", sidebarLabel: null },
     erp: { label: "ERP", sidebarLabel: "ERP" }
 };
 
