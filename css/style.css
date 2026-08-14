@@ -1452,17 +1452,22 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 }
 /* Klassebasert (ikke lenger en "input"-tag-selektor) - matcher parameter-feltet uansett om det er et
    <input> (verdi-feltet, uendret) eller en <textarea> (parameter-feltet, se over) - en ren tag-selektor
-   som "td.limit-key input" ville sluttet å treffe idet feltet ble en textarea.
-   padding-left ALLTID (ikke bare på nødnummer-rader) - se BUG-kommentaren ved td.limit-key over:
-   reserverer fast plass til nødnummer-ikonet slik at selve TEKSTEN (ikke bare boksens kant) starter på
-   nøyaktig samme sted på hver rad, ikonet eller ei - et lite, umerkelig ekstra innrykk på de vanlige
-   radene er verdt at hele kolonnen faktisk står pent på linje.
-   BUG (rapportert av brukeren, med skjermbilde: "ikonen ikke hhelt bra justert" - ikonet klemte nesten
-   borti selve bokstaven rett etter, "Brann"/"Politi"/"Ambulanse") - 22px ga bare ~6px klaring mellom
-   ikonets høyrekant og teksten. Økt til 30px, deretter til 34px (se .limit-key-icon - ikonet flyttet fra
-   left:14px til 18px i samme runde som denne, se BUG-kommentaren der) for fortsatt tydelig klaring etter
-   at ikonet selv flyttet lenger inn. */
-.limits-table .limit-key-input { font-weight: 600; padding-left: 34px; }
+   som "td.limit-key input" ville sluttet å treffe idet feltet ble en textarea. font-weight gjelder begge
+   faner (Begrensninger og Kontaktliste skal begge ha fete parameternavn). */
+.limits-table .limit-key-input { font-weight: 600; }
+/* BUG (rapportert av brukeren, med skjermbilde: "veldig unaturlig store [bokser] uten at det er satt inn
+   tekst? og massivt innrykk der teksten starter") - padding-left:34px (nødnummer-ikonets faste plass, se
+   .limit-key-icon under) sto TIDLIGERE på den generiske ".limits-table .limit-key-input" i stedet for
+   skrudd til KUN #tabPanel-erp (samme mønster som .limit-row-emergency-reglene rett under bruker) - Normal-
+   fanens Begrensninger deler samme .limits-table-klasse som ERP sin Kontaktliste, men viser ALDRI et
+   nødnummer-ikon, så innrykket der var bare bortkastet plass. Verre: kolonnen er kun 18ch bred i
+   utgangspunktet (se BUG-historikken lenger opp), så de bortkastede 34px spiste en stor andel av en allerede
+   trang kolonne - selv korte parameternavn som "Maks rekkevidde" ble dermed tvunget til å brekke til to
+   linjer (autoGrowTextarea) på Begrensninger, mens ERP sine ekte nødnummer-rader (som FAKTISK trenger
+   plassen) så helt normale ut. Skrudd til #tabPanel-erp løser begge symptomene samtidig: Begrensninger får
+   nå full 18ch å boltre seg på (ingen unødig innrykk/brekk), mens Kontaktlisten beholder ikonplassen
+   uendret. */
+#tabPanel-erp .limit-key-input { padding-left: 34px; }
 .limits-table input:focus, .limits-table textarea:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
 
 /* Nødnummer-fremheving på ERP sin Kontaktliste (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS i
