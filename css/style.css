@@ -1715,6 +1715,7 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     color: white;
     border-radius: 4px;
     padding: 9px 14px;
+    box-sizing: border-box;
     /* Økt fra 10px til 20px (brukerønske: "litt mer luft under overskriften 'sjekkliste' ned til der
        boksene begynner"), deretter til 32px (samme ønske gjentatt - fortsatt for tett). */
     margin-bottom: 32px;
@@ -1722,11 +1723,31 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 [data-theme="contingency"] .print-header { background: #d4a017; }
 [data-theme="emergency"] .print-header,
 [data-theme="erp"] .print-header { background: #a01414; }
+
+/* Arket er ment å kunne brettes i to PÅ LANGS (et loddrett brett midt på siden, langs hele
+   297mm-høyden - se gap-kommentaren ved .print-grid under) - normal- og ERP-sidens
+   venstre/høyre-kolonner ligger allerede pent på hver sin side av det brettet. Selve tittelbanneret
+   (over) strakk seg derimot over HELE sidebredden, altså rett over selve bretten - den midtstilte
+   teksten ("Sjekkliste" e.l.) ville dermed blitt visuelt kuttet i to akkurat der papiret brettes.
+   print-header-half begrenser banneren til NØYAKTIG samme bredde som venstre grid-kolonne (samme
+   calc(50% - halve mellomrommet)-formel som .print-grid sine 1fr-kolonner bruker), slik at hele
+   banneren - tittel og drone/nummer-metadata - havner trygt til venstre for bretten, over
+   sjekklistedelen. Høyre kolonne (utstyr/begrensninger/kontaktliste) har alt egne boksoverskrifter,
+   og trenger ingen duplisert banner. Mindre skrift, samme prinsipp som combined-half sine egne
+   12pt-titler like under (halvparten så bred banner som før). Brukes IKKE av den delte
+   contingency/emergency-siden (buildCombinedHalf) - den har alt sin egen, riktig avgrensede banner
+   per halvdel. */
+.print-header-half {
+    width: calc(50% - 7mm);
+}
+.print-header-half h1 { font-size: 12pt; }
 .print-header h1 { font-size: 15pt; margin: 0; color: white; font-family: 'Overpass', sans-serif; text-align: center; }
 
-/* Drone/autorisasjonsnummer inni selve tittelbanneret (kun normal-siden, se buildPrintHeader) - grid i
-   stedet for flex slik at midtkolonnen (tittelen) holder seg visuelt sentrert uansett hvor lange
-   drone-navnet/nummeret er, siden de to flankekolonnene alltid er like store (1fr hver). */
+/* Dronenavn inni selve tittelbanneret (kun normal-siden, se buildPrintHeader) - grid i stedet for flex
+   slik at midtkolonnen (tittelen) holder seg visuelt sentrert uansett hvor langt dronenavnet er - den
+   tredje 1fr-kolonnen er bevisst tom (ingen egen -right-motpart lenger, se buildPrintHeader) og
+   balanserer likevel opp mot drone-kolonnen. Autorisasjonsnummeret sto tidligere her også, se
+   .print-page-approval under. */
 .print-header.print-header-with-meta {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -1741,7 +1762,6 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     text-overflow: ellipsis;
 }
 .print-header-meta-left { text-align: left; }
-.print-header-meta-right { text-align: right; }
 
 .print-page-date {
     position: absolute;
@@ -1751,25 +1771,43 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     color: #888;
 }
 
+/* Autorisasjonsnummeret sto tidligere flankert i selve tittelbanneret (print-header-meta-right, nå
+   fjernet) - flyttet hit, samme stempel-idé som datoen over, men nederst til VENSTRE (ikke samme
+   hjørne som datoen) - vises nå på ALLE sider, ikke bare normal-siden, se buildApprovalStamp i
+   js/sjekkliste-bygger.js. */
+.print-page-approval {
+    position: absolute;
+    bottom: 3mm;
+    left: 4mm;
+    font-size: 8pt;
+    color: #888;
+}
+
 /* Selve siden er en rad: hovedinnholdet (to kolonner) + en smal fargekodet sidefelt med det stavede
    temaordet (kun contingency/emergency, se buildPrintPage) - samme idé som den loddrette
    "BEREDSKAP"/"NØD"-stripen i referansebildene. */
 .print-page-body { display: flex; gap: 5mm; align-items: stretch; }
+/* column-gap er selve brettesonen (se .print-header-half over) - 14mm, samme mellomromsbredde som
+   .print-grid og .print-combined-row under bruker, slik at det loddrette brettet får like mye luft
+   å brettes i uansett hvilken av de tre sidetypene det gjelder (brukerønske: "litt mer mellomrom på
+   midten av siden, så det er plass til bretten"). */
 .print-columns {
     flex: 1;
     min-width: 0;
     column-count: 2;
-    column-gap: 8mm;
+    column-gap: 14mm;
     column-fill: auto;
 }
 /* Normal-siden: fast venstre/høyre-oppdeling (sjekklistedeler / utstyr+begrensninger) - se
-   kommentaren ved buildNormalPage i js/sjekkliste-bygger.js. */
+   kommentaren ved buildNormalPage i js/sjekkliste-bygger.js. gap er selve brettesonen midt på
+   arket - 14mm, se .print-columns over og .print-header-half lenger opp (som regner ut
+   bannerbredden fra nøyaktig denne verdien: calc(50% - 7mm), altså halve dette mellomrommet). */
 .print-grid {
     flex: 1;
     min-width: 0;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8mm;
+    gap: 14mm;
     align-content: start;
 }
 .print-col { display: flex; flex-direction: column; min-width: 0; }
@@ -1794,10 +1832,13 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 /* Contingency + emergency deler én side (hver sin halvdel) i stedet for hver sin egen side, med en
    stiplet skillelinje mellom dem. column-width (ikke et fast column-count) på .print-columns-half lar
    hver halvdel selv falle tilbake til én kolonne når det er trangt, men bruke flere kolonner "hvis det
-   er plass" - se buildCombinedPage. */
-.print-combined-row { display: flex; gap: 6mm; align-items: stretch; }
+   er plass" - se buildCombinedPage. Skillelinjen ER selve brettet (arket brettes i to på langs, se
+   .print-header-half over) - padding-right (venstre halvdel) + gap (mellom halvdelene) er derfor
+   satt like store (7mm + 7mm) slik at linjen havner nøyaktig midt i det totalt 14mm brede
+   mellomrommet, samme brettebredde som .print-grid/.print-columns bruker på de andre sidetypene. */
+.print-combined-row { display: flex; gap: 7mm; align-items: stretch; }
 .print-combined-half { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.print-combined-half:first-child { border-right: 1px dashed #ccc; padding-right: 6mm; }
+.print-combined-half:first-child { border-right: 1px dashed #ccc; padding-right: 7mm; }
 .print-combined-half .print-header h1 { font-size: 12pt; }
 
 /* Brukerønske ("Hvis det er plass kan ERP være på samme side som contingency og emergency. ta nedre
