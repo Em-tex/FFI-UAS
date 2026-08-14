@@ -1094,7 +1094,18 @@ function buildSectionBox(section, showCheckbox) {
     }
 
     const table = document.createElement("table");
-    table.className = "print-rows";
+    // print-rows-situasjon (nytt, KUN her - ikke utstyrsliste/kontaktliste, som gjenbruker generisk
+    // .print-rows uendret) - BUG (rapportert av brukeren: "høyre stiplede kant for langt ut til høyre" på
+    // en boks): situasjon/sjekkpunkt-kolonnen har white-space:nowrap (se .print-label-situation i
+    // css/style.css) for at KORTE, faste kategorinavn ("Batteri", "Vær") aldri skal brekke unødvendig -
+    // men et langt, egendefinert sjekkpunkt (hele setninger, ikke en kort kategori) kan da ikke brekke
+    // heller, og siden bare denne tabellen manglet table-layout:fixed fikk den lov til å bli bredere enn
+    // boksen for å få plass til den ubrutte teksten - den stiplede kanten (som følger tabellens egen
+    // bredde) ble dermed dratt lenger ut til høyre enn boks-headeren over. print-rows-situasjon gir denne
+    // tabellen (og KUN denne, se .print-rows-situasjon i css/style.css) en fast kolonnebredde i stedet,
+    // slik at et uvanlig langt sjekkpunkt brekker til flere linjer i stedet for å presse tabellen ut over
+    // boksens kant.
+    table.className = "print-rows print-rows-situasjon";
     items.forEach(function (item, index) {
         const cells = [];
         if (showCheckbox) {
@@ -1152,10 +1163,12 @@ function buildPrintHeader(tabKey, data) {
     // redigerbare navnefelt.
     h1.textContent = tabKey === "normal" ? "Sjekkliste" : (data.title && data.title.trim() ? data.title : FALLBACK_TITLES[tabKey]);
 
-    // Dronenavn inn i selve tittelbanneret (hvit skrift, venstrestilt), tittelen fortsatt sentrert midt i
-    // mellom via grid (1fr auto 1fr - midtkolonnen krymper til tittelens egen bredde, og den TREDJE,
-    // bevisst tomme 1fr-kolonnen balanserer likevel opp mot drone-kolonnen, så tittelen holder seg
-    // visuelt sentrert uansett hvor langt dronenavnet er - selv uten noe eget innhold i den).
+    // Dronenavn inn i selve tittelbanneret (hvit skrift, høyrestilt) - "Sjekkliste" venstrestilt i
+    // kolonne 1, dronenavnet høyrestilt i kolonne 2 (se .print-header-with-meta i css/style.css), i
+    // stedet for tidligere sentrert tittel + dronenavn klemt inn i en smal balanse-kolonne til venstre -
+    // brukerønske ("droner med lange navn får ikke plass i toppteksten") ga dronenavnet dermed langt mer
+    // bredde å boltre seg på. text-overflow:ellipsis er beholdt i CSS-en som siste sikkerhetsnett for de
+    // aller lengste navnene.
     // Autorisasjonsnummeret sto tidligere her også (høyrestilt) - brukerønske ("FFI-UAS nummeret blir
     // ikke skrevet ut nå, ender bare med ... siden det ikke er plass") etter at banneren ble halvert
     // (se .print-header-half i css/style.css) - for lite bredde igjen til BÅDE dronenavn og nummer ved
@@ -1166,10 +1179,10 @@ function buildPrintHeader(tabKey, data) {
     if (drone) {
         header.classList.add("print-header-with-meta");
         const droneSpan = document.createElement("span");
-        droneSpan.className = "print-header-meta print-header-meta-left";
+        droneSpan.className = "print-header-meta print-header-meta-right";
         droneSpan.textContent = drone;
-        header.appendChild(droneSpan);
         header.appendChild(h1);
+        header.appendChild(droneSpan);
     } else {
         header.appendChild(h1);
     }

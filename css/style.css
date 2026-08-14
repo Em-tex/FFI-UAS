@@ -1743,17 +1743,21 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-header-half h1 { font-size: 12pt; }
 .print-header h1 { font-size: 15pt; margin: 0; color: white; font-family: 'Overpass', sans-serif; text-align: center; }
 
-/* Dronenavn inni selve tittelbanneret (kun normal-siden, se buildPrintHeader) - grid i stedet for flex
-   slik at midtkolonnen (tittelen) holder seg visuelt sentrert uansett hvor langt dronenavnet er - den
-   tredje 1fr-kolonnen er bevisst tom (ingen egen -right-motpart lenger, se buildPrintHeader) og
-   balanserer likevel opp mot drone-kolonnen. Autorisasjonsnummeret sto tidligere her også, se
-   .print-page-approval under. */
+/* Dronenavn inni selve tittelbanneret (kun normal-siden, se buildPrintHeader) - grid i stedet for flex.
+   Var tidligere en 3-kolonners "1fr auto 1fr" (sentrert tittel, dronenavn venstrestilt i første 1fr,
+   siste 1fr bevisst tom kun for visuell balanse) - brukerønske ("droner med lange navn får ikke plass i
+   toppteksten") viste at dronenavnet dermed reelt sett kun fikk en tredjedel av bannerbredden mens den
+   tomme balanse-kolonnen sto ubrukt. Nå ekte to like brede kolonner i stedet: tittelen ("Sjekkliste")
+   venstrestilt i kolonne 1, dronenavnet høyrestilt i kolonne 2 - dronenavnet får da nesten dobbelt så mye
+   bredde å boltre seg på. text-overflow:ellipsis (se .print-header-meta under) er beholdt som siste
+   sikkerhetsnett for de aller lengste navnene, ikke selve løsningen lenger. */
 .print-header.print-header-with-meta {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: 1fr 1fr;
     align-items: baseline;
     gap: 10px;
 }
+.print-header.print-header-with-meta h1 { text-align: left; }
 .print-header-meta {
     font-size: 9pt;
     color: white;
@@ -1761,7 +1765,7 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.print-header-meta-left { text-align: left; }
+.print-header-meta-right { text-align: right; }
 
 .print-page-date {
     position: absolute;
@@ -1913,13 +1917,20 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    midtjusteringen (se kommentaren ved .print-rows td over). */
 .print-rows td.print-number-top { vertical-align: top; padding-top: 3px; }
 .print-rows td.print-label.print-key { font-weight: 700; }
-/* Se print-label-situation-kommentaren ved buildSectionBox i js/sjekkliste-bygger.js - situasjon/
-   sjekkpunkt-siden av en to-kolonners rad er alltid en kort, fast kategoribetegnelse og skal ALDRI brekke
-   til flere linjer, uansett hvor bred verditeksten på en ANNEN rad i samme tabell måtte være (ren
-   table-layout:auto fordeler kolonnebredde per HELE tabellen, ikke rad for rad, se der). Kun denne
-   spesifikke kombinasjonen - generisk .print-label (uten -situation) brukes også av f.eks.
-   utstyrslisten, der lange varenavn fortsatt skal få brekke normalt. */
-.print-rows td.print-label-situation { white-space: nowrap; }
+/* print-rows-situasjon (se kommentaren ved buildSectionBox i js/sjekkliste-bygger.js) - BUG: ren
+   table-layout:auto fordeler kolonnebredde per HELE tabellen (ikke rad for rad), så et enkelt langt,
+   egendefinert sjekkpunkt i situasjon/sjekkpunkt-kolonnen (normalt en kort, fast kategoribetegnelse som
+   "Batteri"/"Vær", men INGENTING i datamodellen hindrer et langt sjekkpunkt) presset tidligere hele
+   tabellen (og dermed .print-box sin stiplede kant, som følger tabellens egen bredde) bredere enn selve
+   boksen når kolonnen fikk white-space:nowrap. table-layout:fixed + en fast prosentbredde på nettopp
+   denne kolonnen løser dette permanent: bredden er nå den samme uansett innhold, så et uvanlig langt
+   sjekkpunkt brekker til flere linjer i stedet for å sprenge tabellen ut over kanten. 62% er valgt romslig
+   nok til at de vanlige, korte kategorinavnene fortsatt får plass på én linje uten å brekke unødvendig -
+   samme visuelle resultat som før for det vanlige tilfellet. Kun denne tabellen (print-rows-situasjon,
+   satt KUN i buildSectionBox) - generisk .print-rows (uten -situasjon) brukes også av f.eks. utstyrsliste
+   og kontaktliste, som beholder table-layout:auto uendret. */
+.print-rows-situasjon { table-layout: fixed; }
+.print-rows-situasjon td.print-label-situation { width: 62%; white-space: normal; }
 /* Nødnummer-fremheving i selve utskriften (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS,
    js/sjekkliste-bygger.js) - print-key gir allerede fet skrift til ALLE kontakter/begrensninger (regelen
    over), så her legges kun fargen til (samme røde ERP-temafarge som resten av fanen, ikke en ny/vilkårlig
