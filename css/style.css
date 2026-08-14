@@ -1734,8 +1734,8 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    venstre/høyre-kolonner ligger allerede pent på hver sin side av det brettet. Selve tittelbanneret
    (over) strakk seg derimot over HELE sidebredden, altså rett over selve bretten - den midtstilte
    teksten ("Sjekkliste" e.l.) ville dermed blitt visuelt kuttet i to akkurat der papiret brettes.
-   print-header-half begrenser banneren til NØYAKTIG samme bredde som venstre grid-kolonne (samme
-   calc(50% - halve mellomrommet)-formel som .print-grid sine 1fr-kolonner bruker), slik at hele
+   print-header-half begrenser banneren til NØYAKTIG samme bredde som venstre kolonne (samme
+   calc(50% - halve mellomrommet)-formel som .print-grid sine flytende .print-col-kolonner bruker), slik at hele
    banneren - tittel og drone/nummer-metadata - havner trygt til venstre for bretten, over
    sjekklistedelen. Høyre kolonne (utstyr/begrensninger/kontaktliste) har alt egne boksoverskrifter,
    og trenger ingen duplisert banner. Mindre skrift, samme prinsipp som combined-half sine egne
@@ -1808,18 +1808,33 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     column-fill: auto;
 }
 /* Normal-siden: fast venstre/høyre-oppdeling (sjekklistedeler / utstyr+begrensninger) - se
-   kommentaren ved buildNormalPage i js/sjekkliste-bygger.js. gap er selve brettesonen midt på
-   arket - 14mm, se .print-columns over og .print-header-half lenger opp (som regner ut
-   bannerbredden fra nøyaktig denne verdien: calc(50% - 7mm), altså halve dette mellomrommet). */
+   kommentaren ved buildNormalPage i js/sjekkliste-bygger.js. gap-bredden (14mm) er selve
+   brettesonen midt på arket - se .print-columns over og .print-header-half lenger opp (som regner ut
+   bannerbredden fra nøyaktig denne verdien: calc(50% - 7mm), altså halve dette mellomrommet).
+   BUG (rapportert av brukeren, med skjermbilde: "'Sjekkliste' kom på en nesten blank side, resten av
+   innholdet havnet helt på side 2") - display:grid var TIDLIGERE her. Chrome støtter ikke å dele opp
+   INNHOLDET i en grid-beholder over en sideskille ved utskrift - så snart nettleseren regnet med at HELE
+   gridden (begge kolonnene under ett) ikke fikk plass i sin helhet under banneret på side 1, hoppet den
+   HELE gridden til side 2 i stedet for å la de enkelte boksene (som allerede har hver sin egen
+   break-inside:avoid, se .print-box) flyte naturlig og fordele seg utover sidene slik de er designet for -
+   banneret ble dermed stående alene igjen på en ellers tom side 1. Floats (flow-root på selve
+   .print-grid som egen "clearfix" i stedet for en ekstra wrapper-div) gir nøyaktig samme visuelle
+   to-kolonners resultat, men Chrome PAGINERER flyteinnhold på vanlig, forutsigbar måte (samme
+   fragmenteringsstøtte som all annen blokk-flyt) - venstre og høyre kolonne kan dermed hver for seg
+   fortsette naturlig på neste side hvis innholdet blir langt, i stedet for at hele oppsettet rykker seg
+   som én udelelig enhet. */
 .print-grid {
     flex: 1;
     min-width: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14mm;
-    align-content: start;
+    display: flow-root;
 }
-.print-col { display: flex; flex-direction: column; min-width: 0; }
+.print-col {
+    float: left;
+    width: calc(50% - 7mm);
+    box-sizing: border-box;
+    min-width: 0;
+}
+.print-col:first-child { margin-right: 14mm; }
 .print-sidebar {
     flex: 0 0 9mm;
     background: var(--ffi-blue);
