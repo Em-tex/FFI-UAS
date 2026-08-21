@@ -14,14 +14,14 @@
          se samme forklaring over. En vanlig omlasting henter samme HTML (som selv aldri caches, se over),
          men uten en ny query-streng her kunne nettleseren likevel gjenbrukt en cachet KOPI av selve
          css/js-filene fra forrige gang de ble lastet med SAMME URL. -->
-    <link rel="stylesheet" href="css/style.css?v=20260821000011">
+    <link rel="stylesheet" href="css/style.css?v=20260821000013">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="js/menu.js?v=20260821000011"></script>
+    <script src="js/menu.js?v=20260821000013"></script>
 </head>
 <body>
 
@@ -330,6 +330,11 @@
                 </button>
                 <h4 id="exerciseDetailTitle" class="sim-exercise-detail-title"></h4>
                 <p class="sim-exercise-desc" id="exerciseDetailDescription"></p>
+                <div class="sim-rate-row" id="exerciseDetailCalibrationRow" style="display:none;">
+                    <button type="button" class="sim-btn" id="exerciseDetailCalibrationBtn">
+                        <i class="fa-solid fa-gamepad"></i> Åpne fjernkontroll-kalibrering
+                    </button>
+                </div>
                 <p class="sim-panel-hint" id="exerciseDetailProgress" style="display:none;"></p>
                 <div class="sim-rate-row">
                     <button type="button" class="sim-btn sim-btn-primary" id="exerciseStartBtn">Start</button>
@@ -401,8 +406,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="js/simulator-common.js?v=20260821000011"></script>
-<script src="js/simulator.js?v=20260821000011"></script>
-<script src="js/simulator-flightlog.js?v=20260821000011"></script>
+<script src="js/simulator-common.js?v=20260821000013"></script>
+<script src="js/simulator.js?v=20260821000013"></script>
+<script src="js/simulator-flightlog.js?v=20260821000013"></script>
 </body>
 </html>

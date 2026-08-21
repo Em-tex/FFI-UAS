@@ -695,7 +695,7 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     padding: 16px;
     border-radius: 8px;
     /* A4 (210 x 297 mm) - forhåndsvisningen på skjerm skal ha samme form/proporsjoner som papiret man
-       faktisk får ut av "Skriv ut / lagre som PDF" (se @page-regelen i @media print under). Bredden er
+       faktisk får ut av "Skriv ut / lagre som PDF" (se den globale @page-regelen lenger ned i filen). Bredden er
        det minste av full A4-bredde, 80% av vindusbredden og "80% av vindushøyden regnet om til A4-bredde"
        - det siste leddet er det som faktisk hindrer overflyt på korte/lave vinduer: med en fast
        min-height:297mm alene "vinner" den alltid over max-height (CSS-spec), og arket stakk utenfor
@@ -770,10 +770,21 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 .sim-diploma-date { font-size: 0.85rem; color: #555; margin: 0; }
 .sim-diploma-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
 
+/* Sideoppsett for ALL utskrift på hele nettstedet (ikke bare diplomet - @page er ikke knyttet til noen
+   CSS-selektor eller @media print-blokk, den gjelder rett og slett hver gang DENNE stilarket brukes til
+   utskrift, uansett side). A4 med 15mm marg.
+   Faktisk håndhevelse er dessverre browser-/OS-avhengig og UTENFOR hva CSS kan garantere: nettleserens
+   EGEN "Marger"-innstilling i utskriftsdialogen (Standard/Ingen/Minimum/Egendefinert) overstyrer denne
+   verdien hvis brukeren har valgt noe annet enn "Standard" der - og noen nettlesere HUSKER forrige valg
+   på tvers av nettsteder/økter, så en helt urelatert tidligere utskriftsjobb kan smitte over. Rapportert:
+   fine, standard marger i Vivaldi, men HELT uten marger da en annen person lastet siden ned som PDF -
+   mest sannsynlig nettopp dette (deres utskriftsdialog sto på "Ingen" fra en tidligere jobb), ikke noe
+   galt med selve siden - det finnes ingen CSS-mekanisme som kan tvinge forbi et slikt brukervalg. */
+@page { size: A4; margin: 15mm; }
+
 /* Ved utskrift av diplomet skjules alt annet på siden - kun selve diplom-arket skrives ut, på et
    A4-ark (ikke nettleserens/OS-ets standard papirstørrelse, som ikke nødvendigvis er A4). */
 @media print {
-    @page { size: A4; margin: 15mm; }
     body.printing-diploma * { visibility: hidden; }
     body.printing-diploma .sim-diploma-overlay,
     body.printing-diploma .sim-diploma-overlay * { visibility: visible; }

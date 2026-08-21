@@ -739,8 +739,7 @@ const EXERCISES = {
         fullDescription: "Du skal fly noen øvelser - underveis kan det skje noe uforutsett. Riktig " +
             "reaksjon kan være å fly unna, lande, eller stoppe motorene i lufta. Det er 4 scenarier som " +
             "må bestås, ett om gangen.\n\nHusk å sette killswitchen på fjernkontrollen din i " +
-            "Fjernkontroll-kalibrering (Innstillinger) - tastatur og skjermknappen virker ikke i denne " +
-            "øvelsen, det er den ekte bryteren som skal trenes.",
+            "Fjernkontroll-kalibrering.",
         requiresGamepadKill: true,
         skipLanding: true, // hver deløvelse ender med motorene kuttet, landet eller trygt unna - ingen vits i å kreve landing på H
         noTiming: true, // handler om å reagere RIKTIG, ikke raskt - ingen stoppeklokke/bestetid her
@@ -6482,6 +6481,11 @@ function showExerciseDetail(id) {
     document.getElementById("exerciseDetailTitle").innerHTML =
         '<i class="fa-solid ' + exercise.icon + ' sim-exercise-icon"></i>' + exercise.label;
     document.getElementById("exerciseDetailDescription").textContent = exercise.fullDescription;
+    // Direkte snarvei til kalibreringspanelet for øvelser som krever en fysisk kill-bryter (kun ex11 pt.
+    // nå) - vises UANSETT om bryteren allerede er bundet eller ikke (i motsetning til gateBlocked-
+    // varselet under, som kun vises når den IKKE er det) - praktisk å ha lett tilgjengelig for å
+    // dobbeltsjekke/endre bindingen uten å måtte huske hvor Innstillinger-menyen faktisk ligger.
+    document.getElementById("exerciseDetailCalibrationRow").style.display = exercise.requiresGamepadKill ? "" : "none";
 
     const progressEl = document.getElementById("exerciseDetailProgress");
     const startBtn = document.getElementById("exerciseStartBtn");
@@ -6713,6 +6717,9 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("racingLeaderboardResetBtn").addEventListener("click", resetRacingLeaderboard);
     renderRacingLeaderboard();
     document.getElementById("toggleGamepadBtn").addEventListener("click", function () {
+        togglePanel(document.getElementById("gamepadPanel"));
+    });
+    document.getElementById("exerciseDetailCalibrationBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("gamepadPanel"));
     });
     document.getElementById("toggleFlightLogBtn").addEventListener("click", function () {
