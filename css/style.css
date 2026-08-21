@@ -228,6 +228,13 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 @media (max-width: 500px) {
     .form-grid { grid-template-columns: 1fr; }
 }
+/* overflow-wrap/word-break arves ned til labelen og de utfylte print-verdiene (#printLessonTitle osv.,
+   se leksjonsskjema.js/syncPrintFields) - uten dette kunne et langt, ubrutt ord (et system-serienummer
+   osv.) presse feltet bredere enn omkringliggende layout og bli klippet/skjult i stedet for å brekke om. */
+.form-field {
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
 .form-field label {
     display: block;
     font-weight: 600;
@@ -349,6 +356,13 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     padding: 8px 10px;
     border-bottom: 1px solid #f0f0f0;
     vertical-align: top;
+    /* Uten disse kan et langt, ubrutt ord (et system-serienummer, en sammenskrevet setning osv.) i
+       navn-/kommentar-cellen presse tabellen bredere enn .section rundt den - som har overflow:hidden
+       for den avrundede kort-kanten (se .section) - og bli usynlig KLIPPET bort i stedet for å brekke
+       om til ny linje. Gjelder både den redigerbare cellen og .print-value-teksten som erstatter den
+       ved utskrift (se .print-value under). */
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 .exercise-table tr:not(.generic-row) + tr.generic-row td {
     padding-top: 22px;
@@ -384,6 +398,14 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     border-color: var(--ffi-blue);
     box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1);
 }
+/* Nr trenger bare plass til et 1-2-sifret tall (og "generic"-rader har ikke engang det - se
+   renumberRows) - 34px var mer enn nødvendig og tok plass som heller trengs av Øvelse (se .col-exercise
+   under), spesielt i utskrift der spalten uansett ikke lenger deler seg med den skjulte fjern-knappen. */
+.exercise-table .col-num { width: 22px; }
+/* Eksplisitt bredde (ikke bare "det som blir til overs" slik den delte auto-fordelingen med Kommentar
+   ga før) OG en min-width-golv, slik at øvelsesnavn (typisk 15-25 tegn, f.eks. "Situasjonsforståelse")
+   alltid har god nok plass til å lese lett - selv på et smalt vindu eller om Kommentar-teksten er lang. */
+.exercise-table .col-exercise { width: 26%; min-width: 130px; }
 .exercise-table .col-grade { width: 90px; }
 .exercise-table .col-remove { width: 40px; text-align: center; }
 .remove-row-btn {
@@ -407,6 +429,10 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-family: 'Overpass', sans-serif;
     font-size: 1rem;
     box-sizing: border-box;
+    /* pre-wrap (textareaens standard) brekker bare ved mellomrom, IKKE inni et langt ubrutt ord - uten
+       disse kunne f.eks. en lang URL skutt rett utenfor boksen i stedet for å brekke om. */
+    overflow-wrap: break-word;
+    word-break: break-word;
     resize: vertical;
 }
 .textarea-field:focus {
@@ -1764,7 +1790,13 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    via syncPrintFields) - rapportert som at "en del tekst på øvelser ikke kommer med på printen". Feltene
    som bruker inline style.display i stedet (printFields/printLessonTitleWrap/printRemainingNotes, se
    leksjonsskjema.js) ble IKKE rammet av dette - inline style slår uansett enhver css-fil-regel. */
-.print-value { display: none; }
+.print-value {
+    display: none;
+    /* Se overflow-wrap-kommentaren ved .exercise-table td - samme risiko gjelder her: et langt, ubrutt
+       ord skal brekke om, ikke bli klippet bort av .section sin overflow:hidden. */
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
 
 /* --- Print / last ned som PDF ---
    Brukt av sider UTEN en egen JS-generert print-view (se .print-view-kommentaren lenger ned for den
