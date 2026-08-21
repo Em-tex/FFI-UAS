@@ -986,6 +986,20 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     border-radius: 50%;
 }
 .sim-gamepad-kill-chip button:hover { background: rgba(3, 71, 127, 0.15); }
+/* Live PÅ/AV-merke (Sim.buildGamepadKillGrid sin updateLiveStatus, drevet fra updateGamepadAxesReadout
+   hvert bilde) - viser hvilken posisjon bryteren FAKTISK står i akkurat nå, slik at "Reverser" faktisk
+   er synlig når man trykker den (ellers ingen synlig endring for en akse-binding, se kommentaren der). */
+.sim-gamepad-kill-live {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.06);
+    color: #777;
+}
+.sim-gamepad-kill-live-off { background: rgba(0,0,0,0.06); color: #777; }
+.sim-gamepad-kill-live-on { background: rgba(190, 130, 15, 0.18); color: #8a5d0a; }
 .sim-rate-curve {
     display: block;
     width: 100%;
@@ -1742,7 +1756,23 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 }
 .builder-item-table input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
 
-/* --- Print / last ned som PDF --- */
+/* .print-value: skjult til vanlig (kun synlig i @media print, se under) - MÅ stå FØR @media print-
+   blokken i selve filen. CSS avgjør uavgjort-spesifisitet (samme selektor, ".print-value" begge steder)
+   etter KILDEREKKEFØLGE, helt uavhengig av om den ene siden står i en @media-blokk - en identisk regel
+   SENERE i filen vinner uansett. Med denne EFTER @media-blokken (slik den sto før) overstyrte den
+   general regelen her selve print-regelen under utskrift, og skjulte øvelsestabellens tekst igjen (satt
+   via syncPrintFields) - rapportert som at "en del tekst på øvelser ikke kommer med på printen". Feltene
+   som bruker inline style.display i stedet (printFields/printLessonTitleWrap/printRemainingNotes, se
+   leksjonsskjema.js) ble IKKE rammet av dette - inline style slår uansett enhver css-fil-regel. */
+.print-value { display: none; }
+
+/* --- Print / last ned som PDF ---
+   Brukt av sider UTEN en egen JS-generert print-view (se .print-view-kommentaren lenger ned for den
+   mer avanserte varianten sjekkliste-generatoren bruker) - f.eks. leksjonsskjema.html, som i stedet
+   bytter de redigerbare feltene (inputs/select/textarea) ut med ren tekst rett før utskrift (samme
+   swap-mønster, se .print-value over og syncPrintFields/hidePrintFields i leksjonsskjema.js) - uten
+   det ville utskriften vist de faktiske skjemaelementene (kantlinjer/padding/select-nedtrekkspil), som
+   ble rapportert som "store bulkete bokser" i utskriften i stedet for pene tabeller/felt. */
 @media print {
     nav, .no-print { display: none !important; }
     body { background: white; }
@@ -1753,8 +1783,49 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
         width: 100%;
         max-width: 100%;
     }
+    /* Øvelser-seksjonen (med en potensielt lang tabell) er UNNTATT denne - se .section:has(...) under,
+       som må ha høyere spesifisitet enn denne generelle regelen for å faktisk vinne. */
     .section { break-inside: avoid; box-shadow: none; }
+    /* Øvelser-seksjonens tabell skal IKKE tvinges til å holde seg samlet på én side slik .section
+       ellers gjør over - med mange rader ville hele seksjonen enten blitt dyttet i sin helhet til en ny,
+       nesten tom side, eller flydd utenfor arket. Tabellen brekker i stedet naturlig, med kolonne-
+       overskriftene gjentatt på hver side (native <thead>-oppførsel, se .exercise-table thead under) og
+       hver ENKELT rad fortsatt beskyttet for seg (se .exercise-table tr under).
+    */
+    .section:has(.exercise-table) { break-inside: auto; page-break-inside: auto; }
+    .exercise-table thead { display: table-header-group; }
     .exercise-table .col-remove, .add-row-btn { display: none !important; }
+    /* Uten disse skriver Chrome ut de fargede header-barene (.section-header/.exercise-table th) som
+       tomme/hvite bokser med usynlig hvit skrift - se samme forklaring/fiks ved .print-view lenger ned
+       i filen (kun scoret til sjekkliste-generatoren der - leksjonsskjema trenger den samme fiksen). */
+    .section-header, .exercise-table th, .section-header * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    /* Radene skal helst ikke kappes midt i en øvelse (nummer/navn på én side, karakter/kommentar på
+       neste) - "avoid" er bare et ønske, ikke en garanti, så en uvanlig lang kommentar kan likevel
+       tvinges over en sideskille. */
+    .exercise-table tr { break-inside: avoid; }
+    /* Overskrifter skal aldri stå alene nederst på en side mens innholdet under starter på neste -
+       "foreldreløs" tittel. */
+    h1, h2, h3, .section-header { break-after: avoid; page-break-after: avoid; }
+    /* Enkeltbokser skal ikke kappes midt i selv om Øvelser-seksjonen rundt tabellen nå TILLATES å
+       brekke (se .section:has(...) over) - label på én side og verdien på neste, eller en signatur delt
+       fra navnet sitt, ser like rart ut som overskrift-foreldreløshet. */
+    .form-field, .signature-pad-block { break-inside: avoid; page-break-inside: avoid; }
+    /* Helt tomme rader (verken navn, karakter eller kommentar utfylt - typisk fra "Legg til øvelse" som
+       aldri ble fylt ut) skrives ikke ut i det hele tatt - rapportert som "mange grå streker" over
+       Karakterskala-forklaringen når flere slike stod på rad. row-empty-print settes av
+       syncPrintFields i leksjonsskjema.js. */
+    .exercise-table tr.row-empty-print { display: none !important; }
+    /* Bytter de redigerbare skjemaelementene ut med ren tekst (.print-value, synkronisert av
+       syncPrintFields i leksjonsskjema.js) - se forklaringen ved .print-value-regelen over. !important
+       er et forsvarsverk mot akkurat den kilderekkefølge-fallgruven denne regelen selv ble truffet av. */
+    .print-value { display: inline !important; }
+    .print-value-grade { display: block; text-align: center; font-weight: 600; }
+    /* pre-line bevarer faktiske linjeskift fra kommentar-/merknadsfeltene i stedet for å slå alt sammen
+       til én lang linje. */
+    .exercise-table .print-value, #printRemainingNotes { white-space: pre-line; }
 }
 
 /* --- Sjekkliste-generator: felt-vennlig utskrift ---

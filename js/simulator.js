@@ -363,6 +363,9 @@ const WAYPOINT_CAPTURE_RADIUS_3D = 1.4;
 const HEADING_TOLERANCE_DEG = 28;
 const REQUIRED_CLEAN_LAPS = 3;
 const REQUIRED_RETURN_REPS = 3; // "Returner hjem" må gjennomføres 3 ganger - totaltiden for alle tre lagres
+const REQUIRED_HOVER_WIND_REPS = 3; // "Hover i vind" må gjennomføres 3 ganger, samme mønster som "Returner hjem"
+const HOVER_WIND_MIN_SPEED = 5; // m/s - brukeren ba eksplisitt om minst denne styrken
+const HOVER_WIND_MAX_SPEED = 8; // m/s - fortsatt moderat, ikke ekstrem vind for en ren posisjonsholdings-øvelse
 const HOVER_HOLD_SEC = 10;
 const HOVER_POS_TOLERANCE = 1.5; // m horisontal radius rundt hover-punktet - strammere enn løype-figurenes captureRadius
 const HOVER_ALTITUDE_TOLERANCE = 1; // m - egen, strengere høydetoleranse enn de øvrige øvelsenes ALTITUDE_TOLERANCE
@@ -683,10 +686,35 @@ const EXERCISES = {
         // stil, men i praksis fritt frem siden vindkorreksjon alene er nok utfordring her.
         stages: [{ id: "eight-wind", label: "Åttetall i vind - nese ut", waypoints: EIGHT_WAYPOINTS, noseMode: "free", captureRadius: 1.2 }]
     },
+    // Ny øvelse (v3): ren posisjonsholding mot vind, uten en bane som delvis "skjuler" avdrift slik
+    // åttetall i vind (ex9) gjør - komplementær ferdighet, ikke en erstatning. Nøkkelen "exHoverWind"
+    // (ikke "ex10") er bevisst IKKE en omnummerering av de påfølgende øvelsenes lagrings-nøkler
+    // (ex10/ex11 beholder sine - kun label-teksten deres endres til "11."/"12." under) - en
+    // omnummerering av selve nøklene ville mistet allerede lagret fremgang/bestetid for dem.
+    exHoverWind: {
+        id: "exHoverWind",
+        icon: "fa-wind",
+        label: "10. Hover i vind",
+        shortDescription: "Hold posisjonen i variabel vind (" + HOVER_WIND_MIN_SPEED + "-" + HOVER_WIND_MAX_SPEED +
+            " m/s) - ta av, hold i " + HOVER_HOLD_SEC + " s og land, " + REQUIRED_HOVER_WIND_REPS + " ganger.",
+        startHint: "Hold posisjonen i den gule indikatoren og korriger jevnlig for vinden.",
+        fullDescription: "Ta av, hold posisjonen i den markerte hover-sonen på " + HOVER_ALTITUDE + " m høyde i " +
+            HOVER_HOLD_SEC + " sekunder mens vinden dytter på deg, og land deretter på landingsplassen (H). " +
+            "Nese-retningen sjekkes ikke her - fokuset er ren posisjonsholding mot vind, som i øvelse 9. " +
+            "Vinden er " + HOVER_WIND_MIN_SPEED + "-" + HOVER_WIND_MAX_SPEED + " m/s fra en ny, tilfeldig " +
+            "retning HVER runde. Du må gjennomføre dette " + REQUIRED_HOVER_WIND_REPS + " ganger for å bestå " +
+            "- totaltiden for alle " + REQUIRED_HOVER_WIND_REPS + " rundene lagres i menyen.\n\nDroneklassen " +
+            "settes automatisk til Middels, og du flyr fra VLOS-posisjonen. R gir nytt forsøk fra runde 1 " +
+            "med nullstilt klokke.\n\nVinden settes tilbake til dine egne innstillinger når øvelsen avsluttes.",
+        wind: { speed: HOVER_WIND_MIN_SPEED, directionDeg: 0, gust: 0.3 },
+        randomizeWindDirection: true, // ny tilfeldig retning ved hver spawn (start/runde/R) - se spawnForExercise
+        randomizeWindSpeed: { min: HOVER_WIND_MIN_SPEED, max: HOVER_WIND_MAX_SPEED }, // ny tilfeldig styrke, samme prinsipp
+        stages: [{ id: "hover-wind", label: "Hover i vind", type: "hoverWind", holdSec: HOVER_HOLD_SEC }]
+    },
     ex10: {
         id: "ex10",
         icon: "fa-house",
-        label: "10. Returner hjem i vind",
+        label: "11. Returner hjem i vind",
         shortDescription: "Ta over en drone langt hjemmefra og fly den trygt hjem - " + REQUIRED_RETURN_REPS + " ganger, 6 m/s vind fra tilfeldig retning.",
         startHint: "Vent til nedtellingen er ferdig og gassen er ved ca. 50 %. Finn nese- og vindretning, fly trygt hjem og land.",
         fullDescription: "Dronen henger i lufta langt hjemmefra - bare synlig som en prikk - med " +
@@ -706,7 +734,7 @@ const EXERCISES = {
     ex11: {
         id: "ex11",
         icon: "fa-triangle-exclamation",
-        label: "11. Uforutsette hendelser",
+        label: "12. Uforutsette hendelser",
         shortDescription: "Fly noen øvelser - underveis kan det skje noe uforutsett. 4 scenarier må bestås.",
         fullDescription: "Du skal fly noen øvelser - underveis kan det skje noe uforutsett. Riktig " +
             "reaksjon kan være å fly unna, lande, eller stoppe motorene i lufta. Det er 4 scenarier som " +
@@ -771,7 +799,7 @@ const EXERCISES = {
         stages: [{ id: "race-3lap", label: "Racingbane - 3 runder", type: "racing", lapsRequired: 3 }]
     }
 };
-const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "ex10", "ex11"];
+const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "exHoverWind", "ex10", "ex11"];
 // Kategorisering for øvelsesmenyens undermenyer (Stabilized/Acro) - se showExerciseCategoryView. Racing
 // (race1) er bevisst IKKE i EXERCISE_ORDER (som styrer bekreftelsen/diplomet) - det er et åpent
 // tidsforsøk med egen ledertavle, ikke en engangs bestått/ikke-bestått-øvelse.
@@ -1560,22 +1588,44 @@ function buildMountainRange() {
 }
 
 // Fjellenes kollisjonsflate - gjenbruker den glatte profilkurven fra geometrien (mountainProfileHeightFrac
-// er inversen av mountainProfileRadiusFrac som selve meshen bygges med), MEN uten finjitteret vertex for
-// vertex (samme forenkling som SOLID_COLLIDERS - en glatt tilnærming er mer enn god nok). Radiusen blåses
-// derfor opp litt utover selve profilkurven (JITTER_SAFETY_MARGIN * jaggedness) - den synlige overflaten
-// buler utover med opptil ~28 % i steinete partier pga. vinkelavhengig jitter (se buildGradientPeakGeometry),
-// og uten denne marginen kunne droneen synke synlig gjennom fjellsiden før den glatte, litt INNENFOR
-// liggende profilen faktisk stanset den. Et par ekstra centimeter "usynlig vegg" et stykke fra en
-// bergknaus er et mye mindre problem enn å fly rett gjennom synlig stein.
-const JITTER_SAFETY_MARGIN = 0.25;
+// er inversen av mountainProfileRadiusFrac som selve meshen bygges med) OG selve den vinkelavhengige
+// jitteren (nøyaktig samme formel som buildGradientPeakGeometry, se der), IKKE bare en jevnt oppblåst
+// sikkerhetsmargin (se tidligere JITTER_SAFETY_MARGIN-forsøk, fjernet - den hindret riktignok klipping
+// gjennom synlig fjellside der overflaten BULER utover (+jitter), men gjorde SAMTIDIG kollisjonen for
+// stor akkurat der overflaten TREKKER seg innover (-jitter) - en usynlig vegg midt i det som ser ut som
+// åpen luft ved en taggete fjellside/nedskjæring (rapportert: krasjet i løs luft nær et fjell). Ved å
+// regne ut nøyaktig samme vinkelavhengige jitter her følger kollisjonen den faktiske, synlige, ujevne
+// overflaten presist - verken for stor eller for liten - i stedet for en glattet tilnærming.
+//
+// heightFrac inngår i selve jitter-formelen (via topDamp), men er samtidig det vi egentlig løser for -
+// ett fikspunkt-steg holder mer enn godt nok for et så lavfrekvent/mykt jitter: bruk den U-justerte
+// profilens heightFrac til å anslå topDamp/jitter, juster distFrac med det anslaget, og les av endelig
+// høyde. localAngle må regnes FØR meshets egen Y-rotasjon (se mesh.rotation.y = peak.angle i
+// buildMountainRange) - ellers ville jitteret her og det man faktisk SER være forskjøvet i forhold til
+// hverandre og fortsatt ikke stemme overens vinkel for vinkel.
 function mountainHeightAt(x, z) {
     let top = 0;
+    // Grov, billig avstands-avvisning FØR vinkel-/jitterberegningen: maks jitter-amplitude
+    // (|0.18|+|0.10|=0.28) * maks jaggedness (1.4) * maks topDamp (1) ≈ 0.39 - god margin over dette.
+    const MAX_JITTER_BULGE = 0.4;
     for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
         const peak = MOUNTAIN_PEAKS[i];
-        const collisionRadius = peak.radius * (1 + JITTER_SAFETY_MARGIN * peak.jaggedness);
-        const dist = Math.hypot(x - peak.x, z - peak.z);
-        if (dist >= collisionRadius) continue;
-        const h = peak.height * mountainProfileHeightFrac(dist / collisionRadius, peak.topRadiusFrac, peak.curvePower);
+        const dx = x - peak.x, dz = z - peak.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist >= peak.radius * (1 + MAX_JITTER_BULGE)) continue;
+        const rawDistFrac = dist / peak.radius;
+        // Kun brukt som fikspunkt-ANSLAG for topDamp under - klippet til 1 er trygt her (se
+        // MAX_JITTER_BULGE-kommentaren over: uten klipping ville et punkt godt utenfor den u-justerte
+        // profilen fått en kunstig lav heightFrac0, men det er nettopp det anslaget SKAL fange opp -
+        // et punkt der ute er nesten uansett nær bakken/foten uansett faktisk jitter).
+        const heightFrac0 = mountainProfileHeightFrac(Math.min(rawDistFrac, 1), peak.topRadiusFrac, peak.curvePower);
+        const localAngle = Math.atan2(dz, dx) - peak.angle;
+        const topDamp = 1 - Math.pow(heightFrac0, 3) * 0.7; // nøyaktig samme formel som buildGradientPeakGeometry
+        const jitter = Math.sin(localAngle * 5 * peak.noiseFreqMul + peak.seed * 3.1) * 0.18 +
+            Math.sin(localAngle * 11 * peak.noiseFreqMul + peak.seed * 7.7) * 0.1;
+        const radialJitterScale = 1 + jitter * peak.jaggedness * topDamp;
+        const adjustedDistFrac = rawDistFrac / radialJitterScale;
+        const h = peak.height * mountainProfileHeightFrac(adjustedDistFrac, peak.topRadiusFrac, peak.curvePower);
         if (h > top) top = h;
     }
     return top;
@@ -2848,8 +2898,11 @@ const RIVER_POND_RADIUS = 15;
    Senteret er rett NORD for avgangsplassen (samme retning som den TRYGGESTE fjellsektoren, se
    mountainHeightAt-kommentaren - fjellet i denne retningen har desidert minst "rekkevidde" av alle
    åtte, se MOUNTAIN_DEFS index 0) i stedet for sørøst, der banens sørøstre hjørne (rådhus-/chikane-
-   området) viste seg å ligge INNENFOR kollisjonsmarginen til det sørøstlige fjellet (index 3) - usynlig
-   "krasj i løse lufta" et godt stykke fra selve fjellsiden, se JITTER_SAFETY_MARGIN.
+   området) viste seg å ligge INNENFOR kollisjonsradiusen til det sørøstlige fjellet (index 3, det mest
+   taggete av alle - jaggedness 1.4) - usynlig "krasj i løse lufta" et godt stykke fra selve fjellsiden.
+   Dette var den samme uniformt oppblåste sikkerhetsmarginen som senere ble byttet ut med en presis,
+   vinkelavhengig jitterberegning i mountainHeightAt (se der) - kursen ble likevel aldri flyttet tilbake,
+   ingen grunn til å risikere en ny runde med akkurat dette problemet et sted den allerede er kjent unna.
 */
 const GATE_COURSE_2_CENTER = new THREE.Vector3(0, 0, 320);
 const TOWNHALL_OFFSET = { dx: 0, dz: -165 };
@@ -4596,9 +4649,12 @@ function buildGamepadPanel(pad) {
     buildGamepadButtonsPanel();
 }
 
+// Håndtaket buildGamepadKillGrid returnerer (updateLiveStatus) - drives fra samme per-bilde-lytter
+// som resten av panelets live-visning, se updateGamepadAxesReadout under.
+let gamepadKillGridHandle = null;
 function buildGamepadButtonsPanel() {
     const killContainer = document.getElementById("gamepadKillGrid");
-    Sim.buildGamepadKillGrid(killContainer, gamepadMap.buttons, "kill", KILL_ACTION_LABEL, buttonManager, getActiveGamepad, saveGamepadMap);
+    gamepadKillGridHandle = Sim.buildGamepadKillGrid(killContainer, gamepadMap.buttons, "kill", KILL_ACTION_LABEL, buttonManager, getActiveGamepad, saveGamepadMap);
     const container = document.getElementById("gamepadButtonsGrid");
     Sim.buildGamepadButtonsGrid(container, gamepadMap.buttons, BUTTON_ACTION_LABELS, buttonManager, getActiveGamepad, saveGamepadMap);
 }
@@ -4620,6 +4676,7 @@ function updateGamepadAxesReadout(gp) {
         outputByAxis[gamepadMap.yaw.axis] = { label: "Yaw", value: readStickAxis(activeGp, gamepadMap.yaw) };
     }
     Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS, outputByAxis);
+    if (gamepadKillGridHandle) gamepadKillGridHandle.updateLiveStatus(activeGp);
 }
 
 function setGamepadButtonVisible(visible) {
@@ -4869,9 +4926,10 @@ function buildExerciseGuide(stage) {
     const guideMat = new THREE.MeshStandardMaterial({ color: 0x2ee6a6, transparent: true, opacity: 0.35 });
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x2ee6a6, transparent: true, opacity: 0.55 });
 
-    if (stage.type === "hover") {
-        // Hover: ingen løype - en flat sirkel på bakken viser posisjonstoleransen, markøren (under)
-        // pulserer på selve hover-punktet i flyhøyde.
+    if (stage.type === "hover" || stage.type === "hoverWind") {
+        // Hover/hoverWind: ingen løype - en flat sirkel på bakken viser posisjonstoleransen, markøren
+        // (under) pulserer på selve hover-punktet i flyhøyde. hoverWind har ingen nese-krav (fri stil,
+        // som øvelse 9 - se updateExercise) og har derfor ingen retningspil, i motsetning til "hover".
         const ring = new THREE.Mesh(
             new THREE.RingGeometry(HOVER_POS_TOLERANCE - 0.15, HOVER_POS_TOLERANCE, 32),
             groundMat
@@ -4879,9 +4937,11 @@ function buildExerciseGuide(stage) {
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(HOVER_CENTER.x, 0.05, HOVER_CENTER.z);
         group.add(ring);
-        const arrow = buildGroundArrow(stage.headingYaw, 0xffee55);
-        arrow.position.set(HOVER_CENTER.x, 0.06, HOVER_CENTER.z);
-        group.add(arrow);
+        if (stage.type === "hover") {
+            const arrow = buildGroundArrow(stage.headingYaw, 0xffee55);
+            arrow.position.set(HOVER_CENTER.x, 0.06, HOVER_CENTER.z);
+            group.add(arrow);
+        }
     } else if (stage.type === "killswitch") {
         // "Vente"-fasens "liksom"-øvelse gjenbruker sirkel-runden (se updateKillswitchPatrol) - samme
         // veiledningsløkke som ex5/ex6, så det faktisk ser ut som en ordentlig øvelse å fly. Enkelte steg
@@ -4899,7 +4959,8 @@ function buildExerciseGuide(stage) {
         // vises, se rebuildExerciseGuide-kallet i startExercise).
     } else if (stage.type !== "return") {
         // "Returner hjem" har ingen løype/veiledning - hele poenget er å finne hjem selv; markøren
-        // (under) pulserer over H-plassen som mål.
+        // (under) pulserer over H-plassen som mål. ("hoverWind" er allerede fanget opp i grenen over,
+        // sammen med "hover" - havner aldri her.)
         group.add(buildLoopStruts(stage.waypoints, EXERCISE_ALTITUDE, 0.08, guideMat));
         group.add(buildLoopStruts(stripWaypointY(stage.waypoints), 0.05, 0.06, groundMat));
     }
@@ -4931,7 +4992,7 @@ function updateExerciseGuideVisual(now) {
         exerciseGuideHandle.nextWaypointMarker.scale.setScalar(0.85 + Math.sin(now / 200) * 0.15);
         return;
     }
-    if (stage.type === "hover") {
+    if (stage.type === "hover" || stage.type === "hoverWind") {
         exerciseGuideHandle.nextWaypointMarker.position.set(HOVER_CENTER.x, HOVER_ALTITUDE, HOVER_CENTER.z);
     } else if (stage.type === "return") {
         exerciseGuideHandle.nextWaypointMarker.position.set(0, 1.0, 0); // målet: H-plassen hjemme
@@ -4945,6 +5006,17 @@ function updateExerciseGuideVisual(now) {
     exerciseGuideHandle.nextWaypointMarker.scale.setScalar(0.85 + Math.sin(now / 200) * 0.15);
 }
 
+// "Returner hjem" (ex10) og "Hover i vind" (ny øvelse) deler samme "land, tell runden, respawn med
+// ny tilfeldig vind, gjenta N ganger"-mønster (se landingsfase-håndteringen i updateExercise) - disse
+// to er ETT sted å slå opp hvilke steg-typer som faktisk er repeterte på den måten og hvor mange
+// runder DE krever, i stedet for å gjenta typesjekken flere steder.
+function isRepeatedLandingStage(stage) {
+    return stage.type === "return" || stage.type === "hoverWind";
+}
+function requiredRepsFor(stage) {
+    return stage.type === "return" ? REQUIRED_RETURN_REPS : REQUIRED_HOVER_WIND_REPS;
+}
+
 function resetStageProgress() {
     exerciseState.wpIndex = 0;
     exerciseState.lapsCleanCount = 0;
@@ -4955,6 +5027,8 @@ function resetStageProgress() {
     exerciseState.hoverHoldSec = 0;
     exerciseState.headingGraceUntil = 0;
     exerciseState.headingBadSinceMs = null;
+    // returnRepsCompleted: navnet er historisk (fra "Returner hjem") - telleren er nå delt med
+    // "Hover i vind" også, se isRepeatedLandingStage/requiredRepsFor over.
     exerciseState.returnRepsCompleted = 0;
     exerciseState.headingErrorDeg = null;
     exerciseState.landedSinceMs = null;
@@ -5099,16 +5173,23 @@ function updateExercise(dt, now) {
             if (exerciseState.landedSinceMs === null) exerciseState.landedSinceMs = now;
             if (now - exerciseState.landedSinceMs >= LANDING_CONFIRM_SEC * 1000) {
                 const exercise = EXERCISES[exerciseState.exerciseId];
-                const isReturnExercise = exercise.stages[0].type === "return";
-                if (isReturnExercise) exerciseState.returnRepsCompleted++;
-                if (isReturnExercise && exerciseState.returnRepsCompleted < REQUIRED_RETURN_REPS) {
-                    // Ikke siste gjennomføring ennå - respawn med ny tilfeldig posisjon/retning og fortsett.
+                const isRepeated = isRepeatedLandingStage(exercise.stages[0]);
+                const requiredReps = isRepeated ? requiredRepsFor(exercise.stages[0]) : 0;
+                if (isRepeated) exerciseState.returnRepsCompleted++;
+                if (isRepeated && exerciseState.returnRepsCompleted < requiredReps) {
+                    // Ikke siste gjennomføring ennå - respawn med ny tilfeldig posisjon/vind og fortsett.
                     // Klokka fortsetter å gå (samme startTime) - totaltiden for alle rundene lagres til slutt.
                     exerciseState.landingPhase = false;
                     exerciseState.landedSinceMs = null;
+                    exerciseState.hoverHoldSec = 0; // "Hover i vind" sin holde-tid gjelder KUN inneværende runde
                     spawnForExercise(exercise);
+                    // enterLandingPhase() (kalt for å komme hit) fjerner veiledningen (se der) - uten å
+                    // bygge den på nytt her ville runde 2/3 stått igjen UTEN hover-ringen ("Hover i
+                    // vind") eller den pulserende H-markøren ("Returner hjem") resten av økten, siden
+                    // rebuildExerciseGuide() ellers kun kalles ved selve øvelsesstarten.
+                    rebuildExerciseGuide();
                     exerciseState.warningMessage = "Runde " + exerciseState.returnRepsCompleted + "/" +
-                        REQUIRED_RETURN_REPS + " fullført! Ny posisjon klargjort...";
+                        requiredReps + " fullført! Ny runde klargjort...";
                     exerciseState.warningUntil = now + 3000;
                     exerciseState.warningIsSuccess = true;
                 } else {
@@ -5188,6 +5269,27 @@ function updateExercise(dt, now) {
         if (posOk && altOk && headingOk) {
             exerciseState.hoverHoldSec += dt;
             if (exerciseState.hoverHoldSec >= stage.holdSec) advanceExerciseStage();
+        } else {
+            exerciseState.hoverHoldSec = 0;
+        }
+        return;
+    }
+
+    // "Hover i vind": samme posisjons-/høydehold som "hover" over, men UTEN nese-krav (fri stil, som
+    // øvelse 9 - vindkorreksjon er utfordring nok i seg selv) OG uten advanceExerciseStage() - denne
+    // øvelsen har bare ETT steg som gjentas REQUIRED_HOVER_WIND_REPS ganger med landing+ny tilfeldig
+    // vind mellom hver runde (se isRepeatedLandingStage/landingsfase-håndteringen over), akkurat som
+    // "return" sitt rep-mønster - derfor enterLandingPhase() direkte her i stedet.
+    if (stage.type === "hoverWind") {
+        exerciseState.headingErrorDeg = null;
+        const posOk = horizontalCaptureDistance(droneState.position.x - HOVER_CENTER.x,
+            droneState.position.z - HOVER_CENTER.z) <= HOVER_POS_TOLERANCE;
+        const altOk = Math.abs(droneState.position.y - HOVER_ALTITUDE) <= HOVER_ALTITUDE_TOLERANCE;
+        if (posOk && altOk) {
+            exerciseState.hoverHoldSec += dt;
+            if (exerciseState.hoverHoldSec >= stage.holdSec) {
+                enterLandingPhase("Holdt! Land på landingsplassen (H).");
+            }
         } else {
             exerciseState.hoverHoldSec = 0;
         }
@@ -5320,12 +5422,13 @@ function updateExerciseHud() {
     }
     exerciseHudBarEl.style.display = "";
     exerciseProgressBoxEl.style.display = "";
-    // "Returner hjem" har ett fast steg (stageIndex alltid 0) - stegobjektet er gyldig gjennom hele
-    // landingsfasen der også, i motsetning til vanlige flerstegs-øvelser (der landingPhase betyr
-    // stageIndex har passert siste steg og getExerciseStage() ville returnert undefined). awaitingNext
-    // (bestått og fryst, se completeExercise) betyr ALLTID at stegobjektet ikke lenger er gyldig å lese.
-    const isReturnExercise = EXERCISES[exerciseState.exerciseId].stages[0].type === "return";
-    const stage = (exerciseState.awaitingNext || (exerciseState.landingPhase && !isReturnExercise))
+    // "Returner hjem" og "Hover i vind" har hver ett fast steg (stageIndex alltid 0) som gjentas -
+    // stegobjektet er gyldig gjennom hele landingsfasen der også, i motsetning til vanlige
+    // flerstegs-øvelser (der landingPhase betyr stageIndex har passert siste steg og
+    // getExerciseStage() ville returnert undefined). awaitingNext (bestått og fryst, se
+    // completeExercise) betyr ALLTID at stegobjektet ikke lenger er gyldig å lese.
+    const isRepeatedExercise = isRepeatedLandingStage(EXERCISES[exerciseState.exerciseId].stages[0]);
+    const stage = (exerciseState.awaitingNext || (exerciseState.landingPhase && !isRepeatedExercise))
         ? null : getExerciseStage();
     // Killswitch-stegnavnet (stage.label) ville spoilet hvilket scenario som kommer/pågår - vises som
     // et nøytralt løpenummer i stedet, se killswitchDisplayLabel.
@@ -5345,7 +5448,13 @@ function updateExerciseHud() {
         ? (exerciseState.awaitingNext ? "Se oppsummering" : "Land på H")
         : (stage.type === "hover"
             ? exerciseState.hoverHoldSec.toFixed(1) + "/" + stage.holdSec + " s"
-            : (stage.type === "return"
+            : (stage.type === "hoverWind"
+                // Før landing: hold-nedtelling som "hover" over. Under landing (rep unnagjort, på vei
+                // til H): rundetall som "return" - stegobjektet forblir gyldig (se isRepeatedExercise).
+                ? (exerciseState.landingPhase
+                    ? exerciseState.returnRepsCompleted + "/" + requiredRepsFor(stage) + returnSuffix
+                    : exerciseState.hoverHoldSec.toFixed(1) + "/" + stage.holdSec + " s")
+                : stage.type === "return"
                 ? exerciseState.returnRepsCompleted + "/" + REQUIRED_RETURN_REPS + returnSuffix
                 : stage.type === "killswitch"
                     ? killswitchStatusText()
@@ -5375,7 +5484,7 @@ function updateExerciseHud() {
 
     // Avviks-status: tydelig, vedvarende indikator på hvor nær steget er å bli nullstilt - banneret
     // alene forsvinner etter noen sekunder og etterlot ingen synlig "du har brukt opp advarselen".
-    if (!stage || stage.type === "hover" || stage.type === "return" || stage.type === "killswitch") {
+    if (!stage || stage.type === "hover" || stage.type === "hoverWind" || stage.type === "return" || stage.type === "killswitch") {
         exerciseHudViolationsEl.textContent = "-";
         exerciseHudViolationsEl.className = "sim-status-value";
     } else if (exerciseState.attemptViolationCount === 0) {
@@ -5453,6 +5562,13 @@ function spawnForExercise(exercise) {
     // ved øvelsesstart. Kjøres etter startExercise sin faste vind-tvang (se der), så denne vinner.
     if (exercise.wind && exercise.randomizeWindDirection) {
         settings.wind.directionDeg = Math.floor(Math.random() * 360);
+    }
+    // Ny tilfeldig vindSTYRKE ved hver spawn ("Hover i vind") - samme prinsipp/rekkefølge som
+    // retningen over, bare for speed i stedet for directionDeg. Ingen eksisterende øvelse har trengt
+    // dette før nå (ex9/ex10 har fast styrke, bare retningen varierer for ex10).
+    if (exercise.wind && exercise.randomizeWindSpeed) {
+        const range = exercise.randomizeWindSpeed;
+        settings.wind.speed = range.min + Math.random() * (range.max - range.min);
     }
     // Tilfeldig skydekke per runde, men minst én av de REQUIRED_RETURN_REPS rundene garantert 100% -
     // hvilken runde det blir avgjøres på nytt for hver ferske økt (returnRepsCompleted === 0, altså
@@ -5600,7 +5716,7 @@ function handleResetRequest() {
     exerciseState.landingPhase = false;
     resetStageProgress();
     exerciseState.startTime = performance.now();
-    spawnForExercise(EXERCISES[exerciseState.exerciseId]); // "Returner hjem" får ny tilfeldig posisjon/retning
+    spawnForExercise(EXERCISES[exerciseState.exerciseId]); // "Returner hjem"/"Hover i vind" får ny tilfeldig posisjon/vind, og runde-telleren er allerede nullstilt av resetStageProgress() over
     rebuildExerciseGuide();
 }
 
@@ -6374,16 +6490,22 @@ function showExerciseDetail(id) {
     startBtn.disabled = false;
     if (exerciseState.active && exerciseState.exerciseId === id) {
         progressEl.style.display = "";
-        const isReturnExercise = exercise.stages[0].type === "return";
+        const isRepeatedExercise = isRepeatedLandingStage(exercise.stages[0]);
         if (exerciseState.awaitingNext) {
             // stageIndex kan stå forbi siste steg her (vanlige flerstegs-øvelser) - stegobjektet er
             // IKKE gyldig å lese, se samme resonnement i updateExerciseHud.
             progressEl.textContent = "Bestått! Se oppsummeringskortet for å gå videre.";
-        } else if (exerciseState.landingPhase && !isReturnExercise) {
+        } else if (exerciseState.landingPhase && !isRepeatedExercise) {
             progressEl.textContent = "Pågår: landing på H-plassen";
-        } else if (isReturnExercise) {
-            progressEl.textContent = "Pågår: runde " + (exerciseState.returnRepsCompleted + 1) + "/" +
-                REQUIRED_RETURN_REPS + (exerciseState.landingPhase ? " - land på H" : "");
+        } else if (isRepeatedExercise) {
+            const stage0 = exercise.stages[0];
+            const reqReps = requiredRepsFor(stage0);
+            // "Hover i vind" viser hold-nedtelling mens man faktisk hover (mer nyttig enn bare
+            // rundetall der) - "Returner hjem" har ingen tilsvarende deltilstand å vise fram.
+            progressEl.textContent = "Pågår: runde " + (exerciseState.returnRepsCompleted + 1) + "/" + reqReps +
+                (stage0.type === "hoverWind" && !exerciseState.landingPhase
+                    ? " - hold " + exerciseState.hoverHoldSec.toFixed(0) + "/" + stage0.holdSec + " s"
+                    : (exerciseState.landingPhase ? " - land på H" : ""));
         } else {
             const stage = getExerciseStage();
             const stageLabel = stage.type === "killswitch" ? killswitchDisplayLabel() : stage.label;

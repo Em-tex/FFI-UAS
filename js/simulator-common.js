@@ -638,9 +638,16 @@
     // ALLE står i PÅ samtidig - se isBindingActive sin "combo"-håndtering, og kommentaren over
     // createButtonBindingManager for hvorfor kill uansett ikke dispatches som en vanlig
     // stigende-kant-action der).
+    // Returnerer { updateLiveStatus(gp) } - kalleren driver et PÅ/AV-merke per chip fra sin egen
+    // per-bilde-lytter (samme sted som allerede oppdaterer kanal-lista under, se
+    // Sim.updateGamepadAxesReadout) - uten dette var "Reverser" usynlig i praksis for en akse-binding
+    // (bytter bare om onValue/offValue internt, selve chip-teksten endres ikke av det), så brukeren
+    // hadde ingen måte å SE at noe faktisk skjedde ved klikk, eller hvilken fysisk posisjon som teller
+    // som PÅ akkurat nå.
     function buildGamepadKillGrid(containerEl, bindingsObj, action, label, buttonManager, getGamepadFn, onChange) {
         const existing = bindingsObj[action];
         let parts = existing ? (existing.type === "combo" ? existing.parts.slice() : [existing]) : [];
+        let liveBadges = []; // parallell til "parts" - satt på nytt av render(), lest av updateLiveStatus
 
         function commit() {
             bindingsObj[action] = parts.length === 0 ? null : parts.length === 1 ? parts[0] : { type: "combo", parts: parts };
@@ -649,6 +656,7 @@
 
         function render() {
             containerEl.innerHTML = "";
+            liveBadges = [];
 
             const row = document.createElement("div");
             // sim-gamepad-kill-row (i tillegg til sim-rate-row): denne raden har et VARIABELT antall
@@ -681,6 +689,12 @@
                     const chipLabel = document.createElement("span");
                     chipLabel.textContent = describeBindingPart(part);
                     chip.appendChild(chipLabel);
+
+                    const liveBadge = document.createElement("span");
+                    liveBadge.className = "sim-gamepad-kill-live";
+                    liveBadge.textContent = "…";
+                    chip.appendChild(liveBadge);
+                    liveBadges.push(liveBadge);
 
                     const flipBtn = document.createElement("button");
                     flipBtn.type = "button";
@@ -751,7 +765,25 @@
             containerEl.appendChild(hint);
         }
 
+        // gp === null/undefined (ingen tilkoblet enhet, eller panelet skjult - kalleren gater selv, se
+        // updateGamepadAxesReadout): viser et nøytralt "–" i stedet for et PÅ/AV som ikke faktisk
+        // reflekterer noe reelt akkurat nå.
+        function updateLiveStatus(gp) {
+            for (let i = 0; i < liveBadges.length; i++) {
+                const badge = liveBadges[i];
+                if (!gp) {
+                    badge.textContent = "–";
+                    badge.className = "sim-gamepad-kill-live";
+                    continue;
+                }
+                const active = isBindingActive(gp, parts[i]);
+                badge.textContent = active ? "PÅ" : "AV";
+                badge.className = "sim-gamepad-kill-live " + (active ? "sim-gamepad-kill-live-on" : "sim-gamepad-kill-live-off");
+            }
+        }
+
         render();
+        return { updateLiveStatus: updateLiveStatus };
     }
 
     // Viser BÅDE akser ("Kanal") og knapper - noen sendere/USB-adaptere legger enkelte brytere/kanaler

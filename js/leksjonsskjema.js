@@ -25,19 +25,28 @@ function createRow(data) {
     tdNum.className = "row-num";
     tr.appendChild(tdNum);
 
+    // Hver redigerbar celle har en søsken-"print-value" (skjult til vanlig, se .print-value i
+    // style.css) - samme swap-til-ren-tekst-mønster som de fire header-feltene bruker (syncPrintFields/
+    // hidePrintFields, kalt på beforeprint/afterprint) i stedet for å prøve å style om selve input/
+    // select/textarea-elementene for utskrift: en <select> spesielt lar seg ikke pålitelig style bort
+    // til ren tekst på tvers av nettlesere (native dropdown-utseende sitter fast), og resultatet ville
+    // uansett vært de "bulkete boksene" brukeren ba om å bli kvitt.
     const tdName = document.createElement("td");
     const nameInput = document.createElement("input");
     nameInput.type = "text";
-    nameInput.className = "ex-name";
+    nameInput.className = "ex-name no-print";
     nameInput.placeholder = "Øvelsesnavn";
     nameInput.value = data.exercise || "";
     tdName.appendChild(nameInput);
+    const namePrint = document.createElement("span");
+    namePrint.className = "print-value";
+    tdName.appendChild(namePrint);
     tr.appendChild(tdName);
 
     const tdGrade = document.createElement("td");
     tdGrade.className = "col-grade";
     const select = document.createElement("select");
-    select.className = "ex-grade";
+    select.className = "ex-grade no-print";
     GRADE_OPTIONS.forEach(function (val) {
         const opt = document.createElement("option");
         opt.value = val;
@@ -46,16 +55,22 @@ function createRow(data) {
         select.appendChild(opt);
     });
     tdGrade.appendChild(select);
+    const gradePrint = document.createElement("span");
+    gradePrint.className = "print-value print-value-grade";
+    tdGrade.appendChild(gradePrint);
     tr.appendChild(tdGrade);
 
     const tdComment = document.createElement("td");
     const commentInput = document.createElement("textarea");
-    commentInput.className = "ex-comment";
+    commentInput.className = "ex-comment no-print";
     commentInput.rows = 1;
     commentInput.placeholder = "Kommentar";
     commentInput.value = data.comment || "";
     commentInput.addEventListener("input", function () { autoGrow(commentInput); });
     tdComment.appendChild(commentInput);
+    const commentPrint = document.createElement("span");
+    commentPrint.className = "print-value";
+    tdComment.appendChild(commentPrint);
     tr.appendChild(tdComment);
 
     const tdRemove = document.createElement("td");
@@ -201,11 +216,35 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("printUasSystem").textContent = document.getElementById("uasSystem").value || " ";
         document.getElementById("printInstructorName").textContent = document.getElementById("instructorName").value || " ";
         document.getElementById("printFields").style.display = "grid";
+
+        // Øvelsestabellens rader - samme swap-mønster som feltene over, se kommentaren i createRow.
+        document.querySelectorAll("#exerciseRows tr").forEach(function (tr) {
+            const nameInput = tr.querySelector(".ex-name");
+            const grade = tr.querySelector(".ex-grade").value;
+            const commentInput = tr.querySelector(".ex-comment");
+            const gradeOpt = tr.querySelector(".ex-grade option:checked");
+            tr.querySelector(".ex-name + .print-value").textContent = nameInput.value || " ";
+            tr.querySelector(".print-value-grade").textContent = grade ? (gradeOpt ? gradeOpt.textContent : grade) : "–";
+            // white-space:pre-line (se .exercise-table .print-value i style.css) bevarer linjeskift fra
+            // kommentarfeltet - textContent (ikke innerHTML) er trygt her uansett hva instruktøren skrev.
+            tr.querySelector(".ex-comment + .print-value").textContent = commentInput.value || " ";
+            // Helt tomme rader (typisk fra "Legg til øvelse" som aldri ble fylt ut) skrives ikke ut i
+            // det hele tatt - se .row-empty-print i style.css. Bevisst IKKE for "generic"-rader
+            // (Forberedelser/Sjekklistebruk/Situasjonsforståelse) - de har alltid et navn (bare
+            // grade/comment kan mangle), så de rammes ikke av dette uansett.
+            const isEmpty = !nameInput.value.trim() && !grade && !commentInput.value.trim();
+            tr.classList.toggle("row-empty-print", isEmpty);
+        });
+
+        const notesInput = document.getElementById("remainingNotes");
+        document.getElementById("printRemainingNotes").textContent = notesInput.value || " ";
+        document.getElementById("printRemainingNotes").style.display = "block";
     }
 
     function hidePrintFields() {
         document.getElementById("printFields").style.display = "none";
         document.getElementById("printLessonTitleWrap").style.display = "none";
+        document.getElementById("printRemainingNotes").style.display = "none";
     }
 
     window.addEventListener("beforeprint", syncPrintFields);
