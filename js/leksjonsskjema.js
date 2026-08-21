@@ -16,6 +16,27 @@ const DEFAULT_EXERCISES = [
 ];
 let sigPads = {};
 
+// Standardnavn på skjemaet - "Leksjonsskjema - [leksjon] - [Dronepilot] - [DD-MM-ÅÅÅÅ]" - delt mellom
+// JSON-nedlasting (downloadJsonBtn) og PDF-utskrift: de fleste nettlesere bruker document.title som
+// forslag til filnavn i "Skriv ut / Lagre som PDF"-dialogen, så det samme navnet settes der midlertidig
+// (se beforeprint/afterprint under) i stedet for bare å gjelde JSON-filen.
+function sanitizeForFilename(s) {
+    // Fjerner tegn som er ugyldige i filnavn på tvers av Windows/macOS/Linux (\ / : * ? " < > |) -
+    // beholder ellers mellomrom/bindestrek nøyaktig slik brukeren selv skrev det.
+    return (s || "").replace(/[\\/:*?"<>|]/g, "").trim();
+}
+function formatDateForFilename(isoDate) {
+    if (!isoDate) return "";
+    const parts = isoDate.split("-"); // <input type="date"> gir alltid ÅÅÅÅ-MM-DD
+    return parts.length === 3 ? parts[2] + "-" + parts[1] + "-" + parts[0] : isoDate;
+}
+function buildStandardFilename() {
+    const title = sanitizeForFilename(document.getElementById("lessonTitle").value) || "Uten tittel";
+    const pilot = sanitizeForFilename(document.getElementById("pilotName").value) || "Ukjent pilot";
+    const date = formatDateForFilename(document.getElementById("lessonDate").value) || "udatert";
+    return "Leksjonsskjema - " + title + " - " + pilot + " - " + date;
+}
+
 function createRow(data) {
     data = data || { exercise: "", grade: "", comment: "" };
     const tr = document.createElement("tr");
@@ -247,8 +268,19 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("printRemainingNotes").style.display = "none";
     }
 
-    window.addEventListener("beforeprint", syncPrintFields);
-    window.addEventListener("afterprint", hidePrintFields);
+    // document.title dobler som filnavnforslag i "Skriv ut/Lagre som PDF"-dialogen (se
+    // buildStandardFilename-kommentaren) - satt midlertidig rundt selve utskriften, og gjenopprettet
+    // til fanens vanlige tittel etterpå (fanget opp én gang her, ikke hardkodet, så den ikke kan komme
+    // ut av synk med <title> i HTML-hodet).
+    const ORIGINAL_TITLE = document.title;
+    window.addEventListener("beforeprint", function () {
+        syncPrintFields();
+        document.title = buildStandardFilename();
+    });
+    window.addEventListener("afterprint", function () {
+        hidePrintFields();
+        document.title = ORIGINAL_TITLE;
+    });
 
     document.getElementById("downloadPdfBtn").addEventListener("click", function () {
         window.print();
@@ -257,11 +289,7 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("downloadJsonBtn").addEventListener("click", function () {
         const state = getState();
         const data = Object.assign({ skjema: "Leksjonsskjema" }, state);
-        const slug = function (s) { return (s || "").trim().replace(/\s+/g, "_"); };
-        const titlePart = slug(state.fields.lessonTitle) || "leksjon";
-        const pilotPart = slug(state.fields.pilotName) || "pilot";
-        const datePart = state.fields.lessonDate || "udatert";
-        downloadJson(titlePart + "-" + pilotPart + "-" + datePart + ".json", data);
+        downloadJson(buildStandardFilename() + ".json", data);
     });
 
     document.getElementById("resetFormBtn").addEventListener("click", function () {
