@@ -354,12 +354,20 @@
         return { start: start, isActive: isActive, remainingMs: remainingMs, poll: poll };
     }
 
-    // Sjekker om en lagret binding ({type:"button",index} eller {type:"axis",index,onValue,offValue})
-    // er aktiv AKKURAT NÅ (holdt inne) - eksponert på Sim slik at kontinuerlige "hold inne"-handlinger
-    // (f.eks. trim opp/ned) kan lese knappestatus direkte hver frame, uten å gå via
-    // createButtonBindingManagers stigende-kant-varsling (som er ment for enkelt-trigge handlinger).
+    // Sjekker om en lagret binding er aktiv AKKURAT NÅ (holdt inne) - eksponert på Sim slik at
+    // kontinuerlige "hold inne"-handlinger (f.eks. trim opp/ned) kan lese knappestatus direkte hver
+    // frame, uten å gå via createButtonBindingManagers stigende-kant-varsling (som er ment for
+    // enkelt-trigge handlinger). Tre bindingsformer:
+    //   { type:"button", index }
+    //   { type:"axis", index, onValue, offValue }
+    //   { type:"combo", parts:[binding, binding, ...] } - AND av alle delene, se
+    //     startListeningForCombo. Brukes til sikkerhetskritiske bindinger som skal kreve FLERE brytere
+    //     samtidig (f.eks. en to-bryter kill-sikring) - aktiv kun så lenge samtlige er det.
     function isBindingActive(gp, binding) {
         if (!binding) return false;
+        if (binding.type === "combo") {
+            return binding.parts.every(function (p) { return isBindingActive(gp, p); });
+        }
         if (binding.type === "axis") {
             const v = gp.axes[binding.index];
             if (v === undefined) return false;
@@ -367,39 +375,92 @@
         }
         const btn = gp.buttons[binding.index];
         if (!btn) return false;
-        return btn.pressed || btn.value > 0.5;
+        const raw = btn.pressed || btn.value > 0.5;
+        // inverted: se flipBindingPart - lar brukeren snu om hvilken fysisk posisjon som telles som
+        // PÅ for en ren knapp-binding (en akse-binding trenger ikke dette, der er on/off allerede to
+        // eksplisitte verdier - se onValue/offValue - som byttes direkte i stedet).
+        return binding.inverted ? !raw : raw;
+    }
+
+    // Menneskelesbar ett-linjes beskrivelse av EN enkelt binding-del (aldri en hel combo - kalleren
+    // setter selv sammen combo-delene, f.eks. med " + " mellom, se buildGamepadKillGrid).
+    function describeBindingPart(binding) {
+        if (!binding) return "Ikke satt";
+        if (binding.type === "axis") return "Kanal " + (binding.index + 1) + " (bryter)";
+        return "Knapp " + binding.index + (binding.inverted ? " (reversert)" : "");
+    }
+
+    // Bytter om hvilken posisjon/verdi som telles som PÅ for én binding-del - se "Reverser"-knappen i
+    // buildGamepadKillGrid. For en akse-binding byttes onValue/offValue rett og slett om (de er
+    // allerede to eksplisitte, fangede verdier); for en ren knapp-binding finnes ingen slik andre
+    // verdi å bytte med, så et eget inverted-flagg brukes i stedet (se isBindingActive/
+    // describeBindingPart).
+    function flipBindingPart(part) {
+        if (part.type === "axis") {
+            const tmp = part.onValue;
+            part.onValue = part.offValue;
+            part.offValue = tmp;
+        } else {
+            part.inverted = !part.inverted;
+        }
     }
 
     // Fungerer med enhver sender i USB-joystick-modus - gimbaler som akser, brytere som knapper via
     // standard HTML5 Gamepad API. Bindinger lagres som { type:"button", index } eller
     // { type:"axis", index, onValue, offValue }. bindingsObj er f.eks. gamepadMap.buttons; actionsMap
-    // er { actionNavn: fn } - fn kalles på stigende kant (bryter aktivert).
+    // er { actionNavn: fn } - fn kalles på stigende kant (bryter aktivert). MERK: bindinger av type
+    // "combo" (se isBindingActive) hoppes bevisst over i actionsMap-dispatchen under - en combo
+    // representerer en HOLDT tilstand (f.eks. "kill så lenge begge brytere er inne"), ikke en
+    // engangs-utløser, og skal derfor leses direkte med Sim.isBindingActive av kalleren i stedet
+    // (se f.eks. kill-sikringen i simulator.js/updateInput).
     function createButtonBindingManager(bindingsObj, actionsMap, onBindingChanged) {
         let listeningForAction = null;
         let learnIgnoreButtons = new Set();
         let learnAxisBaseline = [];
+        let comboParts = null; // satt av startListeningForCombo - se der
         const prevActive = {};
+
+        function captureBaseline(gp, extraIgnoreButtons) {
+            const ignore = new Set(extraIgnoreButtons || []);
+            if (gp) {
+                for (let i = 0; i < gp.buttons.length; i++) {
+                    if (gp.buttons[i].pressed || gp.buttons[i].value > 0.5) ignore.add(i);
+                }
+            }
+            learnIgnoreButtons = ignore;
+            learnAxisBaseline = gp ? gp.axes.slice() : [];
+        }
 
         function startListening(action, gp) {
             listeningForAction = action;
-            learnIgnoreButtons = new Set();
-            learnAxisBaseline = gp ? gp.axes.slice() : [];
-            if (gp) {
-                for (let i = 0; i < gp.buttons.length; i++) {
-                    if (gp.buttons[i].pressed || gp.buttons[i].value > 0.5) learnIgnoreButtons.add(i);
-                }
-            }
+            comboParts = null;
+            captureBaseline(gp);
+        }
+
+        // Kombinasjons-fangst: fanger ÉN ny bryter/kanal og legger den til "existingParts" (samme
+        // array-referanse kalleren allerede holder på, f.eks. lokal state i
+        // buildGamepadKillGrid - muteres i-place med push, så kalleren ser den nye delen med det
+        // samme uten noen egen callback). Knapper som allerede inngår i eksisterende deler ignoreres,
+        // slik at samme fysiske bryter ikke kan legges inn to ganger i én kombinasjon. Kalleren styrer
+        // selv når kombinasjonen er "ferdig" (committer eksplisitt til bindingsObj[action], se
+        // buildGamepadKillGrid) - denne fangster bare ÉN del om gangen, akkurat som startListening.
+        function startListeningForCombo(action, gp, existingParts) {
+            listeningForAction = action;
+            comboParts = existingParts || [];
+            const alreadyBoundButtons = comboParts
+                .filter(function (p) { return p.type === "button"; })
+                .map(function (p) { return p.index; });
+            captureBaseline(gp, alreadyBoundButtons);
         }
 
         function poll(gp) {
             if (!gp) return;
             if (listeningForAction) {
-                let captured = false;
+                let captured = null;
                 for (let i = 0; i < gp.buttons.length; i++) {
                     const pressed = gp.buttons[i].pressed || gp.buttons[i].value > 0.5;
                     if (pressed && !learnIgnoreButtons.has(i)) {
-                        bindingsObj[listeningForAction] = { type: "button", index: i };
-                        captured = true;
+                        captured = { type: "button", index: i };
                         break;
                     }
                 }
@@ -407,20 +468,27 @@
                     for (let i = 0; i < gp.axes.length; i++) {
                         const baseline = learnAxisBaseline[i] || 0;
                         if (Math.abs(gp.axes[i] - baseline) > 0.25) {
-                            bindingsObj[listeningForAction] = { type: "axis", index: i, onValue: gp.axes[i], offValue: baseline };
-                            captured = true;
+                            captured = { type: "axis", index: i, onValue: gp.axes[i], offValue: baseline };
                             break;
                         }
                     }
                 }
                 if (captured) {
+                    if (comboParts) {
+                        comboParts.push(captured);
+                    } else {
+                        bindingsObj[listeningForAction] = captured;
+                    }
                     if (onBindingChanged) onBindingChanged();
                     listeningForAction = null;
+                    comboParts = null;
                 }
             }
 
             Object.keys(actionsMap).forEach(function (action) {
-                const active = isBindingActive(gp, bindingsObj[action]);
+                const binding = bindingsObj[action];
+                if (binding && binding.type === "combo") return; // se kommentaren over funksjonen
+                const active = isBindingActive(gp, binding);
                 if (active && !prevActive[action]) actionsMap[action]();
                 prevActive[action] = active;
             });
@@ -428,6 +496,7 @@
 
         return {
             startListening: startListening,
+            startListeningForCombo: startListeningForCombo,
             poll: poll,
             isListening: function () { return listeningForAction; }
         };
@@ -520,10 +589,7 @@
             statusSpan.className = "sim-rate-value";
             statusSpan.style.cssText = "flex:1; text-align:left;";
             function refreshStatus() {
-                const b = bindingsObj[action];
-                if (!b) statusSpan.textContent = "Ikke satt";
-                else if (b.type === "axis") statusSpan.textContent = "Kanal " + (b.index + 1) + " (bryter)";
-                else statusSpan.textContent = "Knapp " + b.index;
+                statusSpan.textContent = describeBindingPart(bindingsObj[action]);
             }
             refreshStatus();
 
@@ -560,6 +626,132 @@
             row.appendChild(clearBtn);
             containerEl.appendChild(row);
         });
+    }
+
+    // Egen builder for kill-bindingen - strukturelt annerledes enn buildGamepadButtonsGrid over (som
+    // bare håndterer ett enkelt Sett/Fjern-par per action): kill kan bestå av FLERE brytere/kanaler
+    // kombinert (se isBindingActive sin "combo"-håndtering), vist som en rekke fjernbare "chips" i
+    // stedet, pluss en "Reverser" per del (se flipBindingPart - for tilfeller der senderen rapporterer
+    // AV/PÅ "baklengs" av det man forventet). Kill følger selve BRYTERPOSISJONEN kontinuerlig, ikke et
+    // toggle du trigger med et trykk (se kill-håndteringen i simulator.js/updateInput) - gjelder likt
+    // for én enkelt bryter (armert når AV, killet når PÅ) og en kombinasjon av flere (killet kun når
+    // ALLE står i PÅ samtidig - se isBindingActive sin "combo"-håndtering, og kommentaren over
+    // createButtonBindingManager for hvorfor kill uansett ikke dispatches som en vanlig
+    // stigende-kant-action der).
+    function buildGamepadKillGrid(containerEl, bindingsObj, action, label, buttonManager, getGamepadFn, onChange) {
+        const existing = bindingsObj[action];
+        let parts = existing ? (existing.type === "combo" ? existing.parts.slice() : [existing]) : [];
+
+        function commit() {
+            bindingsObj[action] = parts.length === 0 ? null : parts.length === 1 ? parts[0] : { type: "combo", parts: parts };
+            if (onChange) onChange();
+        }
+
+        function render() {
+            containerEl.innerHTML = "";
+
+            const row = document.createElement("div");
+            // sim-gamepad-kill-row (i tillegg til sim-rate-row): denne raden har et VARIABELT antall
+            // chips (0 til mange) pluss to knapper, i motsetning til sim-rate-row sin vanlige faste
+            // to-tre-elementers bredde - se egen wrap-regel i CSS. Uten den ville mange bundne brytere i
+            // kombinasjon kunnet presse raden bredere enn panelet (320px, se .sim-panel) i stedet for å
+            // brekke om til ny linje.
+            row.className = "sim-rate-row sim-gamepad-kill-row";
+            const labelEl = document.createElement("label");
+            labelEl.textContent = label;
+            row.appendChild(labelEl);
+
+            const chipsWrap = document.createElement("div");
+            chipsWrap.className = "sim-gamepad-kill-chips";
+            if (parts.length === 0) {
+                const empty = document.createElement("span");
+                empty.className = "sim-rate-value";
+                empty.textContent = "Ikke satt";
+                chipsWrap.appendChild(empty);
+            } else {
+                parts.forEach(function (part, i) {
+                    if (i > 0) {
+                        const plus = document.createElement("span");
+                        plus.className = "sim-gamepad-kill-plus";
+                        plus.textContent = "+";
+                        chipsWrap.appendChild(plus);
+                    }
+                    const chip = document.createElement("span");
+                    chip.className = "sim-gamepad-kill-chip";
+                    const chipLabel = document.createElement("span");
+                    chipLabel.textContent = describeBindingPart(part);
+                    chip.appendChild(chipLabel);
+
+                    const flipBtn = document.createElement("button");
+                    flipBtn.type = "button";
+                    flipBtn.title = "Reverser (bytt om hvilken posisjon som telles som PÅ)";
+                    flipBtn.textContent = "⇄";
+                    flipBtn.addEventListener("click", function () {
+                        flipBindingPart(part);
+                        commit();
+                        render();
+                    });
+                    chip.appendChild(flipBtn);
+
+                    const removeBtn = document.createElement("button");
+                    removeBtn.type = "button";
+                    removeBtn.title = "Fjern denne bryteren";
+                    removeBtn.textContent = "×";
+                    removeBtn.addEventListener("click", function () {
+                        parts.splice(i, 1);
+                        commit();
+                        render();
+                    });
+                    chip.appendChild(removeBtn);
+
+                    chipsWrap.appendChild(chip);
+                });
+            }
+            row.appendChild(chipsWrap);
+
+            const addBtn = document.createElement("button");
+            addBtn.type = "button";
+            addBtn.className = "sim-btn";
+            addBtn.textContent = "+ Legg til";
+            addBtn.addEventListener("click", function () {
+                addBtn.textContent = "Trykk bryter...";
+                addBtn.disabled = true;
+                buttonManager.startListeningForCombo(action, getGamepadFn(), parts);
+                const checkDone = setInterval(function () {
+                    if (buttonManager.isListening() !== action) {
+                        clearInterval(checkDone);
+                        commit();
+                        render();
+                    }
+                }, 150);
+            });
+            row.appendChild(addBtn);
+
+            if (parts.length > 0) {
+                const clearBtn = document.createElement("button");
+                clearBtn.type = "button";
+                clearBtn.className = "sim-btn";
+                clearBtn.textContent = "Tøm";
+                clearBtn.addEventListener("click", function () {
+                    parts = [];
+                    commit();
+                    render();
+                });
+                row.appendChild(clearBtn);
+            }
+
+            containerEl.appendChild(row);
+
+            const hint = document.createElement("p");
+            hint.className = "sim-panel-hint";
+            hint.style.margin = "4px 0 0";
+            hint.textContent = parts.length >= 2
+                ? "Kombinasjon: motorene killes så lenge alle " + parts.length + " brytere over står i PÅ SAMTIDIG - så snart én av dem går tilbake til AV, armeres droneen igjen automatisk."
+                : "Følger bryterposisjonen direkte: AV = armert, PÅ = killet - ikke et toggle du trykker på.";
+            containerEl.appendChild(hint);
+        }
+
+        render();
     }
 
     // Viser BÅDE akser ("Kanal") og knapper - noen sendere/USB-adaptere legger enkelte brytere/kanaler
@@ -978,6 +1170,41 @@
         });
     }
 
+    // Flytter man simulator-vinduet fra én skjerm til en annen, kan TO ting gå galt som en enkelt
+    // "resize"-event ikke er pålitelig for:
+    //   1) window.devicePixelRatio kan endre seg UTEN at noen resize-event fyres i det hele tatt (ulik
+    //      DPI-skalering per skjerm - selve CSS-vindusstørrelsen er uendret). Uten dette blir
+    //      rendererens pixelRatio (satt én gang ved oppstart, se initScene) stående feil resten av
+    //      økten.
+    //   2) Selve vindusstørrelsen (wrapEl sin clientWidth/clientHeight) kan skifte FLERE ganger i rask
+    //      rekkefølge midt i en skjermbytte-animasjon (særlig ved et maksimert vindu som "snapper" til
+    //      en annen skjerms oppløsning, eller bare den vanlige animasjonen enkelte vindusbehandlere
+    //      kjører når et vindu flyttes) - stoler man på ÉN resize-event risikerer man å fange en
+    //      forbigående, feilaktig mellomstørrelse som aldri rettes opp igjen (viser seg som feil
+    //      kamera-aspekt/zoom og siden som flyter utenfor viewporten - scrollehjulet begynner å
+    //      scrolle SIDEN i stedet for å styre kamera-zoom).
+    // Begge fanges opp ved å polle den FAKTISKE tilstanden - ikke stole på NÅR/OM en event fyres -
+    // billig (noen få tallsammenligninger) én gang per frame fra animate(). Uansett hvor mange
+    // mellomtilstander skjermbyttet var innom, "setter" dette seg alltid til riktig sluttresultat så
+    // snart wrapEl faktisk har fått sin endelige størrelse.
+    // onResize: kalleren sin egen resizeRenderer()-wrapper (kjenner kameraene) - kalles ETTER at
+    // setPixelRatio er oppdatert, slik at buffer-oppløsning og aspect alltid stemmer overens.
+    function createViewportWatcher(renderer, wrapEl, onResize) {
+        let lastPixelRatio = window.devicePixelRatio || 1;
+        let lastWidth = wrapEl.clientWidth;
+        let lastHeight = wrapEl.clientHeight;
+        return function poll() {
+            const currentPixelRatio = window.devicePixelRatio || 1;
+            const w = wrapEl.clientWidth, h = wrapEl.clientHeight;
+            if (currentPixelRatio === lastPixelRatio && w === lastWidth && h === lastHeight) return;
+            lastPixelRatio = currentPixelRatio;
+            lastWidth = w;
+            lastHeight = h;
+            renderer.setPixelRatio(Math.min(currentPixelRatio, 2));
+            if (onResize) onResize();
+        };
+    }
+
     // Chase-kamera med manuell orbit - delt mellom quad- og fixed-wing-simulatoren (begge hadde tidligere
     // hver sin nesten identiske kopi av både tilstanden og de fem event-lytterne). Hold høyreklikk og dra
     // for å se rundt kjøretøyet, scroll for å zoome. Vinkel/avstand er en offset OVENPÅ kjøretøyets egen
@@ -1174,6 +1401,7 @@
         populateInputSourceSelect: populateInputSourceSelect,
         buildGamepadChannelsGrid: buildGamepadChannelsGrid,
         buildGamepadButtonsGrid: buildGamepadButtonsGrid,
+        buildGamepadKillGrid: buildGamepadKillGrid,
         updateGamepadAxesReadout: updateGamepadAxesReadout,
         computeWind: computeWind,
         buildGradientSky: buildGradientSky,
@@ -1188,6 +1416,7 @@
         buildRandomTree: buildRandomTree,
         createTreeSwayManager: createTreeSwayManager,
         resizeRenderer: resizeRenderer,
+        createViewportWatcher: createViewportWatcher,
         createChaseCameraController: createChaseCameraController,
         drawFpvCrosshair: drawFpvCrosshair,
         drawFpvHorizonFromAngles: drawFpvHorizonFromAngles,

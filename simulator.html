@@ -14,14 +14,14 @@
          se samme forklaring over. En vanlig omlasting henter samme HTML (som selv aldri caches, se over),
          men uten en ny query-streng her kunne nettleseren likevel gjenbrukt en cachet KOPI av selve
          css/js-filene fra forrige gang de ble lastet med SAMME URL. -->
-    <link rel="stylesheet" href="css/style.css?v=20260813260000">
+    <link rel="stylesheet" href="css/style.css?v=20260821000007">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="js/menu.js?v=20260813260000"></script>
+    <script src="js/menu.js?v=20260821000007"></script>
 </head>
 <body>
 
@@ -234,6 +234,9 @@
                 </button>
                 <span class="sim-rate-value" id="calibrateAxesStatus" style="flex:1; text-align:left;"></span>
             </div>
+            <h3 style="margin-top:16px;">Kill/Arm-sikring</h3>
+            <div class="sim-rate-grid" id="gamepadKillGrid"></div>
+            <p class="sim-panel-hint" style="margin-top:0;">"+ Legg til" og bruk deretter bryteren - kan gjentas for å kreve flere brytere samtidig (f.eks. kanal 5 OG 8). "⇄" bytter om hvilken posisjon som telles som PÅ for den bryteren.</p>
             <h3 style="margin-top:16px;">Knappemapping (brytere)</h3>
             <div class="sim-rate-grid" id="gamepadButtonsGrid"></div>
             <p class="sim-panel-hint">Trykk "Sett" og bruk deretter bryteren på senderen - fungerer enten bryteren kommer som en knapp eller som en kanal (f.eks. TBS Tango, Taranis, RadioMaster i USB-joystick-modus).</p>
@@ -398,8 +401,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="js/simulator-common.js?v=20260813260000"></script>
-<script src="js/simulator.js?v=20260813260000"></script>
-<script src="js/simulator-flightlog.js?v=20260813260000"></script>
+<script src="js/simulator-common.js?v=20260821000007"></script>
+<script src="js/simulator.js?v=20260821000007"></script>
+<script src="js/simulator-flightlog.js?v=20260821000007"></script>
 </body>
 </html>

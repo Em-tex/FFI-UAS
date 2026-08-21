@@ -304,10 +304,14 @@ const DEFAULT_GAMEPAD_MAP = {
     yaw: { axis: 3, reverse: false, scale: 1 },
     buttons: { kill: null, modeAcro: null, modeStabilized: null, modeAltHold: null, modeLoiter: null, reset: null }
 };
+// kill er IKKE med her - den har sin egen dedikerte builder (Sim.buildGamepadKillGrid, se
+// buildGamepadButtonsPanel) fordi den (i motsetning til alle disse) kan bestå av FLERE kombinerte
+// brytere, se KILL_ACTION_LABEL/DEFAULT_GAMEPAD_MAP.buttons.kill.
 const BUTTON_ACTION_LABELS = {
-    kill: "Kill/Arm", modeAcro: "Modus: Acro", modeStabilized: "Modus: Stabilized", modeAltHold: "Modus: Alt Hold",
+    modeAcro: "Modus: Acro", modeStabilized: "Modus: Stabilized", modeAltHold: "Modus: Alt Hold",
     modeLoiter: "Modus: Loiter", reset: "Reset (R)"
 };
+const KILL_ACTION_LABEL = "Kill/Arm";
 
 const DEFAULT_WIND = { enabled: false, speed: 5, directionDeg: 0, gust: 0.3 };
 
@@ -955,6 +959,7 @@ const GAME_KEY_CODES = new Set([
 ]);
 
 let renderer, scene, chaseCamera, fpvCamera, vlosCamera, activeCamera;
+let viewportWatcher; // se Sim.createViewportWatcher - fanger opp DPI-/vindusstørrelse-endringer ved skjermbytte som en enkelt resize-event ikke er pålitelig for
 let droneGroup, dronePropellers;
 let heliHandle, airplaneHandle, pedestrianHandle; // se buildHelicopter/buildAirplane/buildPedestrianGroup - kun brukt av ex11
 const CAMERA_MODES = ["chase", "fpv", "vlos"];
@@ -3313,6 +3318,22 @@ function initScene() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Å flytte vinduet mellom skjermer kan (spesielt på maskiner med to grafikkort, der skjermene
+    // drives av ulik GPU) trigge et WebGL-kontekst-tap midt i rendring - uten disse to lytterne
+    // fortsetter animate()-løkken å kjøre og TEGNE, men mot en død/tom kontekst, som viser seg som et
+    // fastfrosset eller helt feil bilde (rapportert: ser "zoomet inn" ut) helt til siden lastes på
+    // nytt. preventDefault() på "lost" ber nettleseren faktisk FORSØKE gjenoppretting i stedet for å
+    // gi opp permanent. Et gjenopprettet kontekst har mistet ALLE GPU-ressurser (shaders/buffere/
+    // teksturer) - i stedet for å prøve å bygge hele scenen på nytt for hånd (stor flate å bomme på),
+    // reloader vi rett og slett siden, som starter helt rent - akkurat det brukeren uansett må gjøre
+    // manuelt i dag.
+    canvas.addEventListener("webglcontextlost", function (e) {
+        e.preventDefault();
+        console.warn("[FFI-UAS] WebGL-kontekst tapt (f.eks. GPU-bytte ved flytting mellom skjermer) - laster siden på nytt...");
+    }, false);
+    canvas.addEventListener("webglcontextrestored", function () {
+        location.reload();
+    }, false);
 
     scene = new THREE.Scene();
     scene.add(Sim.buildGradientSky());
@@ -3388,6 +3409,7 @@ function initScene() {
 
     activeCamera = chaseCamera;
     resizeRenderer();
+    viewportWatcher = Sim.createViewportWatcher(renderer, document.querySelector(".sim-page"), resizeRenderer);
 }
 
 // Drone-typene har ulik geometri (ben, canopy, propell-blad), ikke bare størrelse - bygger derfor
@@ -3469,8 +3491,11 @@ function setFlightMode(mode) {
 /* ---------- Gamepad knappemapping (kill/arm + flymodus-brytere) ---------- */
 // Se Sim.createButtonBindingManager i simulator-common.js for læringsflyten (bryter kan komme
 // som HID-knapp eller som en akse - fungerer med enhver sender i USB-joystick-modus).
+// kill er IKKE med her (i motsetning til før) - den skal følge selve BRYTERPOSISJONEN kontinuerlig
+// (se kill-håndteringen i updateInput), ikke trigges som et engangs-toggle på stigende kant slik
+// resten av actionsMap gjør. Gjelder både én enkelt bryter og en kombinasjon av flere - se
+// gamepadMap.buttons.kill/isBindingActive.
 const BUTTON_ACTIONS = {
-    kill: function () { toggleKill("gamepad"); },
     modeAcro: function () { setFlightMode("acro"); },
     modeStabilized: function () { setFlightMode("stabilized"); },
     modeAltHold: function () { setFlightMode("althold"); },
@@ -3492,6 +3517,17 @@ function updateInput(dt) {
     const gp = getActiveGamepad();
     if (gp) buttonManager.poll(gp);
     if (gp) axisCalibrationManager.poll(gp);
+    // Kill følger BRYTERPOSISJONEN direkte og kontinuerlig - IKKE et toggle du trigger med et trykk
+    // (se BUTTON_ACTIONS-kommentaren over). armed speiler ganske enkelt "er bryteren/kombinasjonen i
+    // PÅ-stillingen akkurat nå" hvert eneste bilde, begge veier: står den i AV, er droneen armert;
+    // vippes den til PÅ, killes den momentant - og vippes den tilbake til AV, armeres den momentant
+    // igjen, akkurat som en ekte fysisk bryter. Gjelder likt for én enkelt bryter og en kombinasjon av
+    // flere (se isBindingActive sin "combo"-håndtering - AND av alle delene, må alle stå i PÅ samtidig).
+    // Samme unntak som toggleKill (krasjet/skadet/nettopp bestått øvelse) - se der.
+    const killBinding = gamepadMap.buttons.kill;
+    if (gp && killBinding && !droneState.crashed && !droneState.injured && !exerciseState.awaitingNext) {
+        droneState.armed = !Sim.isBindingActive(gp, killBinding);
+    }
 
     const dropChance = settings.realisticMode ? (1 - linkQuality) : 0;
     const packetDropped = dropChance > 0 && Math.random() < dropChance;
@@ -4561,6 +4597,8 @@ function buildGamepadPanel(pad) {
 }
 
 function buildGamepadButtonsPanel() {
+    const killContainer = document.getElementById("gamepadKillGrid");
+    Sim.buildGamepadKillGrid(killContainer, gamepadMap.buttons, "kill", KILL_ACTION_LABEL, buttonManager, getActiveGamepad, saveGamepadMap);
     const container = document.getElementById("gamepadButtonsGrid");
     Sim.buildGamepadButtonsGrid(container, gamepadMap.buttons, BUTTON_ACTION_LABELS, buttonManager, getActiveGamepad, saveGamepadMap);
 }
@@ -6365,8 +6403,11 @@ function showExerciseDetail(id) {
         if (gateBlocked) {
             progressEl.style.display = "";
             progressEl.classList.add("sim-exercise-gate-warning");
-            progressEl.textContent = "Krever at Kill/Arm-knappen er bundet til en fysisk fjernkontroll i " +
-                "Fjernkontroll-kalibrering (Innstillinger) - tastatur og skjermknappen virker ikke i denne øvelsen.";
+            progressEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Krever at Kill/Arm-knappen er bundet til en fysisk fjernkontroll. ' +
+                '<button type="button" id="gateOpenCalibrationBtn">Åpne kalibrering</button>';
+            document.getElementById("gateOpenCalibrationBtn").addEventListener("click", function () {
+                togglePanel(document.getElementById("gamepadPanel"));
+            });
         } else if (exercise.stages[0].type === "racing") {
             const bestSec = racingBestTimeSec(id);
             progressEl.style.display = bestSec !== null ? "" : "none";
@@ -6394,6 +6435,7 @@ function animate(now) {
     const frameDt = Math.min((now - lastTime) / 1000, 0.1);
     lastTime = now;
     accumulator += frameDt;
+    viewportWatcher();
 
     updateWind(frameDt);
     updateClouds(frameDt);

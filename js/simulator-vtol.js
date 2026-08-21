@@ -831,6 +831,7 @@ const inputState = {
 const keys = new Set();
 
 let renderer, scene, chaseCamera, fpvCamera, vlosCamera, activeCamera;
+let viewportWatcher; // se Sim.createViewportWatcher - fanger opp DPI-/vindusstørrelse-endringer ved skjermbytte som en enkelt resize-event ikke er pålitelig for
 let planeGroup, planePropeller, planeLiftProps = [];
 let planeAileronLeft, planeAileronRight, planeVtailLeft, planeVtailRight;
 let propSpinSpeed = 0;
@@ -2728,6 +2729,16 @@ function initScene() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Se identisk kommentar i simulator.js/initScene - WebGL-kontekst kan tapes ved GPU-bytte når
+    // vinduet flyttes mellom skjermer (spesielt maskiner med to grafikkort), og uten disse fortsetter
+    // animate() å tegne mot en død kontekst helt til siden lastes på nytt manuelt.
+    canvas.addEventListener("webglcontextlost", function (e) {
+        e.preventDefault();
+        console.warn("[FFI-UAS] WebGL-kontekst tapt (f.eks. GPU-bytte ved flytting mellom skjermer) - laster siden på nytt...");
+    }, false);
+    canvas.addEventListener("webglcontextrestored", function () {
+        location.reload();
+    }, false);
 
     scene = new THREE.Scene();
     scene.add(Sim.buildGradientSky());
@@ -2786,6 +2797,7 @@ function initScene() {
 
     activeCamera = chaseCamera;
     resizeRenderer();
+    viewportWatcher = Sim.createViewportWatcher(renderer, document.querySelector(".sim-page"), resizeRenderer);
 }
 
 function rebuildPlaneMesh() {
@@ -4692,6 +4704,7 @@ function animate(now) {
     const frameDt = Math.min((now - lastTime) / 1000, 0.1);
     lastTime = now;
     accumulator += frameDt;
+    viewportWatcher();
 
     updateWind(frameDt);
     updateInput(frameDt);

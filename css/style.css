@@ -81,6 +81,14 @@ nav a:hover, nav a.active {
         gap: 10px;
         align-items: center;
     }
+    /* .sim-page sin faste "calc(100vh - 70px)" (se der) forutsetter navets faste 70px-høyde over -
+       her er nav i stedet height:auto (stables), så samme kalkulasjon ville gitt feil størrelse.
+       Faller tilbake til flex-fordeling i stedet, som selv finner ut hvor mye nav faktisk tar. */
+    .sim-page {
+        height: auto;
+        flex: 1;
+        min-height: 0;
+    }
 }
 
 /* --- Nedtrekksmeny (f.eks. "Trening") --- */
@@ -410,7 +418,16 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 /* --- Simulator --- */
 .sim-page {
     position: relative;
-    flex: 1;
+    /* IKKE flex:1 (var her før) - body sin min-height:100vh gir bare et GULV, ikke en fast, definert
+       hovedakse-størrelse å fordele flex-grow ut fra, så .sim-page endte uansett opp noen titalls
+       piksler for høy etter enkelte vindusendringer (target: krympe/vokse-testen viste f.eks. 1044px
+       .sim-page mot et 1034px vindu) - nok til å trigge scrollehjul på siden og et canvas som virker
+       "zoomet inn" siden bare toppen av det faktisk var synlig. calc(100vh - navets faste 70px) er
+       derimot en HARD, eksplisitt størrelse direkte fra selve viewporten - ingen flex-fordeling å bomme
+       på, og dermed korrekt på enhver vindusstørrelse uten avhengighet av body/html sin egen (uklare)
+       høyde-kjede.
+    */
+    height: calc(100vh - 70px);
     width: 100%;
     overflow: hidden;
     background: #0d1117;
@@ -780,6 +797,15 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     color: white;
 }
 .sim-btn-primary:hover { background: #065d9e; color: white; }
+/* Uten dette ser en disabled knapp (f.eks. "Start" sperret av requiresGamepadKill-gaten, se
+   showExerciseDetail) nesten identisk ut med en klikkbar - siden bakgrunn/farge er satt eksplisitt
+   over, arver den ikke nettleserens vanlige nedtonede disabled-utseende av seg selv. */
+.sim-btn:disabled, .sim-btn-primary:disabled {
+    background: #e2e2e2;
+    color: #999;
+    cursor: not-allowed;
+}
+.sim-btn-primary:disabled:hover { background: #e2e2e2; color: #999; }
 
 .sim-dropdown {
     position: relative;
@@ -828,6 +854,9 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     max-width: calc(100% - 32px);
     max-height: calc(100% - 90px);
     overflow-y: auto;
+    overflow-x: hidden; /* uten denne arver -x samme "auto" som -y (se CSS-spesifikasjonen) - variabelt
+    innhold (f.eks. sim-gamepad-kill-row sin chip-liste) skal brekke om til ny linje, aldri gi
+    sideveis scroll i panelet */
     background: rgba(255,255,255,0.97);
     border-radius: 8px;
     padding: 18px;
@@ -908,6 +937,55 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
+/* Kill-bindingens rad (Sim.buildGamepadKillGrid) - variabelt antall brytere kombinert (AND), hver med
+   sin egen reverser/fjern-knapp, i motsetning til det faste Sett/Fjern-paret .sim-rate-row ellers
+   bruker for øvrige knappebindinger. Egen wrap-regel (i stedet for å endre .sim-rate-row selv, som
+   brukes av mange andre - i utgangspunktet enlinjede - rader): med mange bundne brytere skal raden
+   brekke om til flere linjer i stedet for å presses bredere enn panelet (se .sim-panel sin faste
+   320px-bredde og overflow-x:hidden).
+*/
+.sim-gamepad-kill-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+}
+.sim-gamepad-kill-row > .sim-btn {
+    flex-shrink: 0; /* "+ Legg til"/"Tøm" skal aldri klemmes/brytes midt i teksten - wrap til ny linje i stedet */
+}
+.sim-gamepad-kill-chips {
+    flex: 1 1 auto;
+    min-width: 0; /* uten denne nekter chip-listen å krympe under sitt eget innholds bredde (samme
+    flex-item-fallgruve som .sim-page hadde for høyde, se der) - da ville IKKE raden brutt om i tide */
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.sim-gamepad-kill-plus {
+    color: #999;
+    font-weight: 600;
+}
+.sim-gamepad-kill-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(3, 71, 127, 0.08);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 2px 4px 2px 10px;
+    font-size: 0.78rem;
+    color: var(--ffi-blue);
+}
+.sim-gamepad-kill-chip button {
+    border: none;
+    background: none;
+    color: var(--ffi-blue);
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 50%;
+}
+.sim-gamepad-kill-chip button:hover { background: rgba(3, 71, 127, 0.15); }
 .sim-rate-curve {
     display: block;
     width: 100%;
@@ -925,6 +1003,33 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-style: italic;
     margin: 10px 0;
 }
+/* Overstyrer .sim-panel-hint sin diskré grå/kursiv stil - denne varselteksten (f.eks. "Uforutsette
+   hendelser" uten bundet fysisk kill-bryter, se showExerciseDetail) må stikke seg tydelig ut, ikke
+   se ut som et vanlig hint man kan lese fort over. */
+.sim-exercise-gate-warning {
+    color: #c0392b;
+    font-style: normal;
+    font-weight: 600;
+    background: #fdecea;
+    border: 1px solid #f1b0a8;
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+.sim-exercise-gate-warning i { margin-right: 4px; }
+.sim-exercise-gate-warning button {
+    display: inline-block;
+    margin-left: 6px;
+    background: var(--ffi-blue);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: 'Overpass', sans-serif;
+    cursor: pointer;
+}
+.sim-exercise-gate-warning button:hover { background: #065d9e; }
 .sim-axes-readout {
     display: flex;
     flex-direction: column;
