@@ -772,7 +772,12 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 
 /* Sideoppsett for ALL utskrift på hele nettstedet (ikke bare diplomet - @page er ikke knyttet til noen
    CSS-selektor eller @media print-blokk, den gjelder rett og slett hver gang DENNE stilarket brukes til
-   utskrift, uansett side). A4 med 15mm marg.
+   utskrift, uansett side). A4. Topp-/bunnmarg senket til 10mm (fra 15mm - brukerønske: "litt plass å
+   gå på med margen ned mot bunnen. og kanskje litt mot toppen også") - gir mer reell innholdshøyde per
+   side (se NORMAL_COLUMN_MAX_HEIGHT_MM i js/sjekkliste-bygger.js, som regner ut fra akkurat denne
+   verdien). Sidemargen (venstre/høyre) er UENDRET på 15mm - den er ikke bare en trykkmarg her, den
+   halve brettesonen midt på arket (se .print-grid/.print-columns-kommentarene) er regnet ut fra DEN,
+   og en endring der ville forskjøvet selve brettelinjen.
    Faktisk håndhevelse er dessverre browser-/OS-avhengig og UTENFOR hva CSS kan garantere: nettleserens
    EGEN "Marger"-innstilling i utskriftsdialogen (Standard/Ingen/Minimum/Egendefinert) overstyrer denne
    verdien hvis brukeren har valgt noe annet enn "Standard" der - og noen nettlesere HUSKER forrige valg
@@ -780,7 +785,7 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
    fine, standard marger i Vivaldi, men HELT uten marger da en annen person lastet siden ned som PDF -
    mest sannsynlig nettopp dette (deres utskriftsdialog sto på "Ingen" fra en tidligere jobb), ikke noe
    galt med selve siden - det finnes ingen CSS-mekanisme som kan tvinge forbi et slikt brukervalg. */
-@page { size: A4; margin: 15mm; }
+@page { size: A4; margin: 10mm 15mm; }
 
 /* Ved utskrift av diplomet skjules alt annet på siden - kun selve diplom-arket skrives ut, på et
    A4-ark (ikke nettleserens/OS-ets standard papirstørrelse, som ikke nødvendigvis er A4). */
@@ -1406,6 +1411,12 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
    innhold har blitt tilpasset i etterkant. */
 .tab-panel[data-category="mak"] tr[data-variant="spesifikk"] { display: none; }
 .tab-panel[data-category="spesifikk"] tr[data-variant="mak"] { display: none; }
+/* Fartøytype-filtrering (Generisk/FX-10) - samme prinsipp som kategori-filtreringen over, men for
+   fartøyspesifikke punkter (f.eks. et FX-10-spesifikt contingency-punkt om QLOITER/QRTL, se
+   setActiveAircraft/TEMPLATE_CONFIG i js/sjekkliste-bygger.js). Generell liste (ikke bare "fx10" vs
+   "generisk") - trenger ingen endring om flere fartøytyper legges til senere. */
+.tab-panel[data-aircraft="generisk"] tr[data-aircraft="fx10"] { display: none; }
+.tab-panel[data-aircraft="fx10"] tr[data-aircraft="generisk"] { display: none; }
 
 /* --- Sjekkliste-generator: godkjenningsnummer (fast "FFI-UAS-"-prefiks + kun tallet i feltet) --- */
 .approval-number-group { display: flex; align-items: stretch; }
@@ -1852,6 +1863,18 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     /* Overskrifter skal aldri stå alene nederst på en side mens innholdet under starter på neste -
        "foreldreløs" tittel. */
     h1, h2, h3, .section-header { break-after: avoid; page-break-after: avoid; }
+    /* Sjekkliste-bygger sin egen utskrift (#printView, se buildAllPrintPages i js/sjekkliste-bygger.js)
+       har ALLEREDE et gjennomtenkt, testet pagineringssystem (float-baserte .print-col - se den store
+       historikk-kommentaren ved dem for hvorfor) - regelen over var ALDRI ment for denne, men
+       css/style.css er delt på tvers av hele nettstedet, og den traff også .print-header sin <h1> her.
+       BUG (rapportert av brukeren, med skjermbilde - IDENTISK symptom som den opprinnelige grid-vs-
+       float-bugen float-løsningen ble bygget for å unngå: "Sjekkliste" alene på en nesten blank side 1,
+       resten av innholdet dyttet til side 2 - samme feil rammet også ERP-siden) - break-after:avoid på
+       en <h1> tvinger nettleseren til å behandle overskriften og INNHOLDET RETT ETTER som én udelelig
+       enhet, nøyaktig samme feilmodus som display:grid ga. Overstyrer tilbake til normal (auto)
+       paginering for alle overskrifter inni #printView - regelen over skal fortsatt gjelde resten av
+       siden (f.eks. leksjonsskjema.html, som ikke bruker #printView i det hele tatt). */
+    #printView h1, #printView h2, #printView h3 { break-after: auto; page-break-after: auto; }
     /* Enkeltbokser skal ikke kappes midt i selv om Øvelser-seksjonen rundt tabellen nå TILLATES å
        brekke (se .section:has(...) over) - label på én side og verdien på neste, eller en signatur delt
        fra navnet sitt, ser like rart ut som overskrift-foreldreløshet. */
@@ -2024,6 +2047,20 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    temaordet (kun contingency/emergency, se buildPrintPage) - samme idé som den loddrette
    "BEREDSKAP"/"NØD"-stripen i referansebildene. */
 .print-page-body { display: flex; gap: 5mm; align-items: stretch; }
+/* BUG (rapportert av brukeren, med skjermbilde: ERP-siden sin egen tittelbanner sto igjen alene på en
+   nesten blank side, mens HELE resten av sideinnholdet - Ulykke/Fly-away til venstre og Kontaktliste til
+   høyre - hoppet i sin helhet til neste side, selv med tydelig ledig plass under banneret) - nøyaktig
+   samme feilklasse som den opprinnelige display:grid-buggen ved .print-grid over (se historikk-
+   kommentaren der): Chrome kan heller ikke dele opp INNHOLDET i en flex-beholder over en sideskille ved
+   utskrift, så snart .print-grid (som .print-page-body sin eneste flex-item her) ikke fikk plass i sin
+   helhet i det som var igjen av siden, hoppet HELE den til neste side i stedet for å la de to
+   .print-col-flytene inni den paginere hver for seg slik de er bygget for å gjøre. Rammer kun
+   Normal-siden og ERP-siden (buildNormalPage/buildErpBody), som begge har .print-grid som DIREKTE barn
+   av .print-page-body og ALDRI noen sidefelt ved siden av (se TAB_META/buildPrintSidebar - normal/erp sin
+   egen buildErpBody kaller den aldri) - derfor er det trygt å bytte AKKURAT disse til flow-root/blokk i
+   stedet for flex, uten å røre .print-page-body sin flex-baserte sidefelt-oppførsel som
+   buildCombinedHalf/buildSingleTabPage fortsatt er avhengige av (se .print-sidebar under). */
+.print-page-body:has(> .print-grid) { display: flow-root; }
 /* column-gap er selve brettesonen (se .print-header-half over) - 14mm, samme mellomromsbredde som
    .print-grid og .print-combined-row under bruker, slik at det loddrette brettet får like mye luft
    å brettes i uansett hvilken av de tre sidetypene det gjelder (brukerønske: "litt mer mellomrom på
@@ -2201,6 +2238,12 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    table-layout:auto uendret. */
 .print-rows-situasjon { table-layout: fixed; }
 .print-rows-situasjon td.print-label-situation { width: 38%; white-space: normal; }
+/* Kontaktlisten (ERP) - brukerønske: første kolonne (kontaktnavnet, f.eks. "UAS Aut. telefon") litt
+   bredere enn auto-layout ga den, samme fixed-layout-teknikk som print-rows-situasjon over. Kun denne
+   tabellen (satt via isContactList i buildLimitsBox) - Begrensninger/Utstyrsliste beholder vanlig
+   table-layout:auto, uendret. */
+.print-rows-contacts { table-layout: fixed; }
+.print-rows-contacts td.print-key { width: 48%; white-space: normal; }
 /* Nødnummer-fremheving i selve utskriften (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS,
    js/sjekkliste-bygger.js) - print-key gir allerede fet skrift til ALLE kontakter/begrensninger (regelen
    over), så her legges kun fargen til (samme røde ERP-temafarge som resten av fanen, ikke en ny/vilkårlig

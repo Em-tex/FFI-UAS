@@ -15,7 +15,27 @@ const STORAGE_KEY = "ffi-uas:sjekkliste-generator";
 // - HUSK å bumpe dette tallet igjen ved enhver fremtidig DEFAULTS-endring, ellers overskygger brukernes
 // egen mellomlagrede localStorage-tilstand stille den nye standardmalen (se loadState) helt til de selv
 // nullstiller fanen manuelt.
-const SCHEMA_VERSION = 23;
+// Bumpet til 24: FX-10-mal lagt til (AIRCRAFT_CONTENT/TEMPLATE_CONFIG), "UAS Autorisasjonstelefon" ->
+// "UAS Aut. telefon", ERP sin "Fly-away / mistet kontakt" -> "Fly-away".
+// Bumpet til 25: ERP sin "Operativ leder" -> "FFI Operativ leder UAS".
+// Bumpet til 26: "Uventet oppførsel" (QLOITER/QRTL) flyttet fra normal-fanens FX-10-mal til en ny,
+// fartøytype-filtrert (aircraft:"fx10") Contingency-del, se setActiveAircraft/TEMPLATE_CONFIG. Fjernet
+// et par forklarende parenteser fra FX-10-sjekkpunkter (hører hjemme i kommende Expanded checklist).
+// Bumpet til 27: FX-10 sin "Arming"/"Motorer (arm)" slått sammen til ett punkt. Ny "Etter avgang"-del
+// (avgang/hovring/pitchvinkel/stigning-modusbytte) skilt ut fra "Overvåking under flyging", som nå kun
+// har de generiske, løpende overvåkingspunktene.
+// Bumpet til 28: "Bekledning - Passende" lagt til i "Før avreise" (både generisk og FX-10), rett etter
+// værsjekken.
+// Bumpet til 29: FX-10 sin "Arming" korttet ytterligere ned til "Arm" / "Motorer idle, lavt turtall".
+// Bumpet til 30: FX-10 sin "Etter avgang" barbert ned - "Avgang" fjernet, hovring/ro/pitchvinkel slått
+// sammen til "Hover - 20 sek ok", "Stigning/modusbytte" forenklet til "Transisjonshøyde - Over 50 m AGL".
+// Bumpet til 31: FX-10 sin "Maks rekkevidde" korttet ned til bare "VLOS".
+// Bumpet til 32: FX-10 sin "Telemetri" korttet ned fra "Mottatt OK på PC og RC-sender" til "Mottas på PC og RC".
+// Bumpet til 33: FX-10 sin "Servoer" korttet ned fra "Liv i servoer - kjenn motstand" til "Testet".
+// Bumpet til 34: FX-10 sin "Heading/roll/pitch" korttet ned fra "Riktig ved tilting av farkosten" til
+// "Korrekte indikasjoner". "Lavt batterinivå varsel" på contingency-fanen merket aircraft:"generisk" og
+// vises dermed ikke lenger for FX-10-malene.
+const SCHEMA_VERSION = 34;
 
 // Kolonneoverskrifter i sjekkpunkt-tabellen er ulike for normal- vs. contingency/emergency/erp-
 // sjekklister: en normal preflight-sjekk sammenligner mot en forventet status, mens de andre beskriver
@@ -33,11 +53,25 @@ const ITEM_LABELS = {
     erp: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false }
 };
 
-const DEFAULTS = {
-    normal: {
-        drone: "",
-        approvalNumber: "",
-        template: "mak",
+// Normal-fanens sjekklisteINNHOLD per fartøytype - "generisk" (passer enhver drone) og "fx10" (FX-10
+// VTOL-spesifikk, se AIRCRAFT_CONTENT.fx10 under). Egen struktur (ikke bare inni DEFAULTS.normal) fordi
+// normal-fanen egentlig har TO uavhengige akser (fartøytype og reguleringskategori MÅK/spesifikk), selv
+// om de nå velges via ÉN kombinert nedtrekksmeny (brukerønske: "vil ikke ha to nedtrekksmenyer") - se
+// TEMPLATE_CONFIG, som slår sammen de to aksene til fem konkrete menyvalg (mak/spesifikk/fx10-mak/
+// fx10-spesifikk/custom).
+const DEFAULT_AIRCRAFT = "generisk";
+// De FEM offisielle malvalgene i normal-fanens nedtrekksmeny - hver kobler ett fartøytype-innhold
+// (AIRCRAFT_CONTENT) til én reguleringskategori-filtrering (setActiveCategory). "custom" (egendefinert)
+// har bevisst INGEN oppføring her - den representerer brukerens EGNE endringer, ikke en forhåndsdefinert
+// mal å laste inn, se reloadNormalFromDefaults/setNormalTemplate.
+const TEMPLATE_CONFIG = {
+    mak: { aircraft: "generisk", category: "mak", label: "MÅK" },
+    spesifikk: { aircraft: "generisk", category: "spesifikk", label: "Spesifikk" },
+    "fx10-mak": { aircraft: "fx10", category: "mak", label: "FX-10 MÅK" },
+    "fx10-spesifikk": { aircraft: "fx10", category: "spesifikk", label: "FX-10 spesifikk" }
+};
+const AIRCRAFT_CONTENT = {
+    generisk: {
         equipment: ["Drone", "Fjernkontroll", "Batterier"],
         limits: [
             { key: "Maks vind", value: "10 m/s" },
@@ -55,6 +89,7 @@ const DEFAULTS = {
                     { text: "MÅK underkategori", target: "Definert", variant: "mak" },
                     { text: "ATO skjema", target: "Meldt inn", variant: "spesifikk" },
                     { text: "Vær", target: "Innenfor begrensninger" },
+                    { text: "Bekledning", target: "Passende" },
                     { text: "Grunneier", target: "Tillatt" },
                     { text: "Dronesoner.no", target: "Sjekket" },
                     { text: "NOTAM", target: "Ingen annen aktivitet" },
@@ -96,6 +131,122 @@ const DEFAULTS = {
             }
         ]
     },
+    // FX-10 (VTOL, fastvinge m/rotorer) - de fire administrative/regulatoriske delene ("Før avreise",
+    // "På operasjonsområdet") er UENDRET fra generisk (de gjelder uansett fartøytype), mens "Før avgang"
+    // og "Overvåking under flyging" er byttet ut med farkostspesifikke sjekkpunkter fra brukerens egen
+    // FX-10-prosedyre (opprinnelig strukturert som "2.1 Farkost preflight" / "2.2 Power up" /
+    // "2.3 Flyging" - fordelt inn i de eksisterende delene der de faktisk hører hjemme i flyt-
+    // rekkefølgen, ikke som egne nye seksjoner, se brukerønske "få de inne der de passer"):
+    //   - 2.1 (fysisk farkost-inspeksjon: vinger/propeller/rorflater/pitotrør) og 2.2 (power up/
+    //     telemetri/FENCE/flight modes/batteri/satellitter) hører naturlig hjemme i "Før avgang" -
+    //     samme plass som den generiske malens tilsvarende (men langt grovere) sjekkpunkter.
+    //   - 2.3 sin arm/avgang/hover-sekvens deles ved selve avgangen: klargjøring og arming (fortsatt på
+    //     bakken) blir siste steg i "Før avgang", mens hovring, stigning, modusbytte og selve
+    //     operasjonen blir "Overvåking under flyging" (droneen er nå i lufta).
+    fx10: {
+        equipment: ["Farkost (FX-10)", "Fjernkontroll", "Batterier", "Bakkestasjon (PC)"],
+        limits: [
+            { key: "Maks vind", value: "10 m/s" },
+            { key: "Maks høyde", value: "120 m" },
+            { key: "Maks hastighet", value: "" },
+            { key: "Maks rekkevidde", value: "VLOS" },
+            { key: "Vær", value: "Ingen nedbør" },
+            { key: "Oppvisning for publikum", value: "Forbudt" }
+        ],
+        sections: [
+            {
+                title: "Før avreise", items: [
+                    { text: "FFI-godkjenning", target: "Gyldig" },
+                    { text: "MÅK underkategori", target: "Definert", variant: "mak" },
+                    { text: "ATO skjema", target: "Meldt inn", variant: "spesifikk" },
+                    { text: "Vær", target: "Innenfor begrensninger" },
+                    { text: "Bekledning", target: "Passende" },
+                    { text: "Grunneier", target: "Tillatt" },
+                    { text: "Dronesoner.no", target: "Sjekket" },
+                    { text: "NOTAM", target: "Ingen annen aktivitet" },
+                    { text: "Batteri", target: "Ladet" },
+                    { text: "Farkost", target: "Flygedyktig" },
+                    { text: "Utstyrsliste", target: "Gjennomgått" }
+                ]
+            },
+            {
+                title: "På operasjonsområdet", items: [
+                    { text: "Vær", target: "Innenfor begrensninger" },
+                    { text: "HemsWX", target: "Registrert operasjon", variant: "mak" },
+                    { text: "Luftrom", target: "Koordinert", variant: "spesifikk" },
+                    { text: "Synlige faremomenter", target: "Vurdert" }
+                ]
+            },
+            {
+                // Farkost preflight (2.1) + Power up (2.2) + arm/klargjøring (starten av 2.3) - se
+                // seksjonskommentaren over.
+                title: "Før avgang", items: [
+                    { text: "Vinger", target: "Låst posisjon" },
+                    { text: "Propellere", target: "Riktig montert, uskadet, dratt til" },
+                    // Korte, nowrap-vennlige labels (se print-label-situation i css/style.css) - lange,
+                    // ubrutte labels tvinger verdikolonnen unødvendig smal og radhøyden opp, se
+                    // splitSectionBoxToFit-kommentaren ved layoutNormalColumns.
+                    { text: "Rorflater/servo", target: "Ingen skader, slarkfrie" },
+                    { text: "Pitotrør", target: "Uskadet" },
+                    { text: "Pitotrørhette", target: "Montert" },
+                    { text: "Batteri/bakkeutstyr", target: "Koblet til - RC-sender og bakkeutstyr på" },
+                    { text: "Telemetri", target: "Mottas på PC og RC" },
+                    { text: "Heading/roll/pitch", target: "Korrekte indikasjoner" },
+                    { text: "FENCE-oppsett", target: "VLOS: ca. 300 m / 120 m" },
+                    { text: "Flight modes (RC)", target: "Korrekt oppsett (sjekket i telemetri)" },
+                    { text: "Batteri", target: "Fulladet (ca. 50,4 V)" },
+                    { text: "Satellitter", target: "Mer enn 10" },
+                    { text: "Failsafe", target: "Riktig innstilling" },
+                    { text: "Tillatelse", target: "Gitt / ikke relevant" },
+                    { text: "Flight mode", target: "QLOITER" },
+                    { text: "Vindretning", target: "Nesa inn i vinden" },
+                    { text: "Servoer", target: "Testet" },
+                    // Arming + motorstart slått sammen til ett punkt (brukerønske: "Kanskje slå disse
+                    // sammen?") - var to separate punkter (selve håndgrepet / den påfølgende
+                    // motortilstanden), naturlig ETT sjekkpunkt.
+                    { text: "Arm", target: "Motorer idle, lavt turtall" }
+                ]
+            },
+            {
+                // Selve avgangen og den umiddelbare verifiseringssekvensen rett etter (2.3) - EGEN del,
+                // atskilt fra den løpende overvåkingen under selve operasjonen (se "Overvåking under
+                // flyging" under) - brukerønske: "Dette hører vel til en 'ETTER AVGANG' del?".
+                title: "Etter avgang", items: [
+                    // "Avgang" (øk throttle) fjernet - brukerønske, selvsagt/unødvendig som eget punkt.
+                    // Hovring/ro i hovring/pitchvinkel slått sammen til ett punkt (brukerønske: "Kan vel
+                    // slås sammen?").
+                    { text: "Hover", target: "20 sek ok" },
+                    { text: "Transisjonshøyde", target: "Over 50 m AGL" }
+                ]
+            },
+            {
+                // Løpende overvåking gjennom resten av operasjonen - de samme, generiske punktene som
+                // den generiske malen bruker her (se AIRCRAFT_CONTENT.generisk).
+                title: "Overvåking under flyging", items: [
+                    { text: "Omgivelser", target: "Klart" },
+                    { text: "Batteri og radiolink", target: "Tilstrekkelig" }
+                    // "Uventet oppførsel" (QLOITER/QRTL) flyttet til Contingency-fanen (brukerønske: "det
+                    // hører vel hjemme på contingency siden?") - se DEFAULTS.contingency, samme seksjon
+                    // "Uventet oppførsel".
+                ]
+            },
+            {
+                title: "Etter landing", items: [
+                    { text: "Motorer", target: "Avslått" },
+                    { text: "Tillatelse", target: "Rapportert landet / ikke relevant" },
+                    { text: "Farkost og propeller", target: "Sjekk ok" },
+                    { text: "Logg", target: "Ført" }
+                ]
+            }
+        ]
+    }
+};
+
+const DEFAULTS = {
+    normal: Object.assign(
+        { drone: "", approvalNumber: "", template: "mak", aircraft: DEFAULT_AIRCRAFT },
+        AIRCRAFT_CONTENT[DEFAULT_AIRCRAFT]
+    ),
     contingency: {
         title: "Contingency-sjekkliste",
         sections: [
@@ -124,9 +275,24 @@ const DEFAULTS = {
                 ]
             },
             {
+                // aircraft:"generisk" på begge punktene (brukerønske: "For FX-10 på contingency kan lavt
+                // batterinivå varsel fjernes") - denne delen gjelder derfor nå KUN de generiske malene,
+                // og faller helt bort (hele boksen, ikke bare tomme punkter - se originalItemCount-
+                // sjekken i buildSectionBoxesForPrint) når FX-10-malen er valgt, samme prinsipp som
+                // "Uventet oppførsel" rett under gjør motsatt vei (KUN for FX-10).
                 title: "Lavt batterinivå varsel", items: [
-                    { text: "Auto RTH", target: "Avbryt" },
-                    { text: "Drone", target: "Fly hjem og land" }
+                    { text: "Auto RTH", target: "Avbryt", aircraft: "generisk" },
+                    { text: "Drone", target: "Fly hjem og land", aircraft: "generisk" }
+                ]
+            },
+            {
+                // Flyttet hit fra normal-fanens FX-10-mal (brukerønske: "Dette hører vel hjemme på
+                // contingency siden?") - kun relevant for FX-10 (QLOITER/QRTL er ArduPilot VTOL-
+                // terminologi, gir ikke mening for en generisk sjekkliste), se aircraft-filtreringen
+                // (setActiveAircraft/TEMPLATE_CONFIG) - vises derfor KUN når FX-10-malen er valgt på
+                // normal-fanen, akkurat som MÅK/spesifikk-merkede punkter kun vises for sin kategori.
+                title: "Uventet oppførsel", items: [
+                    { text: "Uventet oppførsel", target: "Transiter til QLOITER, evt. QRTL", aircraft: "fx10" }
                 ]
             }
             // "Annet luftfartøy / trafikk i området", "Kraftig endring i vær/vind" og "Personer i
@@ -167,9 +333,9 @@ const DEFAULTS = {
             { key: "Ambulanse", value: "113" },
             { key: "Legevakt", value: "116 117" },
             { key: "Politi (ikke nød)", value: "02800" },
-            { key: "Operativ leder", value: "" },
+            { key: "FFI Operativ leder UAS", value: "" },
             { key: "UAS SITS", value: "520 7563 / 692 37 563 (sivilt innvalg)" },
-            { key: "UAS Autorisasjonstelefon", value: "458 72 017" }
+            { key: "UAS Aut. telefon", value: "458 72 017" }
         ],
         sections: [
             {
@@ -188,9 +354,8 @@ const DEFAULTS = {
                 ]
             },
             {
-                // "Fly-away / mistet kontakt" - samme singleColumn-behandling som "Ulykke" over, se
-                // kommentaren der.
-                title: "Fly-away / mistet kontakt", singleColumn: true, items: [
+                // "Fly-away" - samme singleColumn-behandling som "Ulykke" over, se kommentaren der.
+                title: "Fly-away", singleColumn: true, items: [
                     { target: "Samle informasjon om siste kjente posisjon, fart, retning, høyde, batteritid og dronetype." },
                     { target: "Vurder varsling av:\n- Lufttrafikktjenesten ved fly-away i kontrollert luftrom\n- Brannvesenet ved skogbrannfare\n- Politiet ved fly-away over bebygd område" },
                     { target: "Vurder om du skal søke etter dronen." },
@@ -344,13 +509,18 @@ function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal, 
 // getState() sin "tr.querySelector('.item-text') finnes kanskje ikke her"-guard og
 // buildSectionBoxesForPrint/buildSectionBox for tilsvarende utskrifts-håndtering.
 function createItemRow(item, showCheckbox, isNormal, singleColumn) {
-    item = item || { text: "", target: "", checked: false, variant: "" };
+    item = item || { text: "", target: "", checked: false, variant: "", aircraft: "" };
     const tr = document.createElement("tr");
     const onEdit = isNormal ? function () { saveState(); markNormalCustom(); } : saveState;
     // Malvalget (MÅK/spesifikk) et sjekkpunkt hører til er satt av standardmalen, ikke redigerbart per
     // rad - kun nedtrekksmenyen øverst på fanen styrer hvilke rader som vises, se setNormalTemplate og
     // CSS-filtreringen på tr[data-variant] i style.css.
     tr.dataset.variant = item.variant || "";
+    // Fartøytype (Generisk/FX-10) et punkt hører til - samme prinsipp som data-variant over, men for
+    // fartøytype-aksen (se setActiveAircraft/TEMPLATE_CONFIG). Tomt (default) betyr "gjelder alle
+    // fartøytyper" - kun eksplisitt merkede punkter (f.eks. et FX-10-spesifikt contingency-punkt om
+    // QLOITER/QRTL) filtreres bort når en ANNEN fartøytype er aktiv.
+    tr.dataset.aircraft = item.aircraft || "";
 
     if (showCheckbox) {
         const tdCheck = document.createElement("td");
@@ -638,10 +808,14 @@ function getState() {
     // setNormalTemplate for hvorfor de to måtte skilles fra hverandre).
     const normalPanel = document.getElementById("tabPanel-normal");
     const activeCategory = (normalPanel && normalPanel.getAttribute("data-category")) || "mak";
+    // aircraft (Generisk/FX-10) - samme delt-attributt-prinsipp som category over, se
+    // setActiveAircraft-kommentaren.
+    const activeAircraft = (normalPanel && normalPanel.getAttribute("data-aircraft")) || DEFAULT_AIRCRAFT;
     TAB_KEYS.forEach(function (tabKey) {
         const tabState = {
             title: (document.getElementById(tabKey + "-title") || {}).value || "",
-            category: activeCategory
+            category: activeCategory,
+            aircraft: activeAircraft
         };
 
         if (tabKey === "normal") {
@@ -683,7 +857,8 @@ function getState() {
                         text: textEl ? textEl.value : "",
                         target: tr.querySelector(".item-target").value,
                         checked: checkbox ? checkbox.checked : false,
-                        variant: tr.dataset.variant || ""
+                        variant: tr.dataset.variant || "",
+                        aircraft: tr.dataset.aircraft || ""
                     };
                 })
             };
@@ -715,24 +890,41 @@ function setActiveCategory(category) {
     if (contingencyPanel) contingencyPanel.setAttribute("data-category", category);
 }
 
-// Setter selve nedtrekksmenyens tilstand (MÅK/spesifikk/egendefinert) - data-template-attributtet på
-// tabPanel-normal alene, KUN normal-fanens egen "har jeg avveket fra standardmalen"-status (brukt av
-// f.eks. templateSelect-lytteren for å vite hva den skal tilbakestille TIL hvis brukeren avbryter en
-// bekreftelsesdialog). IKKE lenger det samme som filtreringskategorien (se setActiveCategory over) -
-// oppdaterer kategorien KUN når malvalget faktisk ER en av de to offisielle malene (mak/spesifikk), ALDRI
-// når det går til "custom" (se markNormalCustom) - en redigering av normal-fanens EGET innhold skal ikke
-// lenger kunne slå av MÅK/spesifikk-filtreringen på "Tap av C2 link" som et utilsiktet sideeffekt.
+// Fartøytypen (Generisk/FX-10) som filtrerer aircraft-merkede punkter (se tr[data-aircraft] i
+// createItemRow/css/style.css) - samme delt-attributt-prinsipp som setActiveCategory over, satt på
+// BÅDE normal- og contingency-panelet, slik at et fartøyspesifikt contingency-punkt (f.eks. "Uventet
+// oppførsel" -> QLOITER/QRTL, kun relevant for FX-10) kan vises/skjules basert på hvilken mal som er
+// valgt på normal-fanen, selv om selve nedtrekksmenyen bare finnes der.
+function setActiveAircraft(aircraft) {
+    const panel = document.getElementById("tabPanel-normal");
+    if (panel) panel.setAttribute("data-aircraft", aircraft);
+    const contingencyPanel = document.getElementById("tabPanel-contingency");
+    if (contingencyPanel) contingencyPanel.setAttribute("data-aircraft", aircraft);
+}
+
+// Setter selve nedtrekksmenyens tilstand (mak/spesifikk/fx10-mak/fx10-spesifikk/egendefinert) -
+// data-template-attributtet på tabPanel-normal alene, KUN normal-fanens egen "har jeg avveket fra
+// standardmalen"-status (brukt av f.eks. templateSelect-lytteren for å vite hva den skal tilbakestille
+// TIL hvis brukeren avbryter en bekreftelsesdialog). Oppdaterer filtreringskategorien OG -fartøytypen
+// (se setActiveCategory/setActiveAircraft) KUN når malvalget faktisk ER en av de fire offisielle malene
+// (se TEMPLATE_CONFIG), ALDRI når det går til "custom" (se markNormalCustom) - en redigering av
+// normal-fanens EGET innhold skal ikke lenger kunne slå av MÅK/spesifikk- eller fartøytype-
+// filtreringen på contingency-fanen som en utilsiktet sideeffekt.
 function setNormalTemplate(template) {
     const panel = document.getElementById("tabPanel-normal");
     if (panel) panel.setAttribute("data-template", template);
-    if (template === "mak" || template === "spesifikk") setActiveCategory(template);
+    const config = TEMPLATE_CONFIG[template];
+    if (config) {
+        setActiveCategory(config.category);
+        setActiveAircraft(config.aircraft);
+    }
     const select = document.getElementById("normal-template-select");
     if (select && select.value !== template) select.value = template;
 }
 
 // Kalles på enhver redigering av selve sjekklisteinnholdet (utstyr, begrensninger, sjekklistedeler/
 // -punkter) på normal-fanen - i det øyeblikket brukeren begynner å tilpasse innholdet er det ikke
-// lenger den offisielle MÅK- eller spesifikk-malen, så valget hopper automatisk til "Egendefinert".
+// lenger den offisielle malen den startet som, så valget hopper automatisk til "Egendefinert".
 // Gjør ingenting hvis malen allerede står på egendefinert (unngår unødvendig re-rendering/lagring).
 // Rører (via setNormalTemplate sin egen guard) IKKE selve filtreringskategorien - se der.
 function markNormalCustom() {
@@ -753,18 +945,22 @@ function clearTabContent(tabKey) {
     if (sectionsContainer) sectionsContainer.innerHTML = "";
 }
 
-// Gjenoppretter normal-fanens utstyrsliste, begrensninger og sjekklistedeler fra standardmalen -
-// brukes når man aktivt velger MÅK/spesifikk i nedtrekksmenyen, slik at man faktisk får tilbake det
-// opprinnelige innholdet (inkl. eventuelle rader man har slettet), ikke bare et filter over det som
-// måtte stå der fra før. Drone/autorisasjonsnummer røres ikke - det er identifiserende info, ikke
-// sjekklisteinnhold. ALL sjekklistedel-tekst (utstyr, begrensninger, sjekkpunkter) overskrives, så
-// kalles kun etter bekreftelse (se templateSelect-lytteren i DOMContentLoaded).
+// Gjenoppretter normal-fanens utstyrsliste, begrensninger og sjekklistedeler fra standardmalen - brukes
+// når man aktivt velger en av de fire offisielle malene i nedtrekksmenyen (se TEMPLATE_CONFIG), slik at
+// man faktisk får tilbake det opprinnelige innholdet (inkl. eventuelle rader man har slettet), ikke bare
+// et filter over det som måtte stå der fra før. Drone/autorisasjonsnummer røres ikke - det er
+// identifiserende info, ikke sjekklisteinnhold. ALL sjekklistedel-tekst (utstyr, begrensninger,
+// sjekkpunkter) overskrives, så kalles kun etter bekreftelse (se templateSelect-lytteren i
+// DOMContentLoaded).
 function reloadNormalFromDefaults(template) {
+    const config = TEMPLATE_CONFIG[template] || TEMPLATE_CONFIG.mak;
+    const content = AIRCRAFT_CONTENT[config.aircraft] || AIRCRAFT_CONTENT[DEFAULT_AIRCRAFT];
+
     clearTabContent("normal");
 
-    DEFAULTS.normal.equipment.forEach(function (text) { addEquipment("normal", text); });
-    DEFAULTS.normal.limits.forEach(function (limit) { addLimit("normal", limit.key, limit.value); });
-    DEFAULTS.normal.sections.forEach(function (section) { addSection("normal", section); });
+    content.equipment.forEach(function (text) { addEquipment("normal", text); });
+    content.limits.forEach(function (limit) { addLimit("normal", limit.key, limit.value); });
+    content.sections.forEach(function (section) { addSection("normal", section); });
 
     setNormalTemplate(template);
     saveState();
@@ -866,12 +1062,13 @@ function renderTab(tabKey, data) {
         const approvalInput = document.getElementById("normal-approval-number");
         if (approvalInput) approvalInput.value = data.approvalNumber || "";
         setNormalTemplate(data.template || "mak");
-        // Gjenoppretter filtreringskategorien EKSPLISITT her, uansett hva data.template måtte være (også
-        // "custom" - der ville setNormalTemplate sin egen guard (se der) IKKE rørt kategorien i det hele
-        // tatt) - uten denne ville en lagret "custom"-tilstand (fra FØR denne fiksen, se BUG-kommentaren
-        // ved buildSectionBoxesForPrint) latt kategorien stå på HTML-ens hardkodede startverdi ("mak") i
-        // stedet for brukerens faktisk sist valgte MÅK/spesifikk.
+        // Gjenoppretter filtreringskategorien OG -fartøytypen EKSPLISITT her, uansett hva data.template
+        // måtte være (også "custom" - der ville setNormalTemplate sin egen guard (se der) IKKE rørt dem i
+        // det hele tatt) - uten dette ville en lagret "custom"-tilstand (fra FØR denne fiksen, se BUG-
+        // kommentaren ved buildSectionBoxesForPrint) latt kategorien/fartøytypen stå på HTML-ens
+        // hardkodede startverdi i stedet for brukerens faktisk sist valgte.
         setActiveCategory(data.category || "mak");
+        setActiveAircraft(data.aircraft || DEFAULT_AIRCRAFT);
     }
 
     if (Array.isArray(data.equipment)) {
@@ -978,14 +1175,16 @@ const BOX_ICONS = {
     "Før avreise": "fa-clipboard-check",
     "På operasjonsområdet": "fa-map-location-dot",
     "Før avgang": "fa-plane-departure",
+    "Etter avgang": "fa-arrow-trend-up",
     "Overvåking under flyging": "fa-eye",
     "Etter landing": "fa-flag-checkered",
     "Tap av C2 link": "fa-wifi",
     "Tap av GNSS": "fa-satellite-dish",
     "Lavt batterinivå varsel": "fa-battery-quarter",
+    "Uventet oppførsel": "fa-compass",
     "Fly-away / kontrolltap": "fa-triangle-exclamation",
     "Ulykke": "fa-car-burst",
-    "Fly-away / mistet kontakt": "fa-magnifying-glass-location"
+    "Fly-away": "fa-magnifying-glass-location"
 };
 const DEFAULT_BOX_ICON = "fa-clipboard-list";
 
@@ -1049,7 +1248,10 @@ function buildLimitsBox(limits, title, isContactList) {
     box.appendChild(header);
 
     const table = document.createElement("table");
-    table.className = "print-rows";
+    // print-rows-contacts (KUN kontaktlisten, se isContactList) - brukerønske: første kolonne (kontakt-
+    // navnet) skulle være litt bredere enn Begrensninger/Utstyrsliste sin auto-fordelte bredde, uten å
+    // gjøre generisk .print-rows fastlåst for de andre boksene som fortsatt deler samme tabellklasse.
+    table.className = "print-rows" + (isContactList ? " print-rows-contacts" : "");
     rows.forEach(function (l) {
         const emergencyIcon = isContactList ? ERP_EMERGENCY_CONTACTS[l.key.trim()] : null;
         const keyCell = { className: "print-label print-key" + (emergencyIcon ? " print-key-emergency" : ""), text: l.key };
@@ -1067,7 +1269,12 @@ function buildLimitsBox(limits, title, isContactList) {
 // GNSS", "Kollisjon / krasj" osv.), så en egen situasjon-kolonne ved siden av tiltaket er "smør på
 // flesk" - vis kun selve tiltaket/handlingen. Ved flere punkter trengs fortsatt situasjon+tiltak per
 // rad for å skille dem fra hverandre.
-function buildSectionBox(section, showCheckbox) {
+// startNumber (valgfri, default 1) - hvilket tall FØRSTE rad skal få. Brukt av splitSectionBoxToFit
+// (se layoutNormalColumns) slik at en "... forts."-fortsettelsesboks fortsetter nummereringen der den
+// opprinnelige delen slapp (rapportert: "forts."-boksen startet på nytt fra 1) i stedet for at hver av
+// de to delboksene teller fra 1 hver for seg.
+function buildSectionBox(section, showCheckbox, startNumber) {
+    startNumber = startNumber || 1;
     // singleColumn-deler (se createItemRow-kommentaren) legger ALT innholdet i item.target, item.text er
     // alltid tom der - BUG (ville filtrert bort ALLE punktene i f.eks. ERP sin "Ulykke"/"Fly-away" og vist
     // "Ingen sjekkpunkter" i utskriften) hvis dette fortsatt filtrerte kun på it.text slik det gjorde før
@@ -1127,7 +1334,7 @@ function buildSectionBox(section, showCheckbox) {
         // siden av FØRSTE linje slik en vanlig nummerert liste ellers ville gjort. print-number-top (KUN
         // lagt på for singleColumn) toppjusterer akkurat disse radene, uten å røre den bevisste
         // midtjusteringen på resten av utskriften.
-        cells.push({ className: "print-number" + (singleColumn ? " print-number-top" : ""), text: (index + 1) + "." });
+        cells.push({ className: "print-number" + (singleColumn ? " print-number-top" : ""), text: (startNumber + index) + "." });
         if (singleColumn) {
             // Ren, bred énkolonne-celle (se createItemRow-kommentaren) - ingen situasjon/tiltak-splitt,
             // kun selve prosedyretrinnet. print-value-wide (se css/style.css) bruker white-space:pre-line
@@ -1257,19 +1464,40 @@ function buildSectionBoxesForPrint(tabKey, data) {
     // oppdateres når brukeren faktisk velger MÅK/spesifikk (se setActiveCategory/getState), aldri av
     // markNormalCustom - filtreringen er dermed uavhengig av om normal-fanens eget innhold er tilpasset.
     const template = data.category || "mak";
+    const aircraft = data.aircraft || DEFAULT_AIRCRAFT;
     const boxes = [];
     (data.sections || []).forEach(function (section) {
         // Variant-filtreringen gjaldt FØR kun normal-fanen (den eneste som hadde mak/spesifikk-merkede
         // punkter). Nå har contingency-fanen også slike (se "Tap av C2 link" i DEFAULTS.contingency), så
         // filteret kjøres nå uansett tabKey - harmløst for faner uten variant-merkede punkter (it.variant
-        // er da alltid tom, og filteret slipper gjennom alt akkurat som før).
+        // er da alltid tom, og filteret slipper gjennom alt akkurat som før). aircraft-filteret (nytt)
+        // følger samme prinsipp - harmløst for punkter uten it.aircraft satt.
+        const originalItemCount = (section.items || []).length;
         const items = (section.items || []).filter(function (it) {
-            if (!it.variant) return true;
-            if (template !== "mak" && template !== "spesifikk") return true;
-            return it.variant === template;
+            if (it.variant) {
+                if (template === "mak" || template === "spesifikk") {
+                    if (it.variant !== template) return false;
+                }
+            }
+            if (it.aircraft && it.aircraft !== aircraft) return false;
+            return true;
         });
-        const sectionBox = buildSectionBox({ title: section.title, items: items, singleColumn: section.singleColumn }, showCheckbox);
-        if (sectionBox) boxes.push(sectionBox);
+        // Har filtreringen fjernet SAMTLIGE punkter i en del som opprinnelig HADDE punkter (f.eks. et
+        // fartøyspesifikt contingency-punkt vist for feil fartøytype) - hopp over hele delen i stedet
+        // for å vise en tom "Ingen sjekkpunkter"-boks for noe som rett og slett ikke gjelder akkurat nå.
+        // (En del som var tom FRA FØR, uten noen egne punkter i det hele tatt, vises fortsatt som normalt
+        // - se buildSectionBox sin egen "Ingen sjekkpunkter"-visning for DEN situasjonen.)
+        if (originalItemCount > 0 && !items.length) return;
+        const printSection = { title: section.title, items: items, singleColumn: section.singleColumn };
+        const sectionBox = buildSectionBox(printSection, showCheckbox);
+        if (sectionBox) {
+            // Brukt av layoutNormalColumns/splitSectionBoxToFit til å bygge en DELT versjon av boksen
+            // (se der) hvis den ikke får plass i sin helhet - selve DOM-boksen alene har ikke nok
+            // informasjon til å gjenoppbygges mindre, siden f.eks. filtrerte punkter allerede er bakt inn.
+            sectionBox.__printSection = printSection;
+            sectionBox.__showCheckbox = showCheckbox;
+            boxes.push(sectionBox);
+        }
     });
     return boxes;
 }
@@ -1459,11 +1687,86 @@ const PRINT_CONTENT_WIDTH_MM = 176;
 // på 14mm, se .print-grid-kommentaren der) - samme regnestykke, slik at en probe-måling i denne bredden
 // stemmer med hvordan kolonnen faktisk brytes/vokser i den ferdige utskriften.
 const NORMAL_COL_WIDTH_MM = PRINT_CONTENT_WIDTH_MM / 2 - 7;
-// Tilgjengelig høyde for INNHOLDET i én kolonne (267mm sideminstehøyde - 4mm topp-/10mm bunnpadding på
-// .print-page - ca. 18-19mm for selve tittelbanneret+dens egen bunnmarg, se buildPrintHeader/.print-header
-// i css/style.css) - med noe margin, samme "font-rendering kan variere marginalt"-begrunnelse som
-// COMBINED_HALF_MAX_HEIGHT_MM over.
-const NORMAL_COLUMN_MAX_HEIGHT_MM = 220;
+// Tilgjengelig høyde for INNHOLDET i én kolonne (277mm sideminstehøyde - nå 10mm topp-/bunnmarg på
+// @page, se style.css - 4mm topp-/10mm bunnpadding på .print-page - ca. 18-19mm for selve
+// tittelbanneret+dens egen bunnmarg, se buildPrintHeader/.print-header i css/style.css) - med noe
+// margin, samme "font-rendering kan variere marginalt"-begrunnelse som COMBINED_HALF_MAX_HEIGHT_MM
+// under.
+// HISTORIKK: senket til 190 i en tidligere runde (rapportert: en 19-punkts FX-10-del ("Før avgang")
+// havnet alene på en helt egen side) - men det viste seg IKKE å være et kalibreringsproblem i det hele
+// tatt: den faktiske feilen var at overflow-boksene ble vurdert som ÉN alt-eller-ingenting-bunt i
+// stedet for hver for seg (se den grådige boks-for-boks-løkken i layoutNormalColumns under) - en liten
+// "... forts."-boks ble dermed avvist sammen med to STØRRE bokser den var bundet til, selv om den
+// alene ville fått fint plass. Med den reelle feilen rettet var 190 unødvendig strengt (rapportert:
+// en kort "Etter landing"-del (4 punkter) ble likevel dyttet til en nesten tom side 2, til tross for
+// tydelig synlig ledig plass i høyre kolonne på side 1) - hevet tilbake til nær opprinnelig 220, pluss
+// de 10mm ekstra sidehøyde marg-reduksjonen over nå gir.
+const NORMAL_COLUMN_MAX_HEIGHT_MM = 230;
+
+// Brukerønske ("Når [en sjekklistedel] blir veldig lang, må den på printen få fortsette i neste kolonne
+// på samme side. Ikke havne på en helt ny side. Og kanskje da... få som overskriftslinje 'Før avgang
+// forts.'") - en enkelt sjekklistedel kan bli lengre enn det som er igjen i venstre kolonne (f.eks. en
+// fartøyspesifikk "Før avgang" med 15-20 punkter, se AIRCRAFT_CONTENT.fx10), og da er den nesten
+// uunngåelig LENGRE enn hele resten av venstre kolonnes eget budsjett også isolert - layoutNormalColumns
+// sitt vanlige "flytt HELE boksen til høyre kolonne hvis den ikke får plass i venstre" (se under) løser
+// dermed IKKE dette tilfellet alene, siden boksen fortsatt ikke får plass i sin helhet noe sted. Splitter
+// derfor akkurat DEN boksen som først overskrider budsjettet i to - se splitSectionBoxToFit - i stedet
+// for å la den forbli udelt og falle igjennom til gammel "hopp til ny side"-oppførsel.
+// Binærsøk ville vært raskere, men et enkelt lineært søk (fra flest til færrest punkter) er mer enn
+// raskt nok for realistiske sjekklistedel-lengder (typisk under 20 punkter) og enklere å resonnere
+// riktig om. Returnerer null (ingen deling mulig) hvis ikke engang ÉTT punkt pluss overskriften får
+// plass i det tilgjengelige rommet - kalleren faller da tilbake til den gamle "hele boksen flyttes/
+// overflower"-oppførselen, aldri verre enn før denne utvidelsen.
+//
+// probe MÅ være DET SAMME probe-elementet som kalleren allerede har brukt til å bekrefte at boksene
+// FØR denne (0..i-1, se layoutNormalColumns) faktisk får plass - IKKE et eget, tomt probe-element med
+// etterfølgende subtraksjons-regnestykke (maxHeightPx - allerede brukt) slik denne funksjonen gjorde
+// tidligere. BUG (rapportert av brukeren, med skjermbilde: en splittet dels "forts."-halvdel dukket opp
+// PÅ SIDE 1, mens hoveddelen (lavere numre) først dukket opp øverst på SIDE 2 - stikk motsatt
+// leserekkefølge) - subtraksjon antar at høyder er rent additive, men CSS-marger mellom tilstøtende
+// bokser (se .print-box sin margin-bottom) kollapser/oppfører seg ikke alltid helt likt i en ISOLERT
+// måling som i den FAKTISKE, kumulative flyten - et par mm avvik der var nok til at en kandidat denne
+// funksjonen trodde fikk plass, likevel overflowet til side 2 når den faktisk ble limt inn sammen med
+// alt det andre i venstre kolonne. Ved i stedet å måle kandidaten OPPÅ nøyaktig den samme, allerede
+// fylte proben (samme DOM-kontekst, ingen egen isolert måling å avvike fra) matcher denne funksjonens
+// "får plass"-vurdering nøyaktig den samme kumulative konteksten resten av venstre kolonne allerede ble
+// godkjent i.
+// PRINT_FIT_SAFETY_MARGIN_MM: ekstra buffer for "får plass"-avgjørelser i layoutNormalColumns - BÅDE
+// for selve delingsgrensen (splitSectionBoxToFit under) OG for den vanlige hele-boks-avgjørelsen i
+// hovedløkken (se der). Rapportert FLERE GANGER nå, med skjermbilde hver gang - senest en HEL, USPLITTET
+// "Etter avgang" (kun 2 punkter) som proben mente fikk plass i venstre kolonne, men som likevel landet
+// alene på en egen side ved faktisk utskrift. Først antatt å KUN gjelde delingsgrensen spesifikt (se
+// forrige runde), men et helt UDELT, lite punkt som feilbedømmes samme vei tyder på at avviket sitter i
+// selve MÅLETEKNIKKEN (mistanke: proben er en ren, absolutt-posisjonert div, mens den VIRKELIGE kolonnen
+// er et float-element inni flow-root/print-grid - subtile forskjeller i hvordan nettleseren løser bredde/
+// høyde-beregning der er trolig involvert), ikke noe som er unikt for delte bokser. Gjelder derfor nå
+// BEGGE stedene. Bevisst asymmetrisk: å vurdere noe som "ikke får plass" én rad for tidlig er en uskyldig
+// kosmetisk detalj (havner i høyre kolonne/neste side i stedet, fortsatt korrekt LESEREKKEFØLGE), mens å
+// vurdere det feil andre veien gir nettopp den forvirrende, FEILAKTIGE leserekkefølgen som er rapportert.
+const PRINT_FIT_SAFETY_MARGIN_MM = 8;
+function splitSectionBoxToFit(printSection, showCheckbox, probe, maxHeightPx) {
+    const items = printSection.items;
+    if (items.length < 2) return null;
+    const safeMaxHeightPx = maxHeightPx - PRINT_FIT_SAFETY_MARGIN_MM * MM_TO_PX;
+    let result = null;
+    for (let n = items.length - 1; n >= 1; n--) {
+        const candidate = buildSectionBox({ title: printSection.title, items: items.slice(0, n), singleColumn: printSection.singleColumn }, showCheckbox);
+        if (!candidate) continue;
+        probe.appendChild(candidate);
+        const fits = probe.scrollHeight <= safeMaxHeightPx;
+        probe.removeChild(candidate);
+        if (fits) {
+            const remainder = buildSectionBox(
+                { title: (printSection.title || "Uten navn") + " forts.", items: items.slice(n), singleColumn: printSection.singleColumn },
+                showCheckbox,
+                n + 1 // fortsetter nummereringen der "candidate" (rad 1..n) slapp, se buildSectionBox
+            );
+            result = { fitted: candidate, remainder: remainder };
+            break;
+        }
+    }
+    return result;
+}
 
 // Brukerønske ("jeg lurer på overflowen til den sjekklisteboksen. den havner på neste side. Men her passer
 // det vel bedre å ha den over på neste kolonne når det er plass der?") - venstre kolonne (sjekklistedeler)
@@ -1502,41 +1805,79 @@ function layoutNormalColumns(leftCol, rightCol, sectionBoxes) {
     probe.innerHTML = "";
 
     // 2) Hvor mange sjekklistedeler (i rekkefølge, fra toppen) får plass i venstre kolonne innenfor
-    // sidebudsjettet?
+    // sidebudsjettet? Boksene som allerede er bekreftet å få plass BLIR STÅENDE i proben mens de
+    // følgende testes (i stedet for å tømmes/måles isolert per steg) - splitSectionBoxToFit trenger
+    // nettopp DENNE kumulative konteksten for å måle en delt kandidat presist, se kommentaren der.
+    // Samme PRINT_FIT_SAFETY_MARGIN_MM som splitSectionBoxToFit brukes her også (se kommentaren ved
+    // konstanten) - en hel, USPLITTET boks er rapportert feilbedømt til å få plass på nøyaktig samme vis
+    // som en delt kandidat kunne bli, så samme buffer gjelder begge veier gjennom denne løkken.
+    const safeMaxHeightPx = maxHeightPx - PRINT_FIT_SAFETY_MARGIN_MM * MM_TO_PX;
     let fitCount = sectionBoxes.length;
+    let splitResult = null; // { index, fitted, remainder } - satt kun hvis boksen som stanset skanningen faktisk lot seg dele
     for (let i = 0; i < sectionBoxes.length; i++) {
         probe.appendChild(sectionBoxes[i]);
-        if (probe.scrollHeight > maxHeightPx) { fitCount = i; break; }
+        if (probe.scrollHeight > safeMaxHeightPx) {
+            probe.removeChild(sectionBoxes[i]); // proben inneholder nå nøyaktig boksene 0..i-1, se over
+            const meta = sectionBoxes[i].__printSection;
+            const split = meta ? splitSectionBoxToFit(meta, sectionBoxes[i].__showCheckbox, probe, maxHeightPx) : null;
+            fitCount = i;
+            if (split) splitResult = { index: i, fitted: split.fitted, remainder: split.remainder };
+            break;
+        }
     }
     probe.innerHTML = "";
     document.body.removeChild(probe);
 
     const fitting = sectionBoxes.slice(0, fitCount);
-    const overflowing = sectionBoxes.slice(fitCount);
     fitting.forEach(function (box) { leftCol.appendChild(box); });
+
+    let overflowing;
+    if (splitResult) {
+        // Selve originalboksen (sectionBoxes[splitResult.index]) er nå fullstendig erstattet av de to
+        // nye, mindre boksene - den brukes ikke videre og havner verken i venstre eller høyre kolonne.
+        leftCol.appendChild(splitResult.fitted);
+        overflowing = [splitResult.remainder].concat(sectionBoxes.slice(splitResult.index + 1));
+    } else {
+        overflowing = sectionBoxes.slice(fitCount);
+    }
     if (!overflowing.length) return;
 
     // 3) Får overflow-delen(e) plass i høyre kolonne, sammen med den ledige høyden som er igjen der?
+    // GRÅDIG, boks for boks (IKKE lenger "får ALLE plass i sin helhet, ellers ingen") - rapportert med
+    // skjermbilde: en liten "... forts."-boks (som klart hadde fått plass alene i den ellers halvtomme
+    // høyre kolonnen) ble likevel dyttet til en helt ny side fordi den var bundet sammen med to STØRRE
+    // deler etter seg (som til sammen IKKE fikk plass) i én alt-eller-ingenting-vurdering. Prøver nå hver
+    // overflow-boks for seg, i rekkefølge, og stopper ved FØRSTE som ikke får plass - resten (uansett
+    // hvor mange) faller tilbake til venstre kolonne som før (naturlig side-2-overflow via float-
+    // paginering, se .print-col-kommentaren i css/style.css).
+    const rightAnchor = rightCol.firstChild;
     const probe2 = document.createElement("div");
     probe2.style.cssText = probeStyle;
     document.body.appendChild(probe2);
-    overflowing.forEach(function (box) { probe2.appendChild(box); });
-    const overflowHeightPx = probe2.scrollHeight;
+    // Samme margin som over (se PRINT_FIT_SAFETY_MARGIN_MM) - denne grådige høyre-kolonne-plasseringen
+    // er nettopp der den siste, minste "Etter avgang"-varianten (2 punkter, ikke delt) ble feilbedømt
+    // til å få plass av en isolert probe2-måling, men likevel landet alene på egen side ved faktisk print.
+    let placedInRight = 0;
+    for (let i = 0; i < overflowing.length; i++) {
+        probe2.appendChild(overflowing[i]);
+        if (probe2.scrollHeight > maxHeightPx - rightUsedPx - PRINT_FIT_SAFETY_MARGIN_MM * MM_TO_PX) {
+            probe2.removeChild(overflowing[i]);
+            break;
+        }
+        placedInRight = i + 1;
+    }
+    probe2.innerHTML = "";
     document.body.removeChild(probe2);
 
-    if (overflowHeightPx <= maxHeightPx - rightUsedPx) {
-        // Settes inn ØVERST i høyre kolonne, foran utstyr/begrensninger (ikke appendChild/nederst) -
-        // brukerpresisering: sjekklisteboksen som overflower skal komme OVER utstyr/begrensninger, som
-        // aldri skal stå øverst i en kolonne den deler med en sjekklisteboks. rightAnchor er hentet FØR
-        // innsettingen starter og endrer seg dermed aldri underveis - insertBefore(box, rightAnchor)
-        // plasserer hver overflow-boks rett før akkurat DEN opprinnelige første boksen (uansett om den er
-        // null, dvs. høyre kolonne var tom fra før - insertBefore(node, null) tilsvarer da appendChild),
-        // så overflow-boksene havner i egen, uendret rekkefølge over det opprinnelige innholdet.
-        const rightAnchor = rightCol.firstChild;
-        overflowing.forEach(function (box) { rightCol.insertBefore(box, rightAnchor); });
-    } else {
-        overflowing.forEach(function (box) { leftCol.appendChild(box); });
-    }
+    // Settes inn ØVERST i høyre kolonne, foran utstyr/begrensninger (ikke appendChild/nederst) -
+    // brukerpresisering: sjekklisteboksen som overflower skal komme OVER utstyr/begrensninger, som aldri
+    // skal stå øverst i en kolonne den deler med en sjekklisteboks. rightAnchor er hentet FØR innsettingen
+    // starter og endrer seg dermed aldri underveis - insertBefore(box, rightAnchor) plasserer hver
+    // overflow-boks rett før akkurat DEN opprinnelige første boksen (uansett om den er null, dvs. høyre
+    // kolonne var tom fra før - insertBefore(node, null) tilsvarer da appendChild), så overflow-boksene
+    // havner i egen, uendret rekkefølge over det opprinnelige innholdet.
+    overflowing.slice(0, placedInRight).forEach(function (box) { rightCol.insertBefore(box, rightAnchor); });
+    overflowing.slice(placedInRight).forEach(function (box) { leftCol.appendChild(box); });
 }
 
 function combinedHalvesFit(contingencyData, emergencyData) {
@@ -1568,6 +1909,19 @@ function combinedHalvesFit(contingencyData, emergencyData) {
 // .print-grid er en vanlig, forutsigbar to-kolonners grid, ikke en auto-balanserende multi-kolonne-layout.
 const PRINT_ALL_MAX_HEIGHT_MM = 245;
 
+// BUG (rapportert av brukeren: FX-10-malen - klart den lengste av alle sjekklistene, dermed nærmest denne
+// terskelen av samtlige maler - fikk ERP-boksen til å hoppe til neste side i sin helhet selv med
+// buildCombinedTriplePage valgt, mens de kortere generiske malene printet helt fint) - samme feilklasse
+// som PRINT_FIT_SAFETY_MARGIN_MM lenger opp ble innført for: denne proben er en isolert,
+// absolutt-posisjonert div utenfor selve #printView/.print-page sin egen kontekst, og har vist seg å
+// UNDERVURDERE den virkelige renderte høyden med noen millimeter nær grensen - "fungerer for de andre
+// malene" er nettopp det man forventer av en terskel som bommer med noen få mm: kun den lengste, mest
+// grensetilfelle-utsatte malen rammes. Samme asymmetriske begrunnelse som før gjelder: å vurdere
+// kombinasjonen som "får IKKE plass" litt for tidlig er ufarlig (ERP faller da bare tilbake til sin egen,
+// allerede fungerende, separate side, se buildAllPrintPages) - å vurdere feil andre veien er nettopp
+// buggen som er rapportert.
+const PRINT_ALL_SAFETY_MARGIN_MM = 8;
+
 function combinedAllFit(contingencyData, emergencyData, erpData) {
     const probe = document.createElement("div");
     probe.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + PRINT_CONTENT_WIDTH_MM + "mm; display:block;";
@@ -1582,7 +1936,7 @@ function combinedAllFit(contingencyData, emergencyData, erpData) {
     }
     probe.appendChild(wrapper);
 
-    const fits = wrapper.scrollHeight <= PRINT_ALL_MAX_HEIGHT_MM * MM_TO_PX;
+    const fits = wrapper.scrollHeight <= (PRINT_ALL_MAX_HEIGHT_MM - PRINT_ALL_SAFETY_MARGIN_MM) * MM_TO_PX;
 
     document.body.removeChild(probe);
     return fits;
@@ -1607,7 +1961,17 @@ function buildErpBody(data) {
         const contactBox = buildLimitsBox(data.limits, "Kontaktliste", true);
         if (contactBox) rightCol.appendChild(contactBox);
     }
-    buildSectionBoxesForPrint("erp", data).forEach(function (box) { leftCol.appendChild(box); });
+    // layoutNormalColumns (ikke et rent .forEach(...leftCol.appendChild) som før) - ERP-siden bruker
+    // nøyaktig samme faste venstre/høyre-oppdeling (sjekklistedeler / Kontaktliste) som Normal-siden (se
+    // buildNormalPage), og Kontaktliste er ofte langt kortere enn sjekklistedelene til venstre - samme
+    // "det er ledig plass i høyre kolonne, men en sjekklistedel hopper likevel til en helt ny side"-bug
+    // som ble rapportert og fikset for Normal-siden (se kommentaren ved funksjonen). ERP kalte tidligere
+    // rett .forEach her og manglet dermed helt denne overflow-til-høyre-kolonne-håndteringen - selv om
+    // funksjonsnavnet fortsatt sier "Normal", er selve implementasjonen allerede generisk (tar inn
+    // leftCol/rightCol/sectionBoxes som parametre, ingen Normal-spesifikk logikk inni), og ERP-siden har
+    // identisk sidebredde/kolonnebredde/toppmarg (samme print-header-half + print-grid-oppsett), så den
+    // gjenbrukes direkte i stedet for å bygge en egen, parallell kopi som kan drifte fra denne.
+    layoutNormalColumns(leftCol, rightCol, buildSectionBoxesForPrint("erp", data));
 
     if (!leftCol.children.length && !rightCol.children.length) return null;
 
@@ -1757,13 +2121,13 @@ document.addEventListener("DOMContentLoaded", function () {
             const panel = document.getElementById("tabPanel-normal");
             const current = (panel && panel.getAttribute("data-template")) || "mak";
 
-            // MÅK/spesifikk er ment å være de offisielle malene - å velge en av dem skal faktisk gi deg
-            // tilbake det opprinnelige innholdet (også det du evt. har slettet), ikke bare filtrere det
-            // som måtte stå der fra før. Egendefinert trenger ingen bekreftelse - det er alltid trygt
-            // (viser bare alt, sletter ingenting).
-            if (chosen === "mak" || chosen === "spesifikk") {
-                const label = chosen === "mak" ? "MÅK" : "Spesifikk";
-                if (confirm("Bytte til " + label + "-malen? Dette gjenoppretter standard utstyrsliste, begrensninger og sjekklistedeler på normal-fanen, og overskriver eventuelle egne endringer der.")) {
+            // De fire offisielle malene (se TEMPLATE_CONFIG) er ment å faktisk gi deg tilbake det
+            // opprinnelige innholdet (også det du evt. har slettet), ikke bare filtrere det som måtte stå
+            // der fra før - derfor bekreftelse først. Egendefinert trenger ingen bekreftelse - det er
+            // alltid trygt (viser bare alt, sletter ingenting).
+            const config = TEMPLATE_CONFIG[chosen];
+            if (config) {
+                if (confirm("Bytte til " + config.label + "-malen? Dette gjenoppretter standard utstyrsliste, begrensninger og sjekklistedeler på normal-fanen, og overskriver eventuelle egne endringer der.")) {
                     reloadNormalFromDefaults(chosen);
                 } else {
                     templateSelect.value = current;

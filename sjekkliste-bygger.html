@@ -41,13 +41,15 @@
     </div>
 
     <!-- ===================== NORMAL ===================== -->
-    <div class="tab-panel active" id="tabPanel-normal" data-tab="normal" data-template="mak" data-category="mak">
+    <div class="tab-panel active" id="tabPanel-normal" data-tab="normal" data-template="mak" data-category="mak" data-aircraft="generisk">
 
         <div class="form-field no-print" style="max-width: 320px; margin-bottom: 20px;">
             <label for="normal-template-select">Sjekklistemal</label>
             <select id="normal-template-select">
                 <option value="mak">MÅK</option>
                 <option value="spesifikk">Spesifikk</option>
+                <option value="fx10-mak">FX-10 MÅK</option>
+                <option value="fx10-spesifikk">FX-10 spesifikk</option>
                 <option value="custom">Egendefinert</option>
             </select>
         </div>
@@ -115,7 +117,7 @@
     </div>
 
     <!-- ===================== CONTINGENCY ===================== -->
-    <div class="tab-panel" id="tabPanel-contingency" data-tab="contingency" data-category="mak">
+    <div class="tab-panel" id="tabPanel-contingency" data-tab="contingency" data-category="mak" data-aircraft="generisk">
 
         <div class="form-field" style="margin-bottom: 20px;">
             <label for="contingency-title">Sjekklistenavn</label>
