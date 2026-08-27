@@ -43,7 +43,13 @@ const VTOL_LANDING_RADIUS_M = 15;   // m fra hjempunktet, for godkjent manuell l
 // se en faktisk stillestående landing. Nå må flyet stå uavbrutt i bakkekontakt (uten å krasje) i minst
 // dette antall sekunder før steget telles som bestått.
 const VTOL_LANDING_SETTLE_SEC = 2.5;
-const VTOL_WAYPOINT_RADIUS_HOVER = 10;
+// Radius senket fra 10 til 3 m sammen med firkant-omplasseringen over (VTOL_HOVER_SQUARE_WAYPOINTS) - det
+// nye 10x10 m firkantsporet har kun 10 m mellom hvert hjørne, så den gamle 10 m-radiusen ville gjort
+// nesten hele firkantens indre til én sammenhengende fangstsone (hjørne 2 allerede "truffet" bare ved å
+// nærme seg hjørne 1) i stedet for å faktisk kreve at eleven flyr formen. 3 m er fortsatt romsligere enn
+// quad-simmens tilsvarende captureRadius=2.0 (js/simulator.js) - Heewing er en tyngre/tregere farkost å
+// posisjonere presist i hover enn en quad.
+const VTOL_WAYPOINT_RADIUS_HOVER = 3;
 const VTOL_WAYPOINT_RADIUS_CRUISE = 45;
 const VTOL_MIN_SAFE_IAS = 12;       // m/s - varselgrense i fastvinget flyging (stallfart er ca. 10 m/s)
 const VTOL_MANUAL_RETURN_MIN_DIST_M = 300; // m fra hjem, ex5 - "må fly til 300 m" (brukeren)
@@ -125,11 +131,22 @@ function formatMMSS(sec) {
    simulator-vtol.js (RUNWAY_WIDTH/GATE_AREA_X/BUILDING_AREA_X). */
 // "firkant øvelse. firkantbane som kan følges... ha banen rett ved avgangspunktet og ikke så stor"
 // (brukeren) - krympet fra en 30x30 m firkant 15-45 m unna til en 16x16 m firkant rett utenfor
-// rullebanekanten (RUNWAY_WIDTH/2=7 m), sentrert rundt spawn-punktets Z (RUNWAY_SPAWN_Z=8, se
-// simulator-vtol.js) - lettere å holde hele runden i sikte fra VLOS-pilotposisjonen.
+// rullebanekanten. "banen er jo helt feilplassert... banen/firkanten kan være rett over avgangsplass og
+// lavere. som øvelsen i quad/stabilize simmen" (brukeren) - den 16x16 m firkanten (x:10-26) lå fortsatt
+// forskjøvet vekk fra selve spawn-/avgangspunktet (0, RUNWAY_SPAWN_Z), delvis oppå VLOS-pilotens egen
+// posisjon (VLOS_PILOT_X=9, se simulator-vtol.js), ikke RUNDT avgangspunktet. Sentrert nå direkte over
+// spawn-punktet, samme idé/størrelse som quad-simmens EXERCISE_CENTER+SQUARE_HALF_SIDE (js/simulator.js)
+// - en 10x10 m firkant rett ved avgang i stedet for et sted lenger unna. Høyden senket til
+// VTOL_SQUARE_ALT (under ren hover-høyde VTOL_HOVER_ALT), samme "lavere gir bedre dybdereferanse mot
+// bakken"-begrunnelse som quad-simmens EXERCISE_ALTITUDE.
+const VTOL_SQUARE_ALT = 3;        // m - lavere enn VTOL_HOVER_ALT, bedre dybdereferanse mot bakken fra VLOS
+const VTOL_SQUARE_HALF_SIDE = 5;  // m - samme størrelse som quad-simmens SQUARE_HALF_SIDE
 const VTOL_HOVER_SQUARE_WAYPOINTS = [
-    { x: 10, z: 0 }, { x: 26, z: 0 }, { x: 26, z: 16 }, { x: 10, z: 16 }
-].map(function (p) { return new THREE.Vector3(p.x, VTOL_HOVER_ALT, p.z); });
+    { x: -VTOL_SQUARE_HALF_SIDE, z: RUNWAY_SPAWN_Z - VTOL_SQUARE_HALF_SIDE },
+    { x: VTOL_SQUARE_HALF_SIDE, z: RUNWAY_SPAWN_Z - VTOL_SQUARE_HALF_SIDE },
+    { x: VTOL_SQUARE_HALF_SIDE, z: RUNWAY_SPAWN_Z + VTOL_SQUARE_HALF_SIDE },
+    { x: -VTOL_SQUARE_HALF_SIDE, z: RUNWAY_SPAWN_Z + VTOL_SQUARE_HALF_SIDE }
+].map(function (p) { return new THREE.Vector3(p.x, VTOL_SQUARE_ALT, p.z); });
 
 // "fastvinget rute. trenger kanskje ikke den rutesjekken? bare enkel ta av fly fixed wing en landingsrunde
 // (utflyging - crosswind - downwind - base - final og land i Q mode?" (brukeren) - erstatter den gamle,
@@ -405,17 +422,17 @@ const VTOL_EXERCISES = {
             { type: "await-mode", label: "3) Bytt til MANUAL når du har fart", mode: "manual" },
             {
                 type: "waypoints", label: "4) Gjennom portene", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
-                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND,
+                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
                 hint: "Fly gjennom portene."
             },
             {
                 type: "waypoints", label: "5) Gjennom låvene og huset", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
-                radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND,
+                radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
                 hint: "Fly gjennom bygningene."
             },
             {
                 type: "waypoints", label: "6) Forbi klokketårnet og fabrikken", waypoints: VTOL_TOUR_LANDMARK_WAYPOINTS, closeLoop: false,
-                radius: VTOL_LANDMARK_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND,
+                radius: VTOL_LANDMARK_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
                 hint: "Fly forbi klokketårnet og fabrikken."
             },
             { type: "transition-back", label: "7) Overgang tilbake til Q-modus" },
@@ -590,10 +607,17 @@ function clearExerciseMarkers() {
 // vilkårlig ekstra strek tvers over runden.
 function addWaypointMarkers(waypoints, closeLoop) {
     clearExerciseMarkers();
-    waypoints.forEach(function (wp, i) {
+    // "kuleindikatorene trenger ikke være så store når de er så nærme" (brukeren) - radius senket fra 2 til
+    // 1, til 0.6, og igjen ("litt mindre kuler siden vi er så nært her") til 0.45 m: øvelsesbanene (særlig
+    // ex1/ex2, se VTOL_HOVER_SQUARE_WAYPOINTS) er nå trange og nære spawn-punktet, og større kuler så
+    // overdimensjonert ut på så kort avstand. Første punkt fikk tidligere en egen oransje farge (uansett
+    // hvor eleven faktisk var i runden) - droppet til fordel for ÉN ensartet blåfarge for alle utestående
+    // hjørner, siden nextWaypointMarker (se rett under) nå er den ENESTE, tydelige "hit skal du"-
+    // indikatoren.
+    waypoints.forEach(function (wp) {
         const mesh = new THREE.Mesh(
-            new THREE.SphereGeometry(2, 12, 12),
-            new THREE.MeshBasicMaterial({ color: i === 0 ? 0xffcc33 : 0x2a7fd6, transparent: true, opacity: 0.55 })
+            new THREE.SphereGeometry(0.45, 12, 12),
+            new THREE.MeshBasicMaterial({ color: 0x2a7fd6, transparent: true, opacity: 0.55 })
         );
         mesh.position.copy(wp);
         scene.add(mesh);
@@ -615,14 +639,25 @@ function addWaypointMarkers(waypoints, closeLoop) {
             new THREE.Vector3(a.x, 0.08, a.z), new THREE.Vector3(b.x, 0.08, b.z), 0.12, groundMat
         ));
     }
+    // "det må jo være en indikasjon på neste kule som skal flys til" (brukeren) - denne fantes allerede
+    // (se kommentaren ved nextWaypointMarker-deklarasjonen), men var en LITEN, heltrukket kule plassert
+    // NØYAKTIG oppå/inni den statiske hjørne-kulen på samme punkt - praktisk talt usynlig. Første forsøk
+    // (et større WIREFRAME-"bur" rundt den blå hjørnekulen) så bare rart ut ("rar gul ball laget av
+    // streker rundt seg... må vel være en hel kule? uten den blå inni?", brukeren) - en gjennomsiktig
+    // strekkule rundt en annen, ulikefarget kule leser ikke som "målet", bare som visuell støy. Løst
+    // riktig nå ved heller å SKJULE selve hjørne-kulen mens den er gjeldende mål (se skjul-/vis-logikken i
+    // updateWaypointsStage/markWaypointReached under), slik at kun ÉN heltrukket, pulserende gul kule vises
+    // på det punktet - ingen blå kule igjen inni/bak den å blande seg med.
     nextWaypointMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.6, 12, 10),
+        new THREE.SphereGeometry(0.6, 12, 12),
         new THREE.MeshBasicMaterial({ color: 0xffee55, transparent: true, opacity: 0.85 })
     );
     scene.add(nextWaypointMarker);
 }
 function markWaypointReached(index) {
-    if (exerciseMarkers[index]) exerciseMarkers[index].material.color.setHex(0x2ecc71);
+    // visible=true angrer skjul-logikken i updateWaypointsStage under (mens et hjørne var GJELDENDE mål) -
+    // hjørne-kulen skal vises igjen (nå grønn) idet det faktisk er nådd.
+    if (exerciseMarkers[index]) { exerciseMarkers[index].visible = true; exerciseMarkers[index].material.color.setHex(0x2ecc71); }
 }
 
 // Hover-øvelsene (ex1) hadde ingen visuell indikator i det hele tatt - kun selve tallene i HUD-en. En gul
@@ -631,8 +666,10 @@ function markWaypointReached(index) {
 function addHoverMarker(stage) {
     clearExerciseMarkers();
     const home = rtlState.home;
+    // "kuleindikatorene trenger ikke være så store når de er så nærme. gjelder øvelse 1 også" (brukeren) -
+    // radius senket fra 1.2 til 0.8 m, samme begrunnelse som addWaypointMarkers over.
     const beacon = new THREE.Mesh(
-        new THREE.SphereGeometry(1.2, 12, 12),
+        new THREE.SphereGeometry(0.8, 12, 12),
         new THREE.MeshBasicMaterial({ color: 0xffcc33, transparent: true, opacity: 0.6 })
     );
     beacon.position.set(home.x, stage.targetAlt, home.z);
@@ -957,6 +994,10 @@ function updateWaypointsStage(stage, dt) {
     // "en indikator å følge firkanten. som på quad simmen" (brukeren) - se nextWaypointMarker-kommentaren
     // ved deklarasjonen. Oppdatert hver tick uansett resten av steget under, slik at markøren følger
     // wpIndex live selv om eleven aldri kommer innenfor radius.
+    // "uten den blå inni?" (brukeren) - skjuler selve hjørne-kulen for GJELDENDE mål mens den pulserende
+    // gule kulen (nextWaypointMarker) står på nøyaktig samme punkt, slik at bare ÉN kule er synlig der -
+    // markWaypointReached gjør den synlig igjen (grønn) idet eleven faktisk når den.
+    if (exerciseMarkers[exerciseState.wpIndex]) exerciseMarkers[exerciseState.wpIndex].visible = false;
     if (nextWaypointMarker) {
         nextWaypointMarker.position.copy(target);
         nextWaypointMarker.scale.setScalar(0.85 + Math.sin(performance.now() / 200) * 0.15);
@@ -1327,8 +1368,14 @@ function updateExerciseHud() {
         if (stage.type === "hover") statusText = formatMMSS(exerciseState.hoverHoldSec) + " / " + formatMMSS(stage.holdSec);
         else if (stage.type === "waypoints") {
             const target = stage.waypoints[exerciseState.wpIndex];
+            // "trenger ikke måle antall grader på nesa eller den avstanden. er bare distraherende med
+            // tallene i HUD-en" (brukeren, ex2-firkanten) - relativeBearingText ble opprinnelig lagt til
+            // for ex4 (chase-kamera, veipunktene langt unna/ute av syne, se relativeBearingText sin egen
+            // kommentar), men samme tekst havnet også på ex2 sin firkant der eleven allerede SER
+            // kule-/strek-markørene rett foran seg fra VLOS - der er avstand/gradtall bare støy. Vises nå
+            // kun når stage selv ber om det (stage.showBearing, satt på ex4 sine steg under).
             statusText = exerciseState.wpIndex + " / " + stage.waypoints.length +
-                (target ? " · " + relativeBearingText(target) : "");
+                (stage.showBearing && target ? " · " + relativeBearingText(target) : "");
         }
         else if (stage.type === "land-manual" || stage.type === "return-manual" || stage.type === "hold-mode-until-landed") {
             if (stage.requireMode && planeState.onGround && !stageModeOk(stage)) {

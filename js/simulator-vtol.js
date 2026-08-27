@@ -389,6 +389,45 @@ const QLOITER_VEL_TO_LEAN_DEG = 6;
 // (0 = ingen feil, normal QLOITER for alle andre flyging/øvelser) - se den fulle mekanisme-forklaringen
 // ved bruken i stepPhysics sin QLOITER-gren under.
 let qloiterHeadingErrorRad = 0;
+// "QLOITER må vel ha littegranne drift i hover selv om det er 0 vind? alt er jo ikke helt perfekt? noen
+// små random nudges i forskjellige retninger av og til?" (brukeren) - selve posisjonsholdingen over
+// (fartsavvik->lenevinkel) klemmer i praksis avviket til nøyaktig 0 i vindstille forhold, en perfeksjon
+// ekte GPS/kompass ALDRI har. Legger til et lite, sakte vandrende "ønsket fart"-avvik i VERDENS-XZ (ikke
+// body-relativt - se dot-produktene mot bodyForwardFlat/bodyRightFlat der driften faktisk brukes) - samme
+// "target + lerp"-mønster som _groundLiftBoostNoise/_groundTurbulenceTarget over (glatt, sakte drift i
+// stedet for høyfrekvent numerisk jitter), men med et eget, MYE lengre intervall (sekunder, ikke hver
+// tick) mellom hver ny tilfeldig retning/styrke.
+// "er driftene realistisk? den vil kanskje korrigere seg selv til slutt litt mer i QLOITER?" (brukeren,
+// oppfølging) - helt riktig: en ren random-walk-hastighet UTEN noen tilbaketrekkende kraft ville latt den
+// integrerte POSISJONEN vandre stadig lenger unna (aldri returnere), selv om selve hastighets-MÅLET er
+// bundet til et lite maks. Det er akkurat OMVENDT av ekte GPS-loiter, som aktivt korrigerer tilbake mot et
+// fast holdepunkt. _qloiterDriftErrX/-Z under er en virtuell "hvor mye har GPS-løsningen så langt drevet
+// meg fra sant nullpunkt"-feil, integrert fra selve driftshastigheten hver tick, og QLOITER_DRIFT_RESTORE_
+// GAIN trekker en liten, proporsjonal fartskorreksjon TILBAKE mot 0 - et førsteordens system som holder
+// feilen bundet rundt noen få meter i stedet for å vandre fritt (se bruken i stepPhysics), i motsetning
+// til QHOVER-driften under, som (riktig nok) IKKE har noen slik tilbaketrekking, siden QHOVER ikke har
+// noen posisjonsholding i det hele tatt å korrigere med.
+const QLOITER_DRIFT_MAX_SPEED = 0.25;          // m/s - liten nok til å ikke se ut som feil/vind, stor nok til å synes
+const QLOITER_DRIFT_INTERVAL_MIN_SEC = 3;
+const QLOITER_DRIFT_INTERVAL_MAX_SEC = 8;
+const QLOITER_DRIFT_SMOOTH_RATE = 0.4;         // /s - hvor fort avviket glir mot sitt nye, tilfeldige mål
+const QLOITER_DRIFT_RESTORE_GAIN = 0.08;       // /s - trekker den virtuelle GPS-posisjonsfeilen sakte tilbake mot 0
+let _qloiterDriftVelX = 0, _qloiterDriftVelXTarget = 0;
+let _qloiterDriftVelZ = 0, _qloiterDriftVelZTarget = 0;
+let _qloiterDriftErrX = 0, _qloiterDriftErrZ = 0; // m - virtuell GPS-posisjonsfeil, world-XZ
+let _qloiterDriftTimerSec = 0;
+// "QHOVER må vel ha lignende drift som QLOITER også?" (brukeren) - QHOVER har ingen GPS-posisjonsholding
+// i det hele tatt (kun Alt Hold, se MODE_LABELS-teksten "posisjonen må du styre selv med stikkene") - det
+// finnes altså ingen fartsMÅL-løkke å legge et GPS-avvik inn i, slik QLOITER-driften over gjør. I
+// virkeligheten er det nettopp DERFOR QHOVER driver: ingen automatikk retter opp de små, ustabile
+// forstyrrelsene (lett asymmetrisk løft, luftbevegelse) en ekte multirotor/VTOL aldri er helt fri for -
+// modellert her som en tilsvarende liten, sakte vandrende lene-vinkel-FORSTYRRELSE lagt rett til
+// målvinkelen (i stedet for et fartsavvik), som piloten selv må oppdage og korrigere, siden ingenting
+// annet i QHOVER gjør det for dem. Samme kadens (intervall/glatting) som QLOITER-driften over.
+const QHOVER_DRIFT_MAX_DEG = 0.6;
+let _qhoverDriftPitch = 0, _qhoverDriftPitchTarget = 0;
+let _qhoverDriftBank = 0, _qhoverDriftBankTarget = 0;
+let _qhoverDriftTimerSec = 0;
 // QHOVER/QLOITER/FBWA(assistert) sin Alt Hold - se stepPhysics. Samme "sentrert gasspak holder høyde,
 // avvik gir ønsket klatrerate"-prinsipp som ArduPilot (og quad-simulatorens egen Alt Hold-modus, se
 // der), men per-kilo (ikke et flatt Newton-tall) siden VTOL_CLASSES spenner et mye bredere masseområde.
@@ -885,7 +924,19 @@ const vtolParams = loadVtolParams();
 // flightMode forlater FBWA) - eneste stykke VTOL-spesifikk TILSTAND simmen trenger nå (i motsetning til
 // den forrige PX4-modellens egne switchOn/phase/pusherThrottle - se toppkommentaren).
 const vtolState = { assistFadeStartTime: null };
-function resetVtolState() { vtolState.assistFadeStartTime = null; }
+function resetVtolState() {
+    vtolState.assistFadeStartTime = null;
+    // Nullstiller QLOITER-driftstøyen (se QLOITER_DRIFT_MAX_SPEED-kommentaren) ved hver reset/øvelsesstart
+    // - uten dette kunne en tilfeldig, midt-i-glidningen driftverdi fra FORRIGE flytur henge igjen inn i
+    // en helt ny, som skal starte helt i ro.
+    _qloiterDriftVelX = 0; _qloiterDriftVelXTarget = 0;
+    _qloiterDriftVelZ = 0; _qloiterDriftVelZTarget = 0;
+    _qloiterDriftErrX = 0; _qloiterDriftErrZ = 0;
+    _qloiterDriftTimerSec = 0;
+    _qhoverDriftPitch = 0; _qhoverDriftPitchTarget = 0;
+    _qhoverDriftBank = 0; _qhoverDriftBankTarget = 0;
+    _qhoverDriftTimerSec = 0;
+}
 function isQMode(mode) { return mode === "qstabilize" || mode === "qhover" || mode === "qloiter" || mode === "qacro"; }
 
 // Kalt ved enhver motor-restart PÅ BAKKEN (resetPlane/toggleEngine/setEngine - se disse, samme
@@ -1041,6 +1092,14 @@ const buildRandomTree = Sim.buildRandomTree;
 // group.position, se checkVtolObstacleCollision.
 let treeCollisionPoints = [];
 const TREE_COLLISION_RADIUS_FRAC = 0.22; // andel av trehøyden - grov, men rimelig kron(e)radius
+// "Legg inn registrering av kollisjon på de store bygningene/låvene som kan flys gjennom" (brukeren) -
+// låvene/huset (buildOpenBuilding, se buildBuildingArea) hadde vindusåpninger å fly GJENNOM, men de
+// solide veggene/taket rundt åpningen registrerte ingen treff i det hele tatt - et fly kunne glitche rett
+// gjennom en hel veggflate. Samme "push egne mål inn i en liste idet de bygges"-mønster som
+// treeCollisionPoints over, men her lagres byggets FULLE lokale geometri (bredde/høyde/dybde +
+// vindusåpningens mål/høyde), siden kollisjonssjekken (checkVtolBuildingCollision) må skille solid vegg
+// fra selve gjennomflygingsåpningen - en enkel senter-radius (som trærne) kan ikke uttrykke det.
+let buildingCollisionData = [];
 
 // Løv/rusk som driver langs bakken i vindretningen - synlig, retningsvisende vindtegn nær rullebanen (der
 // piloten uansett ser under taksing/avgang/landing), i tillegg til vindpølsene. Kun synlig når vind er
@@ -1363,22 +1422,34 @@ function buildGateArea() {
 // (vingespenn 3.4 m) skal ha reell klaring gjennom hver bygning.
 const BUILDING_AREA_X = RUNWAY_WIDTH / 2 + 60;
 
+// Pusher byggets kollisjonsgeometri inn i buildingCollisionData (se dens egen kommentar) - kalt for hvert
+// bygg RETT ETTER group.position/rotation.y er satt, slik at kollisjonsdataen aldri kan drifte fra den
+// faktiske, synlige plasseringen (samme prinsipp som treeCollisionPoints).
+function registerBuildingCollision(buildingGroup, width, height, depth, windowW, windowH, sillY) {
+    buildingCollisionData.push({
+        x: buildingGroup.position.x, z: buildingGroup.position.z, rotY: buildingGroup.rotation.y,
+        width: width, height: height, depth: depth, windowW: windowW, windowH: windowH, sillY: sillY
+    });
+}
 function buildBuildingArea() {
     const group = new THREE.Group();
     const barn1 = buildOpenBuilding(9, 8, 12, 6, 6, 1.6, 0xa1352b, 0x3a3a3a);
     barn1.position.set(BUILDING_AREA_X, 0, RUNWAY_NEAR_Z - 40);
     barn1.rotation.y = THREE.MathUtils.degToRad(15);
     group.add(barn1);
+    registerBuildingCollision(barn1, 9, 8, 12, 6, 6, 1.6);
 
     const house1 = buildOpenBuilding(8, 6.5, 9, 5.5, 5.5, 1.3, 0xd8c9a0, 0x5a3a2a);
     house1.position.set(BUILDING_AREA_X + 8, 0, RUNWAY_NEAR_Z - 120);
     house1.rotation.y = THREE.MathUtils.degToRad(-12);
     group.add(house1);
+    registerBuildingCollision(house1, 8, 6.5, 9, 5.5, 5.5, 1.3);
 
     const barn2 = buildOpenBuilding(9, 8, 12, 6, 6, 1.6, 0xa1352b, 0x3a3a3a);
     barn2.position.set(BUILDING_AREA_X - 4, 0, RUNWAY_NEAR_Z - 200);
     barn2.rotation.y = THREE.MathUtils.degToRad(8);
     group.add(barn2);
+    registerBuildingCollision(barn2, 9, 8, 12, 6, 6, 1.6);
 
     return group;
 }
@@ -4360,8 +4431,43 @@ function stepPhysics(dt) {
             const groundVelFlat = new THREE.Vector3(planeState.velocity.x, 0, planeState.velocity.z);
             const fwdSpeed = groundVelFlat.dot(bodyForwardFlat);
             const rightSpeed = groundVelFlat.dot(bodyRightFlat);
-            const desiredFwdSpeed = stick.pitch * QLOITER_MAX_SPEED;
-            const desiredRightSpeed = stick.roll * QLOITER_MAX_SPEED;
+            // GPS-/kompassunøyaktighet - se QLOITER_DRIFT_MAX_SPEED/-RESTORE_GAIN-kommentaren ved
+            // deklarasjonen. Kun mens flyet faktisk henger i luften (samme "bakkekontakt dominerer,
+            // ingenting skal kunne ryste en parkert farkost"-begrunnelse som groundTurbulenceStrength
+            // lenger ned i funksjonen) - nullstiller også den akkumulerte feilen ved landing, så den ikke
+            // henger igjen inn i neste avgang.
+            if (!planeState.onGround) {
+                _qloiterDriftTimerSec -= dt;
+                if (_qloiterDriftTimerSec <= 0) {
+                    const driftAngle = Math.random() * Math.PI * 2, driftMag = Math.random() * QLOITER_DRIFT_MAX_SPEED;
+                    _qloiterDriftVelXTarget = Math.sin(driftAngle) * driftMag;
+                    _qloiterDriftVelZTarget = Math.cos(driftAngle) * driftMag;
+                    _qloiterDriftTimerSec = QLOITER_DRIFT_INTERVAL_MIN_SEC +
+                        Math.random() * (QLOITER_DRIFT_INTERVAL_MAX_SEC - QLOITER_DRIFT_INTERVAL_MIN_SEC);
+                }
+                _qloiterDriftVelX = THREE.MathUtils.lerp(_qloiterDriftVelX, _qloiterDriftVelXTarget, Math.min(1, dt * QLOITER_DRIFT_SMOOTH_RATE));
+                _qloiterDriftVelZ = THREE.MathUtils.lerp(_qloiterDriftVelZ, _qloiterDriftVelZTarget, Math.min(1, dt * QLOITER_DRIFT_SMOOTH_RATE));
+                // Integrerer selve driftshastigheten til en akkumulert "virtuell GPS-posisjonsfeil" (world
+                // XZ) - se QLOITER_DRIFT_RESTORE_GAIN-kommentaren for hvorfor dette trengs (ellers vandrer
+                // POSISJONEN uavgrenset selv om selve hastighets-MÅLET er lite og begrenset).
+                _qloiterDriftErrX += _qloiterDriftVelX * dt;
+                _qloiterDriftErrZ += _qloiterDriftVelZ * dt;
+            } else {
+                _qloiterDriftVelXTarget = 0; _qloiterDriftVelZTarget = 0;
+                _qloiterDriftVelX = 0; _qloiterDriftVelZ = 0;
+                _qloiterDriftErrX = 0; _qloiterDriftErrZ = 0;
+            }
+            // Tilbaketrekkende korreksjon - en ekte GPS-loiter korrigerer AKTIVT tilbake mot holdepunktet,
+            // ikke bare tilfeldig "et sted i nærheten for alltid" (se _qloiterDriftErrX-kommentaren).
+            const driftRestoreX = -_qloiterDriftErrX * QLOITER_DRIFT_RESTORE_GAIN;
+            const driftRestoreZ = -_qloiterDriftErrZ * QLOITER_DRIFT_RESTORE_GAIN;
+            const driftBiasWorldX = _qloiterDriftVelX + driftRestoreX, driftBiasWorldZ = _qloiterDriftVelZ + driftRestoreZ;
+            // Verdens-XZ -> kropps-relativt, samme dot-produkt-prinsipp som fwdSpeed/rightSpeed rett over
+            // (bruker samme, evt. kompassfeil-roterte akser - se qloiterHeadingErrorRad-blokken over).
+            const driftBiasFwd = driftBiasWorldX * bodyForwardFlat.x + driftBiasWorldZ * bodyForwardFlat.z;
+            const driftBiasRight = driftBiasWorldX * bodyRightFlat.x + driftBiasWorldZ * bodyRightFlat.z;
+            const desiredFwdSpeed = stick.pitch * QLOITER_MAX_SPEED + driftBiasFwd;
+            const desiredRightSpeed = stick.roll * QLOITER_MAX_SPEED + driftBiasRight;
             // Samme FORTEGN som den direkte pinne->vinkel-kommandoen under (stick.pitch/roll -> target-
             // Deg direkte) - dette ER akkurat den kommandoen, bare med et fartsAVVIK i stedet for selve
             // pinneposisjonen som P-leddets inngang. Klemmes til MC_MAX_LEAN_ANGLE (Q_LOIT_ANG_MAX).
@@ -4431,6 +4537,27 @@ function stepPhysics(dt) {
                 // FBWB velges igjen).
                 planeState.fbwbClimbIntegral = 0;
             }
+        }
+        // QHOVER-drift (se QHOVER_DRIFT_MAX_DEG-kommentaren) - kun i luften, samme "bakkekontakt
+        // dominerer"-begrunnelse som QLOITER-driften over.
+        if (controlMode === "qhover" && !planeState.onGround) {
+            _qhoverDriftTimerSec -= dt;
+            if (_qhoverDriftTimerSec <= 0) {
+                const driftAngle = Math.random() * Math.PI * 2, driftMag = Math.random() * QHOVER_DRIFT_MAX_DEG;
+                _qhoverDriftPitchTarget = Math.sin(driftAngle) * driftMag;
+                _qhoverDriftBankTarget = Math.cos(driftAngle) * driftMag;
+                _qhoverDriftTimerSec = QLOITER_DRIFT_INTERVAL_MIN_SEC +
+                    Math.random() * (QLOITER_DRIFT_INTERVAL_MAX_SEC - QLOITER_DRIFT_INTERVAL_MIN_SEC);
+            }
+        } else {
+            _qhoverDriftPitchTarget = 0;
+            _qhoverDriftBankTarget = 0;
+        }
+        _qhoverDriftPitch = THREE.MathUtils.lerp(_qhoverDriftPitch, _qhoverDriftPitchTarget, Math.min(1, dt * QLOITER_DRIFT_SMOOTH_RATE));
+        _qhoverDriftBank = THREE.MathUtils.lerp(_qhoverDriftBank, _qhoverDriftBankTarget, Math.min(1, dt * QLOITER_DRIFT_SMOOTH_RATE));
+        if (controlMode === "qhover") {
+            targetPitchDeg += _qhoverDriftPitch;
+            targetBankDeg += _qhoverDriftBank;
         }
         // Ignorerer pinnens eget krengings-/stigningsutslag mens flyet fortsatt hviler på bena, når
         // løftemotorene faktisk har reell myndighet (samme "landed"-idé som ArduPilot sin egen
@@ -5562,6 +5689,46 @@ function checkVtolPersonCollision() {
 // er fylt av resolveGroundContact denne selve tick-en (se triggerCrash sin egen kommentar om dette).
 const WINDSOCK_COLLISION_RADIUS_M = 0.5;
 const WINDSOCK_COLLISION_HEIGHT_M = 7.3; // vindpølsestolpens høyde (se Sim.buildWindsockPole)
+// "Legg inn registrering av kollisjon på de store bygningene/låvene som kan flys gjennom" (brukeren) - se
+// buildingCollisionData-kommentaren for hvorfor byggene trenger sin egen, mer detaljerte sjekk enn
+// tre-/vindpølse-sløyfene over (solid vegg vs. gjennomflygingsåpning, ikke bare "innenfor radius").
+// Margin rundt selve veggflaten et treff registreres innenfor - flyets egen vingespenn/kropps-utstrekning
+// fanges ikke opp av det rene posisjonspunktet (samme forenkling som treet/vindpølse-sjekkene over), så en
+// nulltykkelse-sjekk ville latt vingetuppene glitche gjennom mens senterpunktet så vidt klarer seg.
+const BUILDING_WALL_HIT_MARGIN_M = 0.9;
+function checkVtolBuildingCollision(px, py, pz) {
+    for (let i = 0; i < buildingCollisionData.length; i++) {
+        const b = buildingCollisionData[i];
+        const dx = px - b.x, dz = pz - b.z;
+        // Bred fase - for langt unna til å overlappe bygget i det hele tatt.
+        if (Math.hypot(dx, dz) > Math.hypot(b.width, b.depth) / 2 + BUILDING_WALL_HIT_MARGIN_M + 1) continue;
+        // Roter verdens-XZ inn i byggets eget lokale rom (rotY = group.rotation.y, se
+        // registerBuildingCollision) - samme "child peker langs egen akse, verden roteres om Y"-prinsipp
+        // resten av filen bruker (se f.eks. relativeBearingText i js/simulator-vtol-exercises.js).
+        const cos = Math.cos(b.rotY), sin = Math.sin(b.rotY);
+        const lx = dx * cos - dz * sin, lz = dx * sin + dz * cos;
+        const roofTop = b.height + 0.3; // se buildOpenBuilding sitt roof-mesh (height + 0.15 senter + 0.15 halv tykkelse)
+        if (py > roofTop) continue;
+        if (py > b.height) {
+            if (Math.abs(lx) <= b.width / 2 + 0.3 && Math.abs(lz) <= b.depth / 2 + 0.3) { triggerCrash(); return; }
+            continue;
+        }
+        // Sideveggene (lokal x=±width/2) er HELE - ingen åpning, i motsetning til front-/bakveggen.
+        if (Math.abs(lz) <= b.depth / 2 &&
+            (Math.abs(Math.abs(lx) - b.width / 2) <= BUILDING_WALL_HIT_MARGIN_M)) {
+            triggerCrash(); return;
+        }
+        // Front-/bakveggen (lokal z=±depth/2) - solid UNNTATT selve vindusåpningen eleven skal fly gjennom
+        // (se buildOpenBuilding sin windowWall) - kun et treff hvis punktet er nær veggflaten OG UTENFOR
+        // åpningen.
+        if (Math.abs(lx) <= b.width / 2 &&
+            Math.abs(Math.abs(lz) - b.depth / 2) <= BUILDING_WALL_HIT_MARGIN_M) {
+            const throughWindow = Math.abs(lx) <= b.windowW / 2 - BUILDING_WALL_HIT_MARGIN_M &&
+                py >= b.sillY + BUILDING_WALL_HIT_MARGIN_M && py <= b.sillY + b.windowH - BUILDING_WALL_HIT_MARGIN_M;
+            if (!throughWindow) { triggerCrash(); return; }
+        }
+    }
+}
 function checkVtolObstacleCollision() {
     if (planeState.crashed) return;
     const px = planeState.position.x, pz = planeState.position.z, py = planeState.position.y;
@@ -5575,6 +5742,7 @@ function checkVtolObstacleCollision() {
         if (py > WINDSOCK_COLLISION_HEIGHT_M) continue;
         if (Math.hypot(px - pos.x, pz - pos.z) <= WINDSOCK_COLLISION_RADIUS_M) { triggerCrash(); return; }
     }
+    checkVtolBuildingCollision(px, py, pz);
 }
 
 /* ---------- Fly-kontroller (reset/motor/kamera) ---------- */
@@ -5638,7 +5806,9 @@ function resetPlane(yawRad) {
 // er en nødstopp av motorene (motorStopped) og ALDRI rører armed eller hjempunktet. KUN på bakken (samme
 // onGround-forutsetning som toggleEngine/setEngine sin egen restart-logikk bruker) - arming/disarming i
 // luften via pinnen gir ingen mening for denne simmen.
-const STICK_ARM_HOLD_SEC = 5;      // "rudder right for 5 seconds"
+// "arming med stikke tar litt lang tid? skal være maks 5 sekunder. si 4.5 da" (brukeren) - senket fra 5.0
+// til 4.5 (fortsatt "noen sekunder"-følelsen fra ArduPilot-sitatet, bare litt raskere å faktisk fullføre).
+const STICK_ARM_HOLD_SEC = 4.5;    // "rudder right for 5 seconds" (ArduPilot) - se BUG-kommentaren over
 const STICK_DISARM_HOLD_SEC = 2;   // "rudder to the left for 2 seconds"
 const STICK_ARM_THROTTLE_MAX = 0.05; // "holding the throttle down"/"throttle at minimum"
 const STICK_ARM_YAW_MIN = 0.9;       // nær fullt sideror-utslag, ikke bare en antydning i riktig retning
