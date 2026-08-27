@@ -1473,6 +1473,11 @@ const GATE_LINE = [
     { x: GATE_AREA_X - 4, z: RUNWAY_NEAR_Z - 200 }
 ];
 
+// "husk kollisjon på porter og bygninger som kan flys gjennom. skal ikke kunne glitche gjennom" (brukeren)
+// - se gateCollisionData-kommentaren (checkVtolGateCollision, simulator-vtol.js) for selve sjekken; her
+// pushes hver ports egen posisjon/rotasjon/mål inn i den, samme "push egne mål inn idet de bygges"-mønster
+// som treeCollisionPoints/buildingCollisionData.
+let gateCollisionData = [];
 function buildGateArea() {
     const group = new THREE.Group();
     const n = GATE_LINE.length;
@@ -1483,6 +1488,7 @@ function buildGateArea() {
         gate.position.set(wp.x, 0, wp.z);
         gate.rotation.y = Math.atan2(next.x - wp.x, next.z - wp.z);
         group.add(gate);
+        gateCollisionData.push({ x: gate.position.x, z: gate.position.z, rotY: gate.rotation.y, size: GATE_SIZE, groundGap: GATE_GROUND_GAP });
     }
     return group;
 }
@@ -5882,6 +5888,43 @@ function checkVtolBuildingCollision(px, py, pz) {
         }
     }
 }
+// "husk kollisjon på porter... skal ikke kunne glitche gjennom" (brukeren) - portene (buildGate) hadde
+// samme mangel som byggene hadde FØR checkVtolBuildingCollision: en fangst-radius for ØVELSES-fremgang
+// (VTOL_GATE_WAYPOINT_RADIUS, js/simulator-vtol-exercises.js), men INGEN fysisk kollisjon mot selve
+// rammen/stolpene/beina - et fly kunne glitche rett gjennom en stolpe. Samme lokal-rom-transformasjon som
+// checkVtolBuildingCollision, men porten er en HELT ÅPEN ramme (fire tynne bjelker + to bein), ikke en
+// solid vegg med ett hull - stolpene/beina sjekkes som ÉN sammenhengende, lodrett søyle (fra bakken helt
+// opp til toppbjelken, samme x≈±size/2 hele veien), i stedet for separate "vegg" + "vindu"-soner som
+// bygningene bruker.
+// "pass på at det ikke blir usynlige kollisjonsobjekter" (brukeren) - margin (GATE_HIT_MARGIN_M) er BEVISST
+// tynn og ligger TETT INNTIL selve de synlige bjelkene/stolpene (barThickness=0.22 m, se buildGate), IKKE
+// en stor "sikkerhetssone" rundt hele portåpningen - området RETT UNDER åpningen (mellom de to beina,
+// under selve porten) er UTELUKKENDE dekket av stolpe-/bein-sjekken NÆR x=±size/2, aldri av en egen,
+// bredere "hele bunnen er solid"-sjekk, ellers ville midten under porten blitt en usynlig, uforklarlig
+// kollisjonssone ingen visuell geometri faktisk fyller.
+const GATE_HIT_MARGIN_M = 0.8;
+function checkVtolGateCollision(px, py, pz) {
+    for (let i = 0; i < gateCollisionData.length; i++) {
+        const g = gateCollisionData[i];
+        const dx = px - g.x, dz = pz - g.z;
+        const half = g.size / 2;
+        if (Math.hypot(dx, dz) > half + GATE_HIT_MARGIN_M + 1) continue;
+        const cos = Math.cos(g.rotY), sin = Math.sin(g.rotY);
+        const lx = dx * cos - dz * sin, lz = dx * sin + dz * cos;
+        if (Math.abs(lz) > GATE_HIT_MARGIN_M) continue;
+        const topY = g.groundGap + g.size;
+        // Stolper/bein - én sammenhengende søyle fra bakken til toppbjelken, nær x=±size/2.
+        if (py >= -GATE_HIT_MARGIN_M && py <= topY + GATE_HIT_MARGIN_M &&
+            (Math.abs(lx - half) <= GATE_HIT_MARGIN_M || Math.abs(lx + half) <= GATE_HIT_MARGIN_M)) {
+            triggerCrash(); return;
+        }
+        // Topp-/bunnbjelke - hele bredden, kun ved selve bjelkehøyden (IKKE hele åpningen imellom).
+        if (Math.abs(lx) <= half + GATE_HIT_MARGIN_M &&
+            (Math.abs(py - g.groundGap) <= GATE_HIT_MARGIN_M || Math.abs(py - topY) <= GATE_HIT_MARGIN_M)) {
+            triggerCrash(); return;
+        }
+    }
+}
 function checkVtolObstacleCollision() {
     if (planeState.crashed) return;
     const px = planeState.position.x, pz = planeState.position.z, py = planeState.position.y;
@@ -5896,6 +5939,7 @@ function checkVtolObstacleCollision() {
         if (Math.hypot(px - pos.x, pz - pos.z) <= WINDSOCK_COLLISION_RADIUS_M) { triggerCrash(); return; }
     }
     checkVtolBuildingCollision(px, py, pz);
+    checkVtolGateCollision(px, py, pz);
 }
 
 /* ---------- Fly-kontroller (reset/motor/kamera) ---------- */
@@ -5945,6 +5989,19 @@ function resetPlane(yawRad) {
     // js/simulator-vtol-rtl.js) - resetPlane tvinger alltid engineOn=true, så QRTL sitt hjem-punkt skal
     // alltid fanges på nytt her også, ikke bare i setEngine/toggleEngine.
     captureHome();
+}
+// "pass på at resett også resetter progresjon for øvelsen, ikke bare flyets posisjon" (brukeren) -
+// resetBtn/R-tasten kalte tidligere resetPlane() ubetinget, UANSETT om en øvelse var aktiv - flyet havnet
+// dermed tilbake på startpunktet, men exerciseState (stageIndex/wpIndex/holdetider/scenario) sto helt
+// UENDRET, ute av synk med den nå fysisk resatte flyturen (f.eks. fortsatt langt inne i en senere firkant-
+// runde selv om flyet nettopp "startet på nytt"). startVtolExercise(id) gjør allerede ALT en ekte
+// omstart trenger (kaller selv stopVtolExercise() FØR den setter i gang på nytt, se dens egen kommentar) -
+// gjenbrukt her i stedet for å duplisere den logikken. Kalt fra BEGGE reset-inngangene (resetBtn-klikk og
+// KeyR under) via denne ene, delte funksjonen, slik at de aldri kan drifte fra hverandre (samme "unngå
+// duplisert restart-logikk"-begrunnelse som stageStartMessage/getStage-mønsteret ellers i filen).
+function resetPlaneOrExercise() {
+    if (exerciseState.active) startVtolExercise(exerciseState.exerciseId);
+    else resetPlane();
 }
 
 // Pinne-arming/-disarming (BRUKEREN, sitat fra ArduPilot-dokumentasjonen: "Arm the motors by holding the
@@ -6653,9 +6710,10 @@ document.addEventListener("DOMContentLoaded", function () {
     // IKKE resetPlane direkte som callback her lenger (se resetPlane sin egen yawRad-parameter) - click-
     // lytteren ville da sendt selve MouseEvent-objektet inn som yawRad (DOM-callbacks får alltid event som
     // første argument), som THREE.Euler ville forsøkt å tolke som et tall (NaN) - ville ødelagt selve
-    // quaternion-en på hvert klikk. Egen wrapper sikrer resetPlane() alltid kalles helt uten argumenter her
-    // (fritt-flyging-standarden, nesa ned rullebanen), akkurat som R-tasten (KeyR under).
-    document.getElementById("resetBtn").addEventListener("click", function () { resetPlane(); });
+    // quaternion-en på hvert klikk. resetPlaneOrExercise() (se dens egen kommentar) tar heller ingen
+    // argumenter, samme trygghet, PLUSS restarter en øvelse fullstendig i stedet for kun flyets posisjon -
+    // akkurat som R-tasten (KeyR under).
+    document.getElementById("resetBtn").addEventListener("click", function () { resetPlaneOrExercise(); });
     document.getElementById("armToggleBtn").addEventListener("click", toggleEngine);
 
     const settingsMenuEl = document.getElementById("settingsMenu");
@@ -6841,7 +6899,7 @@ document.addEventListener("DOMContentLoaded", function () {
             case "Digit7": trySetFlightMode("fbwb"); break;
             case "Digit8": trySetFlightMode("qrtl"); break;
             case "KeyK": toggleEngine(); break;
-            case "KeyR": resetPlane(); break;
+            case "KeyR": resetPlaneOrExercise(); break;
             case "KeyC": toggleCamera(); break;
             case "KeyT": togglePanel(document.getElementById("ratesPanel")); break;
             case "KeyH": togglePanel(document.getElementById("helpPanel")); break;

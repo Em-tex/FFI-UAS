@@ -167,23 +167,60 @@ const VTOL_HOVER_SQUARE_WAYPOINTS = [
 // legen. Flyttet til VEST-siden (negativ X, samme side som portløypa - annen høyde, ingen kollisjon) -
 // rett foran piloten i stedet for bak. Bredden økt fra 50 til 90 m (trygt utenfor GATE_AREA_X=-67 m) og
 // benlengden fra 220 til 280 m - "alt for trangt" ga lite margin for en jevn, rolig sving i hver retning.
-// "kule 3 må fortsatt flyttes mye nærmere kule 2 langs banen" (brukeren, oppfølging) - selve punkt 3 (base-
-// svingen) IKKE flyttet direkte (det ville forkortet finalestrekningen VTOL_PATTERN_FINAL_LEG_M rett under
-// nettopp fikk forlenget) - i stedet krympet DENNE (utflygings-/medvind-benet) fra 280 til 130 m, som gir
-// akkurat samme resultat (kule 2 og 3 kommer mye nærmere hverandre langs banen) UTEN å spise av finalen.
-const VTOL_PATTERN_LEG_M = 130;   // lengden på utflygings-/medvind-benet
+// "kule 3 må fortsatt flyttes mye nærmere kule 2 langs banen" (brukeren, 1. oppfølging) - selve punkt 3
+// (base-svingen) IKKE flyttet direkte (det ville forkortet finalestrekningen VTOL_PATTERN_FINAL_LEG_M rett
+// under nettopp fikk forlenget) - i stedet krympet DENNE (utflygings-/medvind-benet) fra 280 til 130 m.
+// "kule 3 må fortsatt flyttes mye tidligere i banen. man må kunne se neste kule fra kule nr 2 og det gjør
+// man ikke nå" (brukeren, 2. oppfølging) - fortsatt for langt (130+150=280 m totalt mellom kule 2 og 3).
+// Denne gangen et konkret, etterprøvbart mål ("synlig FRA kule 2") i stedet for et abstrakt "nærmere" -
+// krympet derfor BEGGE (til 60/60) i stedet for kun én av dem, ned til en total avstand på 120 m - godt
+// innenfor synsvidde for en 5 m-radius markør (se addWaypointMarkers/markerRadius:5 på ex3-stagene).
+// "første kule må plasseres et godt stykke unna igjen. lengre opp rullebanen" (brukeren, 3. oppfølging) -
+// direkte MOTSATT av forrige runde for kule 1 spesifikt, men uten å reversere kule 2/3-synligheten
+// (samme underliggende VTOL_PATTERN_LEG_M styrte FØR begge - kule 1 OG 2 delte samme, nære avstand fra
+// hjem, se den forrige varianten). Splittet derfor i to UAVHENGIGE avstander: kule 1 (kun DENNE) bruker nå
+// sin egen, lange VTOL_PATTERN_DEPARTURE_DIST_M, mens kule 2 beholder den nære, allerede synlighets-
+// justerte VTOL_PATTERN_CROSSWIND_DIST_M - benet MELLOM kule 1 og 2 blir dermed en lengre, litt
+// diagonal "klatre rett ut, sving så inn i runden"-strekning (i stedet for et strengt 90°-hjørne), mens
+// selve den synlighets-sensitive kule 2->3->4-delen av runden er UENDRET fra forrige runde.
+const VTOL_PATTERN_DEPARTURE_DIST_M = 220;  // m fra hjem til kule 1 - "et godt stykke unna", langt oppe langs rullebanen
+// "kule nr 2 må flyttes litt tidligere i banen sin, så den er synlig når kameraet kikker mot kule nr 1. men
+// samtidig ikke for nært heller" (brukeren, 4. oppfølging) - vlosCamera.lookAt(planeState.position) sporer
+// PLANET kontinuerlig, så "kameraet kikker mot kule 1" betyr her retningen fra VLOS-piloten (fast posisjon,
+// se VLOS_PILOT_X) til selve kule 1. Regnet ut retningsvinkelen fra piloten til hvert punkt (bearing) med
+// forrige verdi (60 m): kule 1 lå på ~-177° (nesten rett ned senterlinjen, ubetydelig påvirket av egen
+// avstand siden pilotens sideveis offset er lite i forhold), kule 2 på ~-116° - et gap på ~62°, godt
+// utenfor halve horisontal-FOV-en (~35-38° for vlosCamera sin 50° vertikale FOV). Økt til 110 m flytter
+// kule 2 sin retning til ~-138° (gap ~40°, en klar forbedring) - MERK: siden kule 2/3 nødvendigvis ligger
+// på hver sin side av pilotens egen Z-posisjon (RUNWAY_SPAWN_Z), er en tilsvarende innstramning av
+// kule 2->3-gapet en direkte MOTSATT dragkamp (denne økningen forverrer faktisk DET gapet noe, fra ~62° til
+// ~84° - geometrisk uunngåelig med denne rutens grunnform uten en større omforming). Prioritert den
+// EKSPLISITT navngitte kule 1->2-overgangen. Selve benlengden kule 1->2 er fortsatt ~130 m (ikke "for
+// nært").
+const VTOL_PATTERN_CROSSWIND_DIST_M = 110;  // m fra hjem til kule 2 (kryssvind-/medvind-svingen)
 const VTOL_PATTERN_WIDTH_M = 90;  // avstand fra senterlinjen (kryssvind-/base-benet) - trygt utenfor GATE_AREA_X (-67 m)
 // "finalen må få lov til å være mye lengre. trenger god plass til å svinge og line seg opp" (brukeren) -
-// punkt 3/4 (base-svingen/finale) lå tidligere kun "+20" forbi hjemposisjonen (RUNWAY_NEAR_Z), altså bare
-// ~20 m igjen å fly FØR landing etter siste sving - ingen reell finalestrekning å rette opp/stabilisere
-// seg på. Økt til en egen, navngitt konstant (150 m) - gir en ordentlig rett finale inn mot rullebanen
-// etter base-svingen, i stedet for å måtte lande nesten idet man ruller ut av siste sving.
-const VTOL_PATTERN_FINAL_LEG_M = 150;
+// punkt 3/4 (base-svingen/finale) lå OPPRINNELIG kun "+20" forbi hjemposisjonen (RUNWAY_NEAR_Z) - ingen
+// reell finalestrekning å rette opp/stabilisere seg på. Økt først til 150 m, siden krympet til 60 m for
+// synlighet fra kule 2 (se VTOL_PATTERN_CROSSWIND_DIST_M over) - fortsatt tre ganger så lang som den
+// opprinnelige "+20".
+const VTOL_PATTERN_FINAL_LEG_M = 60;
+// "siste kule kan ha litt lavere høyde og trenger heller ikke være så stor" (brukeren) - kule 4 (finale)
+// markerer inngangen til transition-back+landing rett etter, så en synlig LAVERE høyde her (fortsatt godt
+// over VTOL_TRANSITION_MIN_ALT=20 m) gir en naturlig visuell "på vei ned nå"-antydning i stedet for samme
+// faste VTOL_CRUISE_ALT som resten av runden. markerRadius satt DIREKTE på selve Vector3-punktet (leses av
+// addWaypointMarkers som et valgfritt per-punkt-overstyrer, se der) - kun denne ENE kulen, IKKE hele
+// stagets markerRadius:5 (som fortsatt gjelder de tre andre).
+const VTOL_PATTERN_FINALE_ALT = 25;
+const VTOL_PATTERN_FINALE_MARKER_RADIUS = 3;
 const VTOL_PATTERN_WAYPOINTS = [
-    new THREE.Vector3(0, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_LEG_M),                              // 1) kryssvind-sving
-    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_LEG_M),           // 2) medvind-sving
-    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z + VTOL_PATTERN_FINAL_LEG_M),     // 3) base-sving
-    new THREE.Vector3(0, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z + VTOL_PATTERN_FINAL_LEG_M)                          // 4) finale
+    new THREE.Vector3(0, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_DEPARTURE_DIST_M),                    // 1) avgang/utflyging
+    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_CROSSWIND_DIST_M), // 2) kryssvind-/medvind-sving
+    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z + VTOL_PATTERN_FINAL_LEG_M),      // 3) base-sving
+    Object.assign(
+        new THREE.Vector3(0, VTOL_PATTERN_FINALE_ALT, RUNWAY_NEAR_Z + VTOL_PATTERN_FINAL_LEG_M),              // 4) finale
+        { markerRadius: VTOL_PATTERN_FINALE_MARKER_RADIUS }
+    )
 ];
 
 // "Ny øvelse 4 ... En runde i manuell modus med chase kamera bare for å få følelsen med flyet? fly gjennom
@@ -223,7 +260,14 @@ const VTOL_TOUR_LANDMARK_WAYPOINTS = [
     new THREE.Vector3(TOWN_CENTER_X, 14, TOWN_CENTER_Z),                          // klokketårnet/rådhuset
     new THREE.Vector3(TOWN_CENTER_X + FACTORY_DX, 14, TOWN_CENTER_Z + FACTORY_DZ) // fabrikken
 ];
-const VTOL_GATE_WAYPOINT_RADIUS = 4;      // m - trangere enn cruise-radiusen, men fortsatt god klaring inne i en 9 m port
+// "fløy gjennom en port i ytterkanten uten at passering ble registrert" (brukeren) - fangst måles som
+// AVSTAND TIL PORTENS SENTERPUNKT (se updateWaypointsStage), men en 9 m bred åpning (GATE_SIZE) har et
+// HJØRNE opptil 4.5*sqrt(2)=~6.4 m unna senteret - en passering nær kanten/hjørnet av selve åpningen kunne
+// dermed ligge utenfor en radius på kun 4 m, selv om flyet tydelig passerte gjennom selve porten (den
+// separate kollisjonssjekken mot selve RAMMEN, checkVtolBuildingCollision-lignende logikk for porter
+// finnes ikke ennå - kun waypoint-fangsten gjelder her). Økt til 6.5 m - dekker nå selve hjørnet av
+// åpningen, ikke bare midten av den.
+const VTOL_GATE_WAYPOINT_RADIUS = 6.5;    // m - dekker hele portåpningen (9 m, halv diagonal ~6.4 m), ikke bare senteret
 const VTOL_BUILDING_WAYPOINT_RADIUS = 3;  // m - vindusåpningene er trangere enn portene (5.5-6 m brede)
 const VTOL_LANDMARK_WAYPOINT_RADIUS = 30; // m - en forbiflyging, ikke en presisjonsport
 // "ha litt vind" (brukeren) - samme "jevn vind"-styrke som ex1/ex2 sitt tredje trinn, brukt gjennom hele
@@ -373,7 +417,16 @@ const VTOL_EXERCISES = {
         ]
     },
     ex3: {
-        id: "ex3", icon: "fa-plane-up", label: "3. VTOL - fastvinget - VTOL",
+        // "kan heller hete landingsrunde" (brukeren) - "VTOL - fastvinget - VTOL" beskrev MEKANIKKEN
+        // (moduskjeden), "Landingsrunde" beskriver selve ØVELSEN (en fastvinget trafikkrunde) - mer
+        // gjenkjennelig tittel for eleven.
+        id: "ex3", icon: "fa-plane-up", label: "3. Landingsrunde",
+        // "kan starte med nesa i baneretningen" (brukeren) - VLOS-standarden ellers (GROUND_SPAWN_YAW_RAD,
+        // "hale mot piloten") gir liten mening for en øvelse som starter med en fastvinget landingsrunde
+        // langs selve senterlinjen (se VTOL_PATTERN_WAYPOINTS, punkt 1/2 ligger rett ned rullebanens egen
+        // Z-akse) - samme spawnYawRad:0-unntak som ex4 (se dens egen kommentar), nesa rett ned rullebanen
+        // fra start i stedet for på tvers.
+        spawnYawRad: 0,
         // Heewing T2 Cruza er satt opp med QLOITER/FBWA/RTL som standardmoduser på fjernkontrollen
         // (brukeren) - denne øvelsen brukte tidligere FBWB, en modus flykontrolleren faktisk IKKE er
         // konfigurert med. Byttet til FBWA - stage-logikken (requireFixedWing:true, se stages under)
@@ -390,10 +443,14 @@ const VTOL_EXERCISES = {
         // faktisk BLIR gjeldende mål, se hide/vis-logikken i updateWaypointsStage) i stedet for å flytte
         // selve svingpunktet, siden det ville forkortet finalestrekningen forrige fiks nettopp forlenget.
         // "kule 3 må fortsatt flyttes mye nærmere kule 2 langs banen. og kulene er alt for store" (brukeren,
-        // oppfølging) - begge deler rettet nå: markerRadius senket igjen til 5 m (14 var for stor), og selve
+        // 2. oppfølging) - begge deler rettet: markerRadius senket igjen til 5 m (14 var for stor), og selve
         // avstanden mellom kule 2 og 3 krympet ved å korte ned VTOL_PATTERN_LEG_M (se konstantens egen
-        // kommentar over) - IKKE ved å flytte kule 3 sin posisjon direkte, som fortsatt ville spist av
-        // finalestrekningen.
+        // kommentar over) - IKKE ved å flytte kule 3 sin posisjon direkte, for ikke å spise av finalen.
+        // "kule 3 må fortsatt flyttes mye tidligere i banen. man må kunne se neste kule fra kule nr 2 og det
+        // gjør man ikke nå" (brukeren, 3. oppfølging) - fortsatt for langt (280 m totalt). Krympet denne
+        // gangen BÅDE VTOL_PATTERN_LEG_M og VTOL_PATTERN_FINAL_LEG_M ned til 60 m hver (se begges egne
+        // kommentarer) - total avstand mellom kule 2 og 3 nå 120 m, innenfor synsvidde for en 5 m-radius
+        // markør.
         shortDescription: "Ta av, fly en fastvinget landingsrunde (utflyging-kryssvind-medvind-base-finale), land i Q-modus. 2 runder: uten og med vind.",
         fullDescription: "Ta av i QLOITER, klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m, skift til " +
             "FBWA og fly en full landingsrunde rundt rullebanen (utflyging - kryssvind - medvind - base - " +
@@ -403,12 +460,21 @@ const VTOL_EXERCISES = {
             { type: "climb", label: "1) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
             { type: "transition-out", label: "1) Overgang til FBWA" },
             { type: "waypoints", label: "1) Landingsrunde (uten vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true },
-            { type: "transition-back", label: "1) Overgang tilbake til Q-loiter" },
+            // "tooltip etter siste kule. kan være innflyging og landing i QLOITER. trenger ikke flere tips
+            // etter det" (brukeren) - ÉN samlet melding her dekker BEGGE de gjenværende stegene (transition-
+            // back OG land-manual under) - ingen egen hint lagt til på land-manual i tillegg.
+            // "siste tooltip før landing fjern den første delen. masse unødvendig dobbel tekst. holder med
+            // fortsett innflygning og land i QLOITER" (brukeren, oppfølging) - stageStartMessage limer alltid
+            // sammen "Fullført! Neste: " + label (+ " - " + hint hvis satt), så en egen hint her ("Innflyging
+            // og landing i QLOITER") ved SIDEN AV en label som allerede sa "Overgang tilbake til Q-loiter"
+            // ga en klart overlappende, dobbel Q-loiter-setning. Droppet hint-feltet og lagt HELE
+            // instruksjonen direkte i selve labelen i stedet - kun ÉN, sammenhengende setning igjen.
+            { type: "transition-back", label: "1) Fortsett innflygning og land i QLOITER" },
             { type: "land-manual", label: "1) Landing" },
             { type: "climb", label: "2) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
             { type: "transition-out", label: "2) Overgang til FBWA" },
             { type: "waypoints", label: "2) Landingsrunde (med vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true, wind: { speed: 5, directionDeg: 60, gust: 0.3 } },
-            { type: "transition-back", label: "2) Overgang tilbake til Q-loiter" },
+            { type: "transition-back", label: "2) Fortsett innflygning og land i QLOITER" },
             { type: "land-manual", label: "2) Landing" }
         ]
     },
@@ -444,14 +510,17 @@ const VTOL_EXERCISES = {
         // selvnivellerende/steilingssikret, lettere å treffe presist rett etter en fersk overgang - før
         // eleven bytter til rent manuell kontroll for resten av rundflygingen (bygningene/landemerkene).
         stages: [
-            { type: "climb", label: "1) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
+            // "første tooltip på øvelsen skal være å klatre til 20 meter" (brukeren) - hint her vises i selve
+            // "Øvelse startet: ..."-meldingen (se stageStartMessage) idet øvelsen begynner, i tillegg til den
+            // løpende høyde-fremdriften i HUD-statusfeltet (se "climb"-grenen i updateExerciseHud).
+            { type: "climb", label: "1) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT, hint: "Klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m." },
             { type: "transition-out", label: "2) Overgang til FBWA" },
             {
                 type: "waypoints", label: "3) Gjennom portene (FBWA)", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
                 radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "fbwa", wind: VTOL_TOUR_WIND, showBearing: true,
                 hint: "Fly gjennom portene."
             },
-            { type: "await-mode", label: "4) Bytt til MANUAL", mode: "manual" },
+            { type: "await-mode", label: "4) Bytt til MANUAL", mode: "manual", hint: "Tast 5 på tastaturet, eller bryteren på senderen." },
             {
                 type: "waypoints", label: "5) Gjennom låvene og huset", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
                 radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
@@ -580,6 +649,15 @@ const vtolExerciseProgress = loadVtolExerciseProgress();
 function allVtolExercisesPassed() {
     return VTOL_EXERCISE_ORDER.every(function (id) { return vtolExerciseProgress[id] && vtolExerciseProgress[id].passed; });
 }
+// "legg til mulighet for å resette hele øvelsesprogresjonen. i tilfelle noen andre skal gjennom
+// programmet" (brukeren) - se knappen (exerciseResetProgressBtn, simulator-vtol.html) i selve
+// øvelseslisten, wired i initVtolExercisePanel under. vtolExerciseProgress er en `const` (delt referanse
+// alle andre steder i filen holder på) - MUTERER derfor hver egenskap i stedet for å forsøke å bytte ut
+// hele objektet, som ville etterlatt de andre stedene pekende på det gamle, nå utdaterte objektet.
+function resetVtolExerciseProgress() {
+    VTOL_EXERCISE_ORDER.forEach(function (id) { vtolExerciseProgress[id] = { passed: false }; });
+    saveVtolExerciseProgress();
+}
 
 /* ==================== Tilstand ==================== */
 const exerciseState = {
@@ -645,9 +723,13 @@ function addWaypointMarkers(waypoints, closeLoop, markerRadius) {
     // Første punkt fikk tidligere en egen oransje farge (uansett hvor eleven faktisk var i runden) -
     // droppet til fordel for ÉN ensartet blåfarge for alle utestående hjørner, siden nextWaypointMarker
     // (se rett under) nå er den ENESTE, tydelige "hit skal du"-indikatoren.
+    // "siste kule kan... ikke være så stor" (brukeren, ex3-finalepunktet) - wp.markerRadius (valgfritt, satt
+    // direkte på ENKELTPUNKTER, se VTOL_PATTERN_WAYPOINTS sitt finale-punkt) overstyrer stagets felles
+    // radius (r) for akkurat DET punktet, i stedet for å kreve en helt egen markerRadius-parameter per
+    // waypoints-stage for én enkelt kule sin skyld.
     waypoints.forEach(function (wp) {
         const mesh = new THREE.Mesh(
-            new THREE.SphereGeometry(r, 12, 12),
+            new THREE.SphereGeometry(wp.markerRadius || r, 12, 12),
             new THREE.MeshBasicMaterial({ color: 0x2a7fd6, transparent: true, opacity: 0.55 })
         );
         mesh.position.copy(wp);
@@ -1421,6 +1503,18 @@ function updateExerciseHud() {
         else if (stage.type === "await-arm") statusText = planeState.armed ? "armert" : "venter";
         else if (stage.type === "await-disarm") statusText = planeState.armed ? "venter" : "disarmert";
         else if (stage.type === "depart-distance") statusText = Math.round(horizDistFromHome()) + " / " + stage.minDist + " m";
+        // "øvelse 4 tooltips. må komme opp en melding om å klatre til 20 m" (brukeren) - "climb"-steget
+        // (ex3/ex4/ex6b sin egen klatring til VTOL_TRANSITION_MIN_ALT FØR overgang) viste tidligere bare
+        // det uforanderlige, hardkodede "OK"-standardtallet uansett faktisk høyde - ingen løpende
+        // tilbakemelding på hvor langt unna målet eleven faktisk er, i motsetning til de andre stegtypene.
+        else if (stage.type === "climb") statusText = Math.round(currentAltitude()) + " / " + stage.minAlt + " m";
+        // "ved bytte til manuell. ta med at det er 5 på tastaturet på tooltipet" (brukeren) - MODE_KEY_LABELS
+        // (simulator-vtol.js, lastet FØR denne filen) har den samme tastatursnarveien help-panelet/
+        // moduspopoveren selv viser - IKKE en egen, duplisert "manual=5"-oppslagstabell her.
+        else if (stage.type === "await-mode") {
+            statusText = "nåværende: " + (MODE_LABELS[planeState.flightMode] || planeState.flightMode) +
+                (MODE_KEY_LABELS[stage.mode] ? " (tast " + MODE_KEY_LABELS[stage.mode] + " for " + (MODE_LABELS[stage.mode] || stage.mode) + ")" : "");
+        }
         document.getElementById("exerciseHudStatus").textContent = statusText;
         document.getElementById("exerciseHudTimer").textContent = formatMMSS((performance.now() - exerciseState.startTime) / 1000);
         updateGcsScreenFields();
@@ -1782,6 +1876,16 @@ function initVtolExercisePanel() {
     document.getElementById("categoryHeewingT2Btn").addEventListener("click", showVtolExerciseList);
     document.getElementById("exerciseBackToCategoryBtn").addEventListener("click", showVtolExerciseCategoryView);
     document.getElementById("exerciseBackToListBtn").addEventListener("click", showVtolExerciseList);
+    // "legg til mulighet for å resette hele øvelsesprogresjonen. i tilfelle noen andre skal gjennom
+    // programmet" (brukeren) - se resetVtolExerciseProgress-kommentaren. Bekreftelsesdialog (window.confirm)
+    // siden dette sletter ALLE bestått-merkene på én gang, uten angre-mulighet - ingen tilsvarende
+    // bekreftelse finnes for flightLogClearBtn (kun en ren feilsøkingslogg, langt lavere innsats å miste).
+    document.getElementById("exerciseResetProgressBtn").addEventListener("click", function () {
+        if (window.confirm("Nullstille all øvelsesfremgang? Alle bestått-merker fjernes, og kan ikke angres.")) {
+            resetVtolExerciseProgress();
+            renderVtolExerciseList();
+        }
+    });
     document.getElementById("exerciseStartBtn").addEventListener("click", function () {
         // ex0 (veiviser) / ex7 (quiz) - "special", ingen 3D-flyging - se startVtolSpecialExercise.
         const exercise = VTOL_EXERCISES[vtolExerciseDetailId];
