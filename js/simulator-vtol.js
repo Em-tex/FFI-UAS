@@ -191,6 +191,35 @@ let _groundLiftBoostNoiseTarget = 0;
 const GROUND_TURBULENCE_MAX_RAD_S2 = 0.5;
 const _groundTurbulence = new THREE.Vector3();
 const _groundTurbulenceTarget = new THREE.Vector3();
+// "'fritt fall' i hover og så full gass. stopper fallet veldig stabilt og nesten med en gang... vil vel få
+// litt wobble fra prowashen man faller gjennom da og man vil kanskje ikke stoppe gjennomsynket så
+// momentant?" (brukeren) - to separate, ekte fysiske årsaker til at et raskt synk ikke bør bremses opp
+// like plutselig/rent som en ren P-regulator uten forsinkelse gir:
+// 1) MC_THRUST_RESPONSE_RATE_FRAC (se bruken rett etter mcGroundEffectBoost i stepPhysics) - ekte
+//    motorer/ESC-er når ikke kommandert pådrag ØYEBLIKKELIG, de har en fysisk opp-/nedspinningstid. Uten
+//    denne hoppet collectiveThrustMag rett til den beregnede P-verdien i SAMME tick pinnen/Alt Hold ba om
+//    full gass - urealistisk momentan oppbremsing av et fritt fall.
+// 2) "Ring vortex"-lignende nedvask-turbulens (MC_WAKE_TURB_*, se bruken rett etter groundTurbulence-
+//    blokken) - en ekte multirotor som faller GJENNOM sin egen nedvask (synkerate i samme størrelsesorden
+//    som selve nedvasken) mister effektiv løfteeffektivitet og blir merkbart urolig/vaklende idet
+//    motorene igjen begynner å skyve luft inn i den nedadgående luftstrømmen den selv nettopp falt
+//    gjennom - samme "target + lerp"-tilfeldig-vinkelakselerasjon-mønster som groundTurbulence over, men
+//    trigget av SYNKERATE (uansett bakkenærhet) i stedet for bakkenærhet.
+const MC_THRUST_RESPONSE_RATE_FRAC = 4.0; // ganger liftThrustTotal per sekund - 0->100 % pådrag på ~250 ms
+let _appliedCollectiveThrust = 0;
+// "litt mer wobble i roll pitch ved gjennomsynk med throttle idle i hover og så plutselig full throtle?
+// det vil jo være noen random ustabiliteter i balanse da og så vil flightcontrolleren selv prøve å rette
+// det opp. få den naturlige følelsen der" (brukeren, oppfølging) - REF_SINK senket fra 5 til 3.5 m/s
+// (uroen når full styrke ved en mer typisk "jeg lot den falle en stund"-synkerate i stedet for å kreve et
+// ekstremt fall), og MAX økt fra 0.7 til 1.1 rad/s². Selve "flightcontrolleren prøver å rette det opp"-
+// følelsen trenger ingen egen kode - den selvnivellerende P(D)-loopen (mcRollTorque/mcPitchTorque,
+// targetBankDeg/-PitchDeg mot 0) er ALLEREDE aktiv og virker AUTOMATISK mot enhver forstyrrelse denne
+// legger til angularVelocity, akkurat som en ekte stabiliseringsloop ville - jo sterkere/lengre
+// forstyrrelsen her, jo tydeligere blir nettopp den korrigeringen synlig.
+const MC_WAKE_TURB_REF_SINK_MS = 3.5; // m/s synkerate der nedvask-turbulensen når full styrke
+const MC_WAKE_TURB_MAX_RAD_S2 = 1.1;  // rad/s² ved full styrke
+const _wakeTurbulence = new THREE.Vector3();
+const _wakeTurbulenceTarget = new THREE.Vector3();
 // "Den vil også lage mer turbulens der i hover og flyte litt mer rundt" (brukeren) - nedvasken som
 // rekylerer av bakken gir en urolig, roterende luftstrøm rundt farkosten selv, IKKE bare mer effektivt
 // løft. Enkel, lavpass-filtrert ("mean-reverting") random walk - IKKE ekte turbulens-fysikk, se
@@ -896,6 +925,20 @@ function setPlaneClass(className) {
 // Vind-/VTOL-panelets slider), mens AIRSPEED_MIN er en fast, egen sikkerhetsmargin - brukt av
 // updateTransitionOutStage (js/simulator-vtol-exercises.js) som "overgangen er fullført"-kriteriet.
 const AIRSPEED_MIN_TRANSITION = 16;
+// "mister fortsatt alt for mye høyde i transisjon ved halv throttle. må ha mye mer motor auto assist i
+// transisjon i sånne tilfeller" (brukeren) - selv med et forhøyet motoreffekt-tak (TRANSITION_THRUST_BOOST_
+// FRAC, se bruken i stepPhysics) er det en HARD geometrisk grense ingen mengde ekstra motorpådrag kan
+// omgå: nacellene tilter til vannrett på en FAST, luftfart-UAVHENGIG ~1s-tidsplan (Q_TILT_RATE_DN_RAD_S,
+// se BUG-kommentaren ved frontTiltTargetRad - bevisst IKKE gated på fart, for å unngå en tidligere
+// høne-og-egg-låsbug), og HELT vannrette nacellers trekkraft peker 100 % forover - null loddrett komponent
+// igjen uansett hvor mye gass som legges på. Ved lavt pusher-pådrag (f.eks. halv throttle) rekker
+// luftfarten/vingeløftet ikke å bygge seg opp i tide til å dekke det tapet. Løsningen er derfor IKKE mer
+// motorkraft alene, men å gi selve NEDTILTINGEN mer tid til å vente på farten - denne funksjonen skalerer
+// NED tilt-NED-raten (aldri til 0, kun til en fjerdedel - unngår dermed den samme låsbugen: tiltet
+// KONVERGERER fortsatt alltid mot vannrett, bare tregere ved lav fart) - brukt av BÅDE selve fysikken
+// (stepPhysics) og den visuelle nacelle-animasjonen (updateHeewingPlaneVisual), slik at de to fortsatt
+// holder seg synkroniserte (se kommentaren der).
+function tiltDownRateScale(speed) { return clamp(speed / AIRSPEED_MIN_TRANSITION, 0.25, 1); }
 const DEFAULT_VTOL_PARAMS = {
     // Q_ASSIST_SPEED: luftfart (m/s) flyet må nå i FBWA før løftemotor-assistansen begynner å trappes ned
     // (se computeMcAuthority) - under denne farten er assistansen alltid full.
@@ -936,6 +979,12 @@ function resetVtolState() {
     _qhoverDriftPitch = 0; _qhoverDriftPitchTarget = 0;
     _qhoverDriftBank = 0; _qhoverDriftBankTarget = 0;
     _qhoverDriftTimerSec = 0;
+    // Nullstiller motor-opprampingstilstanden (se MC_THRUST_RESPONSE_RATE_FRAC-kommentaren) - uten dette
+    // ville en reset midt i et kraftig pådrag fra FORRIGE flytur henge igjen som et "usynlig" etterslep
+    // inn i en helt ny, som skal starte i ro.
+    _appliedCollectiveThrust = 0;
+    _wakeTurbulence.set(0, 0, 0);
+    _wakeTurbulenceTarget.set(0, 0, 0);
 }
 function isQMode(mode) { return mode === "qstabilize" || mode === "qhover" || mode === "qloiter" || mode === "qacro"; }
 
@@ -4285,7 +4334,10 @@ function stepPhysics(dt) {
     if (planeState.planeClass === "heewing") {
         const frontTiltTargetRad = isQMode(controlMode) ? Math.PI / 2 : 0;
         const frontTiltDiffRad = frontTiltTargetRad - planeState.frontTiltRad;
-        const frontTiltRateRadS = frontTiltDiffRad >= 0 ? Q_TILT_RATE_UP_RAD_S : Q_TILT_RATE_DN_RAD_S;
+        // tiltDownRateScale (se dens egen kommentar) - kun ved NEDtilting (mot vannrett/cruise), ikke ved
+        // opptilting (mot loddrett/hover, som skal skje raskt uansett fart - "raskere tilt opp... for
+        // effektiv luftbremsing").
+        const frontTiltRateRadS = frontTiltDiffRad >= 0 ? Q_TILT_RATE_UP_RAD_S : Q_TILT_RATE_DN_RAD_S * tiltDownRateScale(airspeed);
         const frontTiltStepRad = frontTiltRateRadS * dt;
         planeState.frontTiltRad = Math.abs(frontTiltDiffRad) <= frontTiltStepRad
             ? frontTiltTargetRad
@@ -4880,16 +4932,41 @@ function stepPhysics(dt) {
     // kompenserer ved å ØKE motorpådraget etter hvert som nacellene tilter (kortere "vertikal rekkevidde"
     // per newton motorkraft) for å holde den kommanderte klatreraten, i stedet for å la den loddrette
     // komponenten bare falle bort i takt med cos-tapet UTEN kompensasjon. Deler derfor opp igjen her -
-    // klemt til spec.liftThrustTotal (motorene har uansett en fysisk makseffekt; ved nær-vannrett tilt gir
-    // selv full effekt bare en liten loddrett rest igjen, akkurat som i virkeligheten idet vingeløftet
-    // overtar). Ingen effekt i ren Q-hover (collectiveVerticalFrac=sin(PI/2)=1 der, division/1 er en
-    // no-op) - og BEVISST gated på samme engineOn&&liftMotorsActive-vilkår som if-kjeden over, ellers
-    // ville denne blåst collectiveThrustMag opp til fullt pådrag (og dermed lastCollectiveFrac/HUD-
-    // gassvisningen) selv når løftemotorene egentlig skal stå av (f.eks. MANUAL-modus, tilt=0).
+    // klemt til en effektiv makseffekt (transitionThrustCeiling, se rett under).
+    // "mister fortsatt mye høyde i overgang fra hover til fbwa. kanskje mer assist der? motorene gir mer
+    // gass uavhengig av stikkeposisjon for å holde høyden akkurat i transisjonen?" (brukeren, oppfølging) -
+    // selv MED kompensasjonen over var den klemt til akkurat spec.liftThrustTotal, den vanlige
+    // KONTINUERLIGE makseffekten. Nær slutten av den raske ~1s tiltnedkjøringen (collectiveVerticalFrac
+    // liten) krever kompensasjonen langt mer enn det for å holde klatreraten, og vingeløftet har typisk
+    // ikke rukket å bygge seg opp nok ennå til å dekke resten - et reelt motoreffekt-tak, ikke noe formelen
+    // ALENE kunne kompensere mer for. Ekte ESC-er/motorer tåler normalt en kort overbelastningsmargin
+    // utover kontinuerlig makseffekt - nøyaktig brukerens eget forslag - modellert her som et midlertidig,
+    // forhøyet tak (TRANSITION_THRUST_BOOST_FRAC) BARE mens nacellene faktisk fortsatt er på vei fra
+    // loddrett mot vannrett i en fastvinget modus (inFrontTransition), IKKE en permanent økning av selve
+    // spec.liftThrustTotal (som fortsatt er den ekte kontinuerlige spesifikasjonen alle andre steder).
+    // "må ha motor auto assist litt lengre så ikke drone faller så lett. i tilfelle man har lav
+    // motorsetting ved overgangen. må være skikkelig autokompensasjon i transisjon" (brukeren, oppfølging)
+    // - frontTiltRad>0.02 ALENE dekker kun selve den GEOMETRISKE tiltbevegelsen (ferdig etter ~1s uansett
+    // fart, se Q_TILT_RATE_DN_RAD_S - servoen tilter uavhengig av luftfart, se BUG-kommentaren over). Har
+    // piloten lavt pusher-pådrag (stick.throttle) akkurat da, kan nacellene rekke å bli vannrette LENGE FØR
+    // luftfarten faktisk er trygg (AIRSPEED_MIN_TRANSITION - samme terskel updateTransitionOutStage selv
+    // bruker som "overgangen er reelt fullført") - overbelastningsmarginen forsvant da RETT når den trengtes
+    // MEST (vingeløftet ennå ikke bygget opp, OG tiltet allerede vannrett). Holder nå boosten aktiv til
+    // FAKTISK trygg fart er nådd, ikke bare til selve servobevegelsen er ferdig.
+    const inFrontTransition = !isQMode(controlMode) && (planeState.frontTiltRad > 0.02 || airspeed < AIRSPEED_MIN_TRANSITION);
+    // "mister fortsatt alt for mye høyde i transisjon ved halv throttle. må ha mye mer motor auto assist i
+    // transisjon i sånne tilfeller" (brukeren, oppfølging) - økt kraftig fra 0.35 til 1.0 (dobbel
+    // kontinuerlig makseffekt i stedet for 35 % ekstra). Fungerer nå sammen med tiltDownRateScale (se dens
+    // egen kommentar, brukt på selve tiltraten litt over i funksjonen) - siden nedtiltingen ved lav fart nå
+    // også henger lenger igjen i en delvis loddrett vinkel (collectiveVerticalFrac forblir merkbart > 0
+    // lenger), gir den langt større boosten her faktisk en reell loddrett effekt i stedet for å bli spist
+    // opp av en nær-null sin(vinkel) uansett.
+    const TRANSITION_THRUST_BOOST_FRAC = 1.0;
+    const transitionThrustCeiling = spec.liftThrustTotal * (inFrontTransition ? (1 + TRANSITION_THRUST_BOOST_FRAC) : 1);
     if (planeState.engineOn && liftMotorsActive) {
         collectiveThrustMag = collectiveVerticalFrac > 0.001
-            ? Math.min(spec.liftThrustTotal, collectiveThrustMag / collectiveVerticalFrac)
-            : spec.liftThrustTotal;
+            ? Math.min(transitionThrustCeiling, collectiveThrustMag / collectiveVerticalFrac)
+            : transitionThrustCeiling;
     }
     // Bakkeeffekt for løftemotorene - se MC_GROUND_EFFECT_HEIGHT_FACTOR-kommentaren. Målt fra buken/beina
     // (spec.gearOffsetY, negativ), IKKE fra CG (Y=0) eller vingen (som groundEffectRatio over gjør) -
@@ -4905,9 +4982,27 @@ function stepPhysics(dt) {
     _groundLiftBoostNoiseTarget = planeState.onGround ? 0 : (Math.random() * 2 - 1) * MC_GROUND_EFFECT_BOOST_NOISE_MAX;
     _groundLiftBoostNoise = THREE.MathUtils.lerp(_groundLiftBoostNoise, _groundLiftBoostNoiseTarget, Math.min(1, dt * 3));
     const mcGroundEffectBoost = 1 + MC_GROUND_EFFECT_BOOST_MAX * (1 - mcGroundEffectFactor) * (1 + _groundLiftBoostNoise);
-    collectiveThrustMag = Math.min(spec.liftThrustTotal, collectiveThrustMag * mcGroundEffectBoost);
+    // Samme transitionThrustCeiling som over her (ikke tilbake til rent spec.liftThrustTotal) - ellers
+    // ville DENNE klemmen bare spist opp igjen hele overbelastningsmarginen transisjonskompensasjonen
+    // nettopp fikk lov til å bruke.
+    collectiveThrustMag = Math.min(transitionThrustCeiling, collectiveThrustMag * mcGroundEffectBoost);
 
-    planeState.lastCollectiveFrac = collectiveThrustMag / spec.liftThrustTotal;
+    // Motor-opprampingsforsinkelse (se MC_THRUST_RESPONSE_RATE_FRAC-kommentaren ved deklarasjonen) - ekte
+    // motorer/ESC-er kan ikke hoppe rett til et nytt pådrag i samme tick, kun rampe MOT det med en fysisk
+    // begrenset hastighet. collectiveThrustMag over er fortsatt den MÅL-verdien alle P-regulatorene over
+    // nettopp regnet ut - _appliedCollectiveThrust er den faktiske, forsinkede kraften motorene rekker å
+    // levere akkurat nå, og er DENNE (ikke måltallet) som brukes videre til både lastCollectiveFrac/HUD og
+    // selve liftMotorThrustVec-kraften.
+    const maxThrustStepN = spec.liftThrustTotal * MC_THRUST_RESPONSE_RATE_FRAC * dt;
+    _appliedCollectiveThrust += clamp(collectiveThrustMag - _appliedCollectiveThrust, -maxThrustStepN, maxThrustStepN);
+    collectiveThrustMag = _appliedCollectiveThrust;
+
+    // lastCollectiveFrac styrer HUD-gassvisningen (hudThrottle) og propell-spinnhastigheten (hoverSpin/
+    // liftTargetSpin) - klemt til maks 1 (100%) for VISNINGEN selv når selve fysikk-kraften over
+    // (collectiveThrustMag) faktisk bruker overbelastningsmarginen i en transisjon, samme prinsipp som et
+    // ekte ESC-utlesning ofte bare viser "100%" gjennom en kort overbelastning i stedet for et forvirrende
+    // tall over 100.
+    planeState.lastCollectiveFrac = Math.min(1, collectiveThrustMag / spec.liftThrustTotal);
     const liftMotorThrustVec = bodyUpWorld.clone().multiplyScalar(collectiveThrustMag * collectiveVerticalFrac);
 
     // "Hover rett over bakken. er for urealistisk stabilt. Det vil jo være urolig luft fra propellene rett
@@ -4940,6 +5035,24 @@ function stepPhysics(dt) {
     planeState.angularVelocity.roll += _groundTurbulence.x * dt;
     planeState.angularVelocity.pitch += _groundTurbulence.y * dt;
     planeState.angularVelocity.yaw += _groundTurbulence.z * dt * 0.4; // svakere på gir - ren tilt/rull-ustøhet er det mest fremtredende ved ekte nedvask-turbulens
+
+    // Nedvask-/"ring vortex"-turbulens ved raskt synk (se MC_WAKE_TURB_*-kommentaren ved deklarasjonen) -
+    // samme mønster som groundTurbulence over, men trigget av SYNKERATE (uansett bakkenærhet) i stedet for
+    // bakkenærhet: et fall som fanges opp av kraftig kollektiv motpådrag skal vakle merkbart idet
+    // rotorene begynner å skyve luft inn i sin egen, allerede nedadgående luftstrøm, ikke bremse
+    // krystallklart og momentant opp igjen.
+    const sinkSpeed = Math.max(0, -planeState.velocity.y);
+    const wakeTurbStrength = planeState.onGround ? 0 :
+        Math.min(1, sinkSpeed / MC_WAKE_TURB_REF_SINK_MS) * planeState.lastCollectiveFrac * mcAuthority;
+    _wakeTurbulenceTarget.set(
+        (Math.random() * 2 - 1) * MC_WAKE_TURB_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * MC_WAKE_TURB_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * MC_WAKE_TURB_MAX_RAD_S2
+    ).multiplyScalar(wakeTurbStrength);
+    _wakeTurbulence.lerp(_wakeTurbulenceTarget, Math.min(1, dt * 5));
+    planeState.angularVelocity.roll += _wakeTurbulence.x * dt;
+    planeState.angularVelocity.pitch += _wakeTurbulence.y * dt;
+    planeState.angularVelocity.yaw += _wakeTurbulence.z * dt * 0.4;
 
     const accel = new THREE.Vector3().add(thrustVec).add(liftVec).add(dragVec).add(gravityVec).add(liftMotorThrustVec).multiplyScalar(1 / spec.mass);
 
@@ -6004,7 +6117,11 @@ function updateHeewingPlaneVisual(dt) {
         // tilt opp... for effektiv luftbremsing"), minkende (mot vannrett/cruise) bruker DN-raten.
         const nacelleTargetTiltRad = targetTiltRad + n.side * yawTiltAssist;
         const tiltDiff = nacelleTargetTiltRad - n.tiltGroup.rotation.x;
-        const tiltRate = tiltDiff >= 0 ? Q_TILT_RATE_UP_RAD_S : Q_TILT_RATE_DN_RAD_S;
+        // tiltDownRateScale (se dens egen kommentar ved deklarasjonen, brukt samme sted i stepPhysics) -
+        // lastAirspeed i stedet for den lokale airspeed-variabelen, siden denne er en RENDRINGS-funksjon
+        // (kalt fra animate(), ikke fra selve fysikk-tick-en) - holder den visuelle nacelle-vinkelen
+        // synkronisert med fysikkens egen, tregere nedtilting ved lav fart.
+        const tiltRate = tiltDiff >= 0 ? Q_TILT_RATE_UP_RAD_S : Q_TILT_RATE_DN_RAD_S * tiltDownRateScale(lastAirspeed);
         const tiltStep = tiltRate * dt;
         n.tiltGroup.rotation.x = Math.abs(tiltDiff) <= tiltStep ? nacelleTargetTiltRad : n.tiltGroup.rotation.x + Math.sign(tiltDiff) * tiltStep;
         // BUG (brukeren: "de to fremre motorene må rotere i motsatt retning av hverandre") - begge

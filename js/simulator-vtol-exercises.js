@@ -50,7 +50,12 @@ const VTOL_LANDING_SETTLE_SEC = 2.5;
 // quad-simmens tilsvarende captureRadius=2.0 (js/simulator.js) - Heewing er en tyngre/tregere farkost å
 // posisjonere presist i hover enn en quad.
 const VTOL_WAYPOINT_RADIUS_HOVER = 3;
-const VTOL_WAYPOINT_RADIUS_CRUISE = 45;
+// "kan tillate større avvik her" (brukeren, ex3-landingsrunden) - økt fra 45 til 70 m: i motsetning til
+// ex2 sin trange firkant er ex3 sin runde en fastvinget, hundretalls-meter-lang landingsrunde (se
+// VTOL_PATTERN_LEG_M/-WIDTH_M) flydd i god fart - langt mindre presisjon å forvente/kreve enn i en
+// sakteflygende hover-firkant, og en videre fangstsone gir mer albuerom for en jevn, rolig sving i stedet
+// for å måtte treffe et smalt nåløye midt i svingen.
+const VTOL_WAYPOINT_RADIUS_CRUISE = 70;
 const VTOL_MIN_SAFE_IAS = 12;       // m/s - varselgrense i fastvinget flyging (stallfart er ca. 10 m/s)
 const VTOL_MANUAL_RETURN_MIN_DIST_M = 300; // m fra hjem, ex5 - "må fly til 300 m" (brukeren)
 const VTOL_FENCE_RADIUS_M = 300;    // m - typisk VLOS-geofence, horisontalt
@@ -162,13 +167,23 @@ const VTOL_HOVER_SQUARE_WAYPOINTS = [
 // legen. Flyttet til VEST-siden (negativ X, samme side som portløypa - annen høyde, ingen kollisjon) -
 // rett foran piloten i stedet for bak. Bredden økt fra 50 til 90 m (trygt utenfor GATE_AREA_X=-67 m) og
 // benlengden fra 220 til 280 m - "alt for trangt" ga lite margin for en jevn, rolig sving i hver retning.
-const VTOL_PATTERN_LEG_M = 280;   // lengden på utflygings-/medvind-benet
+// "kule 3 må fortsatt flyttes mye nærmere kule 2 langs banen" (brukeren, oppfølging) - selve punkt 3 (base-
+// svingen) IKKE flyttet direkte (det ville forkortet finalestrekningen VTOL_PATTERN_FINAL_LEG_M rett under
+// nettopp fikk forlenget) - i stedet krympet DENNE (utflygings-/medvind-benet) fra 280 til 130 m, som gir
+// akkurat samme resultat (kule 2 og 3 kommer mye nærmere hverandre langs banen) UTEN å spise av finalen.
+const VTOL_PATTERN_LEG_M = 130;   // lengden på utflygings-/medvind-benet
 const VTOL_PATTERN_WIDTH_M = 90;  // avstand fra senterlinjen (kryssvind-/base-benet) - trygt utenfor GATE_AREA_X (-67 m)
+// "finalen må få lov til å være mye lengre. trenger god plass til å svinge og line seg opp" (brukeren) -
+// punkt 3/4 (base-svingen/finale) lå tidligere kun "+20" forbi hjemposisjonen (RUNWAY_NEAR_Z), altså bare
+// ~20 m igjen å fly FØR landing etter siste sving - ingen reell finalestrekning å rette opp/stabilisere
+// seg på. Økt til en egen, navngitt konstant (150 m) - gir en ordentlig rett finale inn mot rullebanen
+// etter base-svingen, i stedet for å måtte lande nesten idet man ruller ut av siste sving.
+const VTOL_PATTERN_FINAL_LEG_M = 150;
 const VTOL_PATTERN_WAYPOINTS = [
-    new THREE.Vector3(0, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_LEG_M),                     // 1) kryssvind-sving
-    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_LEG_M),  // 2) medvind-sving
-    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z + 20),                  // 3) base-sving
-    new THREE.Vector3(0, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z + 20)                                       // 4) finale
+    new THREE.Vector3(0, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_LEG_M),                              // 1) kryssvind-sving
+    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z - VTOL_PATTERN_LEG_M),           // 2) medvind-sving
+    new THREE.Vector3(-VTOL_PATTERN_WIDTH_M, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z + VTOL_PATTERN_FINAL_LEG_M),     // 3) base-sving
+    new THREE.Vector3(0, VTOL_CRUISE_ALT, RUNWAY_NEAR_Z + VTOL_PATTERN_FINAL_LEG_M)                          // 4) finale
 ];
 
 // "Ny øvelse 4 ... En runde i manuell modus med chase kamera bare for å få følelsen med flyet? fly gjennom
@@ -370,6 +385,15 @@ const VTOL_EXERCISES = {
         // vind og en med vind?" (brukeren) - erstattet den gamle, abstrakte 3-punkts ruten med en ekte
         // rektangulær landingsrunde (se VTOL_PATTERN_WAYPOINTS), flydd to hele ganger (ta av - rute - land)
         // - først uten vind, så med vind - i stedet for kun én runde.
+        // "kule nr 3 kan flyttes lengre opp på downwind, nærmere kule nr 2" (brukeren) - først forsøkt løst
+        // med kun en større markør (markerRadius 8->14, siden kule 3 ikke fremheves stort/gult før den
+        // faktisk BLIR gjeldende mål, se hide/vis-logikken i updateWaypointsStage) i stedet for å flytte
+        // selve svingpunktet, siden det ville forkortet finalestrekningen forrige fiks nettopp forlenget.
+        // "kule 3 må fortsatt flyttes mye nærmere kule 2 langs banen. og kulene er alt for store" (brukeren,
+        // oppfølging) - begge deler rettet nå: markerRadius senket igjen til 5 m (14 var for stor), og selve
+        // avstanden mellom kule 2 og 3 krympet ved å korte ned VTOL_PATTERN_LEG_M (se konstantens egen
+        // kommentar over) - IKKE ved å flytte kule 3 sin posisjon direkte, som fortsatt ville spist av
+        // finalestrekningen.
         shortDescription: "Ta av, fly en fastvinget landingsrunde (utflyging-kryssvind-medvind-base-finale), land i Q-modus. 2 runder: uten og med vind.",
         fullDescription: "Ta av i QLOITER, klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m, skift til " +
             "FBWA og fly en full landingsrunde rundt rullebanen (utflyging - kryssvind - medvind - base - " +
@@ -378,12 +402,12 @@ const VTOL_EXERCISES = {
         stages: [
             { type: "climb", label: "1) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
             { type: "transition-out", label: "1) Overgang til FBWA" },
-            { type: "waypoints", label: "1) Landingsrunde (uten vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, requireFixedWing: true, warnLowIas: true },
+            { type: "waypoints", label: "1) Landingsrunde (uten vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true },
             { type: "transition-back", label: "1) Overgang tilbake til Q-loiter" },
             { type: "land-manual", label: "1) Landing" },
             { type: "climb", label: "2) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
             { type: "transition-out", label: "2) Overgang til FBWA" },
-            { type: "waypoints", label: "2) Landingsrunde (med vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, requireFixedWing: true, warnLowIas: true, wind: { speed: 5, directionDeg: 60, gust: 0.3 } },
+            { type: "waypoints", label: "2) Landingsrunde (med vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true, wind: { speed: 5, directionDeg: 60, gust: 0.3 } },
             { type: "transition-back", label: "2) Overgang tilbake til Q-loiter" },
             { type: "land-manual", label: "2) Landing" }
         ]
@@ -400,13 +424,12 @@ const VTOL_EXERCISES = {
         id: "ex4", icon: "fa-route", label: "4. Rundflyging - bli kjent med flyet",
         allowFreeCamera: true,
         spawnYawRad: 0, // "nese med rullebaneretningen" (brukeren) - se spawnYawRad-kommentaren i startVtolExercise
-        shortDescription: "Manuell rundflyging med chase-kamera gjennom portene og bygningene, forbi klokketårnet og fabrikken - land selv i QHOVER.",
+        shortDescription: "Rundflyging med chase-kamera - portene i FBWA, bygningene/landemerkene i MANUAL - land selv i QHOVER.",
         fullDescription: "Ta av i QLOITER, klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m og transiter til " +
-            "FBWA. Bytt deretter til MANUAL. Fly deretter én sammenhengende rundflyging for å bli kjent " +
-            "med hvordan flyet oppfører seg i fastvinget flyging - med chase-kamera i stedet for VLOS " +
-            "denne gangen:\n\n" +
-            "• Gjennom de fire portene vest for rullebanen\n" +
-            "• Gjennom vindusåpningene i bygningene øst for rullebanen\n" +
+            "FBWA. Fly deretter én sammenhengende rundflyging for å bli kjent med hvordan flyet oppfører " +
+            "seg i fastvinget flyging - med chase-kamera i stedet for VLOS denne gangen:\n\n" +
+            "• Gjennom de fire portene vest for rullebanen, fortsatt i FBWA\n" +
+            "• Bytt til MANUAL, og gjennom vindusåpningene i bygningene øst for rullebanen\n" +
             "• Forbi klokketårnet og fabrikken lenger unna\n\n" +
             "Litt vind underveis. Transiter til slutt tilbake til en Q-modus og land selv i QHOVER.",
         // "man blir bedt om overgang til manuel modus etter 20 m på øvelse 4. men man kan jo ikke gå direkte
@@ -414,17 +437,21 @@ const VTOL_EXERCISES = {
         // fastvinget modus (isFixedWingMode, se updateTransitionOutStage) - lot seg dermed "juksefullføre"
         // rett til MANUAL uten om FBWA i det hele tatt, selv om selve LABELEN sa "til MANUAL" (misvisende).
         // Splittet i to: transiter FØRST til FBWA (fortsatt quad-assistert, samme mcAuthority-glidning som
-        // resten av programmet - bygger fart trygt), og et eget "await-mode"-steg (samme type/mekanisme som
-        // ex4's gamle QRTL-steg brukte) som eksplisitt krever MANUAL før selve rundflygingen begynner.
+        // resten av programmet - bygger fart trygt).
+        // "kanskje gjennom portene er i fbwa? og etter portene er det manuel modus" (brukeren, oppfølging) -
+        // await-mode-steget (opprinnelig FØR selve portene) flyttet til å komme ETTER dem i stedet: portene
+        // (trangest av gjennomflygingene, rett etter selve overgangen) flys nå i FBWA - fortsatt
+        // selvnivellerende/steilingssikret, lettere å treffe presist rett etter en fersk overgang - før
+        // eleven bytter til rent manuell kontroll for resten av rundflygingen (bygningene/landemerkene).
         stages: [
             { type: "climb", label: "1) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
             { type: "transition-out", label: "2) Overgang til FBWA" },
-            { type: "await-mode", label: "3) Bytt til MANUAL når du har fart", mode: "manual" },
             {
-                type: "waypoints", label: "4) Gjennom portene", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
-                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
+                type: "waypoints", label: "3) Gjennom portene (FBWA)", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
+                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "fbwa", wind: VTOL_TOUR_WIND, showBearing: true,
                 hint: "Fly gjennom portene."
             },
+            { type: "await-mode", label: "4) Bytt til MANUAL", mode: "manual" },
             {
                 type: "waypoints", label: "5) Gjennom låvene og huset", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
                 radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
@@ -605,18 +632,22 @@ function clearExerciseMarkers() {
 // ex3 sin landingsrunde (utflyging-kryssvind-medvind-base-finale) er en ÅPEN rute som ender nær
 // rullebanen, ikke tilbake ved sitt eget startpunkt - en lukket forbindelseslinje der ville tegnet en
 // vilkårlig ekstra strek tvers over runden.
-function addWaypointMarkers(waypoints, closeLoop) {
+// markerRadius (default 0.45) - "kuleindikatorene trenger ikke være så store når de er så nærme"
+// (brukeren, ex1/ex2): radius senket fra 2 til 1, til 0.6, og igjen ("litt mindre kuler siden vi er så
+// nært her") til 0.45 m der banen er trang og nære spawn-punktet (se VTOL_HOVER_SQUARE_WAYPOINTS).
+// "kulene må være mye større for her er det mer avstand" (brukeren, ex3-landingsrunden) - MOTSATT problem
+// på en fastvinget rute som spenner hundretalls meter: samme 0.45 m ville vært usynlig på avstand. Derfor
+// nå en per-stage-justerbar radius (stage.markerRadius, se enterStageVisuals-kallet) i stedet for én fast
+// verdi for alle øvelser.
+function addWaypointMarkers(waypoints, closeLoop, markerRadius) {
     clearExerciseMarkers();
-    // "kuleindikatorene trenger ikke være så store når de er så nærme" (brukeren) - radius senket fra 2 til
-    // 1, til 0.6, og igjen ("litt mindre kuler siden vi er så nært her") til 0.45 m: øvelsesbanene (særlig
-    // ex1/ex2, se VTOL_HOVER_SQUARE_WAYPOINTS) er nå trange og nære spawn-punktet, og større kuler så
-    // overdimensjonert ut på så kort avstand. Første punkt fikk tidligere en egen oransje farge (uansett
-    // hvor eleven faktisk var i runden) - droppet til fordel for ÉN ensartet blåfarge for alle utestående
-    // hjørner, siden nextWaypointMarker (se rett under) nå er den ENESTE, tydelige "hit skal du"-
-    // indikatoren.
+    const r = markerRadius || 0.45;
+    // Første punkt fikk tidligere en egen oransje farge (uansett hvor eleven faktisk var i runden) -
+    // droppet til fordel for ÉN ensartet blåfarge for alle utestående hjørner, siden nextWaypointMarker
+    // (se rett under) nå er den ENESTE, tydelige "hit skal du"-indikatoren.
     waypoints.forEach(function (wp) {
         const mesh = new THREE.Mesh(
-            new THREE.SphereGeometry(0.45, 12, 12),
+            new THREE.SphereGeometry(r, 12, 12),
             new THREE.MeshBasicMaterial({ color: 0x2a7fd6, transparent: true, opacity: 0.55 })
         );
         mesh.position.copy(wp);
@@ -649,7 +680,7 @@ function addWaypointMarkers(waypoints, closeLoop) {
     // updateWaypointsStage/markWaypointReached under), slik at kun ÉN heltrukket, pulserende gul kule vises
     // på det punktet - ingen blå kule igjen inni/bak den å blande seg med.
     nextWaypointMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.6, 12, 12),
+        new THREE.SphereGeometry(r * 1.33, 12, 12),
         new THREE.MeshBasicMaterial({ color: 0xffee55, transparent: true, opacity: 0.85 })
     );
     scene.add(nextWaypointMarker);
@@ -798,7 +829,7 @@ function stageStartMessage(prefix) {
 function enterStageVisuals() {
     clearExerciseMarkers();
     const stage = getStage();
-    if (stage.type === "waypoints") addWaypointMarkers(stage.waypoints, stage.closeLoop);
+    if (stage.type === "waypoints") addWaypointMarkers(stage.waypoints, stage.closeLoop, stage.markerRadius);
     else if (stage.type === "hover") addHoverMarker(stage);
     // "3 runder med forskjellig vind" (ex5, se VTOL_EXERCISES.ex5) - depart-distance/return-manual må også
     // kunne bære et stage.wind, ikke bare hover/waypoints (ellers ville vinden nullstilt seg selv midt i
