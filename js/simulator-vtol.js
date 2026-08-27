@@ -217,7 +217,16 @@ let _appliedCollectiveThrust = 0;
 // legger til angularVelocity, akkurat som en ekte stabiliseringsloop ville - jo sterkere/lengre
 // forstyrrelsen her, jo tydeligere blir nettopp den korrigeringen synlig.
 const MC_WAKE_TURB_REF_SINK_MS = 3.5; // m/s synkerate der nedvask-turbulensen når full styrke
-const MC_WAKE_TURB_MAX_RAD_S2 = 1.1;  // rad/s² ved full styrke
+// "usymetrisk løft fra propellene som gir full gass i turbulensen sin vil løfte den ene siden av flyet litt
+// forskjellig og i varierende grad?" (brukeren, oppfølging) - fysisk riktig påpekt: en delt, ensartet
+// vinkelakselerasjon på alle tre aksene (rull/stigning/gir likt) representerer egentlig en enkelt, samlet
+// "hele farkosten vugger"-forstyrrelse, ikke individuelle motorer/sider som løfter ULIKT. Ekte usymmetrisk
+// nedvask rammer typisk RULL hardest (løftemotorene sitter side om side, se HEEWING_YAW_WEAK_*-kommentaren
+// om selve tricopter-asymmetrien) - splittet derfor MAX-styrken i en egen, sterkere rull-verdi i stedet for
+// én felles verdi for alle tre aksene (se bruken rett etter groundTurbulence-blokken i stepPhysics).
+const MC_WAKE_TURB_ROLL_MAX_RAD_S2 = 1.6;      // sterkest - side-mot-side løfteasymmetri
+const MC_WAKE_TURB_PITCH_MAX_RAD_S2 = 0.9;
+const MC_WAKE_TURB_YAW_MAX_RAD_S2 = 0.6;       // svakest - reaksjonsmoment, ikke direkte løfteasymmetri
 const _wakeTurbulence = new THREE.Vector3();
 const _wakeTurbulenceTarget = new THREE.Vector3();
 // "Den vil også lage mer turbulens der i hover og flyte litt mer rundt" (brukeren) - nedvasken som
@@ -290,6 +299,17 @@ const AUTO_TRIM_RATE_DEG_PER_SEC = 3;
 // i stedet for kun å ta over den VEDVARENDE/faste delen av utslaget. TAU er tidskonstanten (sekunder)
 // for hvor fort det filtrerte signalet følger faktisk utslag - typisk RC-autopilot-oppførsel.
 const AUTO_TRIM_FILTER_TAU = 2.5;
+// "transisjonen ser veldig mye bedre ut nå. er bare littegrann for mye nese ned rett etter overgangen før
+// autotrimmen retter det opp. legge til litt mer autotrim nese opp ved transisjon?" (brukeren) - rett etter
+// en Q-modus (der auto-trimmen sto helt FROSSET, se isQMode-grenen under) begynner filteret/trimmen på 0
+// eller en gammel verdi fra forrige gang FBWA ble fløyet, og må "hente seg inn" fra bunnen av mot den
+// nye, ekte trim-tilstanden - normal AUTO_TRIM_FILTER_TAU/-RATE er bevisst treg (skal IKKE jage forbigående
+// pinneutslag under vanlig marsjflyging), men gir dermed et kort nese-ned-vindu rett etter overgangen mens
+// den henter seg inn. Kjører BEGGE (filter+trimrate) noe raskere enn normalt BARE mens nacellene faktisk
+// fortsatt tilter (frontTiltRad>0.02, samme "i overgang"-indikator som transitionThrustCeiling i
+// stepPhysics bruker) - en midlertidig, raskere "innhenting", ikke en permanent mer nervøs auto-trim under
+// vanlig cruise.
+const AUTO_TRIM_TRANSITION_RATE_MULT = 3;
 // Bred nok overgangssone (11°) til at løftet ikke faller brått/rykkete idet flyet krysser inn i steiling.
 const STALL_POST_RANGE_DEG = 11; // bredde på overgangssonen rett etter kritisk vinkel før dyp steiling
 
@@ -4705,14 +4725,18 @@ function stepPhysics(dt) {
         // fryses BÅDE filteret og selve trimverdien akkurat der de sist stod fra ekte FBWA/FBWB-flyging
         // (eller 0, om ingen har skjedd ennå), i stedet for å drive videre basert på hover-dynamikk.
         if (!isQMode(controlMode)) {
-            planeState.autoTrimFilteredDeflection += (pitchDeflection - planeState.autoTrimFilteredDeflection) * Math.min(1, dt / AUTO_TRIM_FILTER_TAU);
+            // AUTO_TRIM_TRANSITION_RATE_MULT (se konstantens egen kommentar) - kun mens nacellene faktisk
+            // fortsatt tilter rett etter en overgang, ikke under vanlig, allerede innstilt marsjflyging.
+            const autoTrimRateMult = planeState.frontTiltRad > 0.02 ? AUTO_TRIM_TRANSITION_RATE_MULT : 1;
+            planeState.autoTrimFilteredDeflection += (pitchDeflection - planeState.autoTrimFilteredDeflection) *
+                Math.min(1, dt * autoTrimRateMult / AUTO_TRIM_FILTER_TAU);
             // Fortegn: pitchDeflection>0 betyr halen for øyeblikket dyttes mot MER nese-ned (se tailAoaDeg
             // under) - trim skal da beveges i MOTSATT retning av utslaget for å overta den samme jobben og
             // la utslaget slappe av mot null (verifisert med likevektsanalyse: trim_dot = -k*deflection er
             // den eneste av de to fortegnene som faktisk konvergerer, ikke bare tilsynelatende riktig
             // retning).
             planeState.elevatorTrimDeg = clamp(
-                planeState.elevatorTrimDeg - planeState.autoTrimFilteredDeflection * AUTO_TRIM_RATE_DEG_PER_SEC * dt,
+                planeState.elevatorTrimDeg - planeState.autoTrimFilteredDeflection * AUTO_TRIM_RATE_DEG_PER_SEC * autoTrimRateMult * dt,
                 -TRIM_RANGE_DEG, TRIM_RANGE_DEG
             );
         }
@@ -5044,15 +5068,18 @@ function stepPhysics(dt) {
     const sinkSpeed = Math.max(0, -planeState.velocity.y);
     const wakeTurbStrength = planeState.onGround ? 0 :
         Math.min(1, sinkSpeed / MC_WAKE_TURB_REF_SINK_MS) * planeState.lastCollectiveFrac * mcAuthority;
+    // Egen, sterkere magnitude per akse (se MC_WAKE_TURB_ROLL/PITCH/YAW_MAX_RAD_S2-kommentaren) - fortsatt
+    // TRE uavhengige Math.random()-kall (ikke samme tall skalert ulikt), så aksene fremdeles varierer i
+    // egen, uavhengig grad ("i varierende grad", brukeren), bare med rull som den dominerende.
     _wakeTurbulenceTarget.set(
-        (Math.random() * 2 - 1) * MC_WAKE_TURB_MAX_RAD_S2,
-        (Math.random() * 2 - 1) * MC_WAKE_TURB_MAX_RAD_S2,
-        (Math.random() * 2 - 1) * MC_WAKE_TURB_MAX_RAD_S2
+        (Math.random() * 2 - 1) * MC_WAKE_TURB_ROLL_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * MC_WAKE_TURB_PITCH_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * MC_WAKE_TURB_YAW_MAX_RAD_S2
     ).multiplyScalar(wakeTurbStrength);
     _wakeTurbulence.lerp(_wakeTurbulenceTarget, Math.min(1, dt * 5));
     planeState.angularVelocity.roll += _wakeTurbulence.x * dt;
     planeState.angularVelocity.pitch += _wakeTurbulence.y * dt;
-    planeState.angularVelocity.yaw += _wakeTurbulence.z * dt * 0.4;
+    planeState.angularVelocity.yaw += _wakeTurbulence.z * dt;
 
     const accel = new THREE.Vector3().add(thrustVec).add(liftVec).add(dragVec).add(gravityVec).add(liftMotorThrustVec).multiplyScalar(1 / spec.mass);
 
@@ -5121,6 +5148,19 @@ function stepPhysics(dt) {
     // halens angrepsvinkel (og dermed løft), som vipper nesen tilbake ned - ekte aerodynamisk demping,
     // ikke en håndjustert konstant. Parameterisert over antatt pitchRate (ikke bare gjeldende verdi) -
     // se merknaden ved pitchDampCoeff for hvorfor.
+    // "fortsatt litt mye nesedropp i overgangen" (brukeren, oppfølging) - den raskere reaktive auto-
+    // trimmen (AUTO_TRIM_TRANSITION_RATE_MULT over) alene JAGER fortsatt et utslag som allerede har
+    // oppstått, den kan ikke forhindre selve det første, momentane nesedroppet idet de reelle fysiske
+    // kreftene endrer seg brått (trekkraftvektoren vrir seg fra loddrett mot vannrett, quad-dempingen på
+    // stigning fader ut med mcAuthority). Denne legger i stedet til en direkte, FOROVERKOBLET (ikke
+    // reaktiv) nese-opp-trim proporsjonal med selve overgangsfremdriften (1-collectiveVerticalFrac, 0 ved
+    // ren hover -> maks idet nacellene nærmer seg vannrett) og fortsatt løftemotor-myndighet (mcAuthority,
+    // fader ut mot 0 idet en ekte cruise-trim uansett overtar) - kompenserer altså SELVE forstyrrelsen idet
+    // den oppstår, i stedet for å vente på at et lavpassfiltrert utslag skal fange den opp etterpå.
+    const TRANSITION_PITCH_TRIM_FEEDFORWARD_DEG = 6;
+    const transitionPitchTrimFeedforwardDeg = planeState.planeClass === "heewing"
+        ? (1 - collectiveVerticalFrac) * mcAuthority * TRANSITION_PITCH_TRIM_FEEDFORWARD_DEG
+        : 0;
     function tailTorqueAtPitchRate(pitchRateAssumed) {
         const rot = new THREE.Vector3(yawRate * tailArm, -pitchRateAssumed * tailArm, 0);
         const v = localAirVel.clone().add(rot);
@@ -5136,7 +5176,7 @@ function stepPhysics(dt) {
         // pilotens direkte utslag; trim gjelder nå i BEGGE modus (i Manual satt av piloten selv, i
         // Stabilized satt av auto-trim-integratoren over).
         // IKKE lenger klemt til ±35° - se symmetricLiftCoefficient sin BUG-merknad for hvorfor.
-        const aoa = baseAoa + pitchDeflection * ELEVATOR_MAX_AOA_DEG - planeState.elevatorTrimDeg;
+        const aoa = baseAoa + pitchDeflection * ELEVATOR_MAX_AOA_DEG - planeState.elevatorTrimDeg - transitionPitchTrimFeedforwardDeg;
         const lift = 0.5 * AIR_DENSITY * speedSq * tailArea * symmetricLiftCoefficient(aoa, tailClSlope, spec.stallAngleDeg);
         return -tailArm * lift;
     }
