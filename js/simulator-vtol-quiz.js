@@ -15,6 +15,7 @@
    "fyll"-svar. */
 const VTOL_QUIZ_QUESTIONS = [
     {
+        icon: "fa-compass",
         question: "Hva skjer typisk hvis kompasset er dårlig kalibrert og du flyr i QLOITER eller en annen GPS-avhengig modus?",
         options: [
             "Farkosten kan drifte eller sirkle ukontrollert (\"toilet bowling\"), i verste fall fly av gårde av seg selv",
@@ -35,6 +36,7 @@ const VTOL_QUIZ_QUESTIONS = [
     // deklinasjon brukt som en bevisst god (plausibel, men feil) distraktor i stedet for å endres til
     // korrekt svar, nettopp fordi den er automatisk håndtert og DERFOR ikke selve kalibrerings-grunnen.
     {
+        icon: "fa-map-location-dot",
         question: "Hvorfor anbefales det å kalibrere kompasset på nytt etter å ha flyttet til et nytt flysted?",
         options: [
             "Magnetisk misvisning (deklinasjon) endrer seg med posisjonen, og må stilles inn manuelt etter hver flytting",
@@ -46,6 +48,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "Kalibreringen kompenserer for LOKALE magnetiske forstyrrelser (metall, kjøretøy, utstyr) på akkurat dette stedet. Misvisning (deklinasjon) endrer seg riktignok også med posisjon, men ArduPilot slår automatisk opp riktig verdi fra GPS-posisjonen (COMPASS_AUTODEC) - det er altså IKKE grunnen til at en ny kalibrering anbefales."
     },
     {
+        icon: "fa-code-compare",
         question: "Hva er hovedforskjellen mellom QHOVER og QLOITER?",
         options: [
             "QHOVER er ment kun for landing, mens QLOITER kun brukes til selve avgangen fra bakken",
@@ -57,6 +60,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "QHOVER gir kun Alt Hold - horisontal posisjon må du holde selv med stikkene. QLOITER legger GPS-posisjonshold oppå det, og bremser til stillstand når du slipper stikkene."
     },
     {
+        icon: "fa-gauge-high",
         question: "Hva gjør ArduPilot-parameteren Q_ASSIST_SPEED?",
         options: [
             "Angir luftfarten flyet må ha i marsjflyging før overgangen til fastvinget modus regnes som fullført",
@@ -72,6 +76,7 @@ const VTOL_QUIZ_QUESTIONS = [
         // fungerer da fortsatt, men luftfarten den sammenlignes mot er en ESTIMERT verdi (GPS-fart +
         // vindestimering), ikke en fysisk målt en. Faktasjekket mot ArduPilot sin egen
         // "Assisted Fixed-Wing Flight"-dokumentasjon (airspeed-estimering uten sensor).
+        icon: "fa-wind",
         question: "Heewing T2 Cruza leveres normalt UTEN fysisk luftfartsmåler (pitotrør). Hva betyr det for Q_ASSIST_SPEED i sterk medvind?",
         options: [
             "Det påvirker ikke Q_ASSIST_SPEED i det hele tatt - terskelen leses alltid fra en fysisk sensor",
@@ -88,6 +93,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "Uten fysisk luftfartsmåler bruker ArduPilot et \"syntetisk\" luftfartsestimat som kombinerer GPS-fart med et vindestimat (best observert gjennom svinger). I rett linje i sterk medvind kan estimatet bli upresist og overvurdere farten gjennom luften. Q_ASSIST_SPEED stoler blindt på dette estimatet - assistansen risikerer da å slå inn for sent, eller ikke i det hele tatt."
     },
     {
+        icon: "fa-plane",
         question: "Hva skjer med løftemotorene i MANUAL-modus (ren fastvinget flyging, ingen assistanse)?",
         options: [
             "De går alltid på lav, konstant tomgang gjennom hele flyturen for ekstra sikkerhetsmargin",
@@ -100,6 +106,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "MANUAL er ren fastvinget flyging uten noen VTOL-assistanse i det hele tatt - løftemotorene er helt uten myndighet, uansett fart eller nesestilling (attitude)."
     },
     {
+        icon: "fa-ban",
         question: "Hva er forskjellen på å bruke Motor Emergency Stop (\"kill\"/nødstopp) og å disarme farkosten?",
         options: [
             "Det er ingen reell forskjell mellom dem - begge gjør nøyaktig samme ting i praksis",
@@ -119,6 +126,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "Slik fungerer Motor Emergency Stop i denne simulatoren (tilsvarer ArduPilot sin \"ARM/Motor Emergency Stop\"-opsjon): motorene stanses UTEN å disarme, farkosten forblir armert. Ekte ArduPilot har også en enklere \"Motor Emergency Stop\"-opsjon som faktisk disarmer AUTOMATISK etter noen sekunder om bryteren ikke vippes tilbake - men uansett variant er det kun et FULLT disarm som nullstiller hjempunktet og krever ny arming."
     },
     {
+        icon: "fa-fan",
         question: "Heewing T2 Cruza har to tiltbare motorer foran og én fast motor bak. Hva skjer med den BAKRE motoren når overgangen til fastvinget flyging er fullført?",
         options: [
             "Den fortsetter å gå på lav, konstant gass for ekstra stabilitet i marsjflyging",
@@ -130,6 +138,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "Den bakre, faste vertikale motoren har KUN en løfte-/hover-rolle - den kutter helt i fastvinget flyging, mens de to fremre motorene (nå tiltet forover) driver fremdriften."
     },
     {
+        icon: "fa-gamepad",
         question: "Ekte ArduPilot-arming via stikken, uten en egen fysisk arm-bryter: hvilken kombinasjon armerer motorene?",
         options: [
             "Full gass + sideror nøytralt, holdt i noen sekunder",
@@ -141,6 +150,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "Gass i bunn + fullt HØYRE sideror i noen sekunder armerer. Disarming er samme gass-posisjon, men med VENSTRE sideror i stedet."
     },
     {
+        icon: "fa-clipboard-check",
         question: "Hvorfor kjører ArduPilot en rekke \"pre-arm\"-sjekker (GPS-presisjon, sensortilstand, kalibrering osv.) før den i det hele tatt tillater arming?",
         options: [
             "Kun en treg formalitet - erfarne piloter bør helst deaktivere dem for raskere oppstart",
@@ -157,6 +167,7 @@ const VTOL_QUIZ_QUESTIONS = [
     // styreevne og lar farkosten falle/gli videre ukontrollert i en tilfeldig retning); uunngåelig/nært
     // forestående sammenstøt -> nødstopp for i det minste å stanse de roterende propellene før treff.
     {
+        icon: "fa-triangle-exclamation",
         question: "Hva er riktig prioritet dersom en ukontrollert farkost beveger seg mot en person i et VLOS-scenario?",
         options: [
             "Avhenger av avstanden: god avstand igjen - styr aktivt unna. Uunngåelig og nære - nødstopp for å stanse propellene",
@@ -172,6 +183,7 @@ const VTOL_QUIZ_QUESTIONS = [
     // differensiell turtall) for gir-autoritet i hover - Q_TILT_YAW_ANGLE (standard 16°) er den ekte
     // ArduPilot-parameteren som styrer hvor mye nacellene vinkles ulikt.
     {
+        icon: "fa-rotate",
         question: "Du er i QLOITER i sterk vind og gir fullt utslag på gir-pinnen (sideror) for å snu nesa 180 grader. Hvilken mekanisk risiko utsetter du Heewing T2 for akkurat under denne rotasjonen?",
         options: [
             "Ingen reell risiko - gir i QLOITER styres utelukkende av sideroret, akkurat som i fastvinget flyging",
@@ -185,6 +197,7 @@ const VTOL_QUIZ_QUESTIONS = [
     // "Ta med et spørsmål eller to om batterispenning for 6s pakker" (brukeren) - to spørsmål: full-/tom-
     // spenning, og spenningsfall ("sag") ved overgang til hover på lavt batteri.
     {
+        icon: "fa-battery-full",
         question: "Heewing T2 Cruza bruker en 6S LiPo-batteripakke. Hva er omtrent fulladet spenning, og hva regnes som \"tom\" (bør ikke synke lavere under flyging)?",
         options: [
             "Ca. 22,2 V fulladet (3,7 V/celle nominell), bør ikke synke under ca. 18,0 V (3,0 V/celle) under flyging",
@@ -196,6 +209,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "En 6S LiPo har 6 celler i serie. Fulladet er 4,2 V/celle = 25,2 V totalt. Nominell spenning (3,7 V/celle = 22,2 V) er IKKE det samme som fulladet - det er et gjennomsnitt gjennom utladingen. Under ca. 3,3 V/celle (19,8 V totalt) bør du allerede være i ferd med å lande - dypere utlading skader cellene permanent."
     },
     {
+        icon: "fa-battery-quarter",
         question: "Du flyr en lang fastvinget tur på Heewing T2 og batteriet er nesten tomt idet du skal lande. Hva bør du forvente når du tilter motorene opp og går inn i QLOITER for landing?",
         options: [
             "Ingenting spesielt å forvente - strømforbruket er stort sett identisk i hover og fastvinget marsjflyging",
@@ -208,6 +222,7 @@ const VTOL_QUIZ_QUESTIONS = [
     },
     // "Legg til et spørsmål om CG - center of Gravity. ekstra kritisk på tricopter" (brukeren).
     {
+        icon: "fa-scale-balanced",
         question: "Hvorfor er riktig tyngdepunkt (CG) ekstra kritisk på en tricopter-konfigurasjon som Heewing T2 (to fremre motorer, én bakre), sammenlignet med en vanlig firemotors quadplane?",
         options: [
             "Det er faktisk mindre kritisk enn på en quadplane - færre motorer gir færre steder det kan gå galt",
@@ -226,6 +241,7 @@ const VTOL_QUIZ_QUESTIONS = [
     // fortsatt kan lande trygt om noe er galt) - to distinkte, kronologisk ordnede vaner, ikke samme
     // spørsmål to ganger.
     {
+        icon: "fa-magnifying-glass",
         question: "Hva er en av de viktigste tingene å sjekke rett FØR avgang, mens farkosten fortsatt står på bakken?",
         options: [
             "At rorflatene (høyderor, sideror, skråror) beveger seg tydelig og i RIKTIG retning ved pinneutslag",
@@ -237,6 +253,7 @@ const VTOL_QUIZ_QUESTIONS = [
         explanation: "En kontrollflate-sjekk (\"range check\") - beveg pinnene og se at høyderor/sideror/skråror faktisk beveger seg riktig vei - er den mest grunnleggende, universelle sjekken før enhver RC-/UAV-avgang. En reversert eller frakoblet kanal oppdages langt billigere på bakken enn i luften. GPS-lås er kun relevant for GPS-avhengige moduser, 100%-krav er unødvendig strengt, og kompasset trenger kun rekalibreres etter flytting/interferens (se spørsmålet om det over) - ikke rutinemessig hver eneste gang."
     },
     {
+        icon: "fa-helicopter",
         question: "Hva er en av de viktigste tingene å sjekke RETT ETTER avgang, mens du fortsatt hovrer lavt og nær hjempunktet?",
         options: [
             "At gir, stigning og rulling reagerer riktig - både retning og styrke - på pinneutslagene, før du flyr videre eller høyere",
@@ -253,6 +270,7 @@ const VTOL_QUIZ_QUESTIONS = [
     // (vekt, ytelse, nyttelast) - endringer utenfor det den faktisk dekker krever normalt en ny vurdering,
     // ikke en fri sak å avgjøre selv på flyplassen.
     {
+        icon: "fa-file-signature",
         question: "Har du lov til å modifisere farkosten (f.eks. montere ekstra nyttelast) i forhold til hvordan den er registrert/godkjent?",
         options: [
             "Ja, fritt fram - så lenge du fortsatt holder deg innenfor produsentens maksimale tillatte avgangsvekt",

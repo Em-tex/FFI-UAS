@@ -573,7 +573,7 @@ const GROUND_SPAWN_YAW_RAD = Math.atan2(-(0 - VLOS_PILOT_X), -(RUNWAY_SPAWN_Z - 
 // er trukket fra. Løftet igjen, samme proporsjonale ~1.33x/~1.15x-mønster som runde 3.
 const VTOL_CLASSES = {
     // Heewing T2 Cruza VTOL - EGET, dedikert fartøy (ikke en av de tre generiske trener-størrelsene under)
-    // brukt automatisk i utsjekksprogrammet (se startVtolExercise i js/simulator-vtol-exercises.js), og
+    // brukt automatisk i introprogrammet (se startVtolExercise i js/simulator-vtol-exercises.js), og
     // valgbar som "Fly-størrelse" i Fly og kamera-panelet ellers. Egen visuell modell, se buildHeewingPlane
     // (dispatchet fra buildPlane) - IKKE den generiske small/medium/large-kroppen.
     //
@@ -6258,16 +6258,35 @@ function animate(now) {
     requestAnimationFrame(animate);
     const frameDt = Math.min((now - lastTime) / 1000, 0.1);
     lastTime = now;
-    accumulator += frameDt;
+    // specialExerciseState (se BUG-kommentaren ved fysikk-løkken lenger ned): IKKE la akkumulatoren bygge
+    // seg opp mens fysikken hoppes over - ellers ville et langt opphold i veiviseren/quizen (eleven leser
+    // et steg/spørsmål i flere minutter) ført til at HELE den opparbeidede tiden ble kjørt igjennom som
+    // fysikk-steg i én eneste rasende rekke idet overlegget lukkes ("spiral of death"-mønsteret et fast
+    // tidssteg ellers er sårbart for), i stedet for at flyet ganske enkelt fortsetter fra der det sto.
+    if (specialExerciseState) accumulator = 0; else accumulator += frameDt;
     viewportWatcher();
 
     updateWind(frameDt);
     updateInput(frameDt);
     updateStickArming(frameDt); // pinne-arming/-disarming - se funksjonens egen kommentar
     applyVtolExerciseAutopilot(); // øvelser/diplom - MÅ kjøres FØR fysikk-løkken, se js/simulator-vtol-exercises.js
-    while (accumulator >= FIXED_DT) {
-        stepPhysics(FIXED_DT);
-        accumulator -= FIXED_DT;
+    // "pass på at man ikke kan fly i bakgrunnen. virker distraherende at flyet plutselig rører på seg i
+    // bakgrunnen" (brukeren, om veiviser-/quiz-overlegget) - updateInput() fryser allerede FERSK
+    // stick-innput mens specialExerciseState er aktiv (se kommentaren der), MEN det stoppet aldri selve
+    // FYSIKKEN - et fly som var luftbårent/i bevegelse idet eleven åpnet veiviseren/quizen (f.eks. fra
+    // Øvelser-panelet midt i en økt) fortsatte å falle/drifte/holde en Q-modus synlig bak selve
+    // overlegget, DREVET AV DEN SISTE (nå fastfrosne) stick-verdien fra rett før overlegget åpnet - en
+    // resetPlane() i startVtolSpecialExercise() alene (se der) ville bare flyttet flyet til bakken ÉN
+    // gang, før neste tick umiddelbart begynte å akselerere det på nytt fra akkurat den samme fastfrosne
+    // gass-/pinneverdien. Hopper derfor over HELE fysikk-løkken (ikke bare selve inputet) mens overlegget
+    // er åpent - veiviseren/quizen er eksplisitt "ingen 3D-flyging i det hele tatt" (se toppkommentaren i
+    // js/simulator-vtol-exercises.js), så en fullstendig frosset farkost er riktig oppførsel, ikke bare en
+    // tilnærming.
+    if (!specialExerciseState) {
+        while (accumulator >= FIXED_DT) {
+            stepPhysics(FIXED_DT);
+            accumulator -= FIXED_DT;
+        }
     }
 
     // Se funksjonenes egne kommentarer - UBETINGET, ikke bare i én øvelse (samme "alltid aktiv"-mønster

@@ -1,5 +1,8 @@
 /* js/simulator-vtol-exercises.js
-   VLOS-utsjekksprogram (øvelser + diplom) for VTOL-simulatoren - Heewing T2 Cruza VTOL. Rent VLOS - ingen
+   Heewing T2 introprogram ("øvelsen for Heewing. ikke 'Utsjekksprogram'... 'Heewing T2 introprogram' er
+   bedre?" - brukeren, omdøpt fra "Utsjekksprogram" - se HTML-panelet/-tastatursnarveien og
+   showVtolExerciseSummary under for selve UI-teksten) - øvelser + diplom for VTOL-simulatoren, Heewing T2
+   Cruza VTOL. Rent VLOS - ingen
    BVLOS-opplegg (brukeren: "Vi kan kalle programmet VLOS - Heewing T2 Cruza VTOL. Siden dette er utsjekk
    for å fly VLOS. Trenger ingen BVLOS opplegg"). QLOITER for VTOL-sveving, FBWA for fastvinget
    marsjflyging, QRTL for automatisk retur (Heewing er satt opp med nettopp QLOITER/FBWA/RTL som
@@ -205,12 +208,14 @@ const VTOL_TOUR_WIND = { speed: 4, directionDeg: 50, gust: 0.2 };
 const ex0WizardSteps = [
     {
         title: "Velkommen",
+        icon: "fa-hand-sparkles",
         body: "Før du begynner på selve flyøvelsene, sett opp fjernkontrollen riktig og bli kjent med " +
             "flymodusene du kommer til å bruke. Dette tar bare noen minutter, og sparer deg for forvirring " +
             "midt i en øvelse."
     },
     {
         title: "1) Modusbryter - tre posisjoner",
+        icon: "fa-toggle-on",
         body: "Sett opp én 3-posisjonsbryter på senderen med disse tre modusene, i denne rekkefølgen (så " +
             "bryteren går fra \"sikrest\" til \"mest automatisert\" den ene veien):\n\n" +
             "• QLOITER - VTOL-hover med GPS-posisjonshold (start-/landingsmodus)\n" +
@@ -223,6 +228,7 @@ const ex0WizardSteps = [
     },
     {
         title: "2) Motorstopp / KILL - egen bryter",
+        icon: "fa-power-off",
         body: "Bind en EGEN, lett tilgjengelig bryter (eller knapp) til Motor Emergency Stop (AUX-funksjon " +
             "\"Motor Emergency Stop\", eller ARM/DISARM). Dette er nødstoppen din - den skal kunne nås " +
             "UTEN å lete, med tommelen fortsatt på stikkene.\n\n" +
@@ -230,18 +236,23 @@ const ex0WizardSteps = [
             "settes ikke. Vanlig disarm med venstre stikke ned og til venstre er noe annet - det " +
             "nullstiller hjempunktet og krever en ny arming før neste flytur.\n\n" +
             "Trykk \"Sett\" under for AV og PÅ, og trykk deretter bryteren på senderen i hver posisjon.",
-        bindActions: ["engineOff", "engineOn"]
+        bindActions: ["engineOff", "engineOn"],
+        // "det er jo forskjell på motor emergency stop og disarm... her skal vi bare binde emergency stop.
+        // disarm er jo fast på stikkene" (brukeren) - se bindNote-kommentaren i renderSpecialExerciseStep.
+        bindNote: "\"Motor AV\"/\"Motor PÅ\" under ER Motor Emergency Stop-bryteren din (de to posisjonene på samme fysiske bryter) - IKKE disarm. Disarm er kun pinne-gesten, aldri en bryter du binder her."
     },
     {
         title: "3) QLOITER - hva den gjør",
+        icon: "fa-location-crosshairs",
         body: "VTOL-hover MED GPS-posisjonshold. Slipper du stikkene, bremser og holder farkosten seg i ro " +
             "over ett punkt av seg selv - den beste modusen for kontrollert take-off og landing.\n\n" +
             "Krever en god GPS- og KOMPASS-løsning for å faktisk holde posisjonen - en dårlig " +
             "kompasskalibrering gir ustø drift eller sirkling (\"toilet bowling\") selv i denne modusen, " +
-            "se teoriprøven til slutt i utsjekksprogrammet for mer om dette."
+            "se teoriprøven til slutt i introprogrammet for mer om dette."
     },
     {
         title: "4) QHOVER - egen bryter",
+        icon: "fa-arrows-up-down",
         body: "Som QLOITER, men UTEN GPS-posisjonshold - kun høyden holdes automatisk (Alt Hold), " +
             "posisjonen må du styre selv med stikkene. Brukes i noen av øvelsene for å trene ren " +
             "svevekontroll uten at autopiloten hjelper til med posisjonen.\n\n" +
@@ -251,6 +262,7 @@ const ex0WizardSteps = [
     },
     {
         title: "5) FBWA - hva den gjør",
+        icon: "fa-plane",
         body: "Fastvinget marsjflyging (Fly By Wire A) - du styrer med vanlige fly-stikker (krengning/" +
             "stigning), men autopiloten begrenser bank- og angrepsvinkelen automatisk slik at flyet ikke " +
             "kan steile eller krenge for hardt, uansett hvor hardt du drar i stikkene.\n\n" +
@@ -259,6 +271,7 @@ const ex0WizardSteps = [
     },
     {
         title: "6) QRTL - hva den gjør",
+        icon: "fa-house",
         body: "Automatisk VTOL-retur til hjempunktet - flyr fastvinget tilbake mot hjem, transiterer til " +
             "VTOL-hover når den kommer innenfor RTL_RADIUS fra hjem (se RTL-panelet), og lander av seg " +
             "selv. Er avstanden til hjem allerede mindre enn RTL_RADIUS når QRTL aktiveres, hopper den " +
@@ -267,6 +280,7 @@ const ex0WizardSteps = [
     },
     {
         title: "7) Før hver flytur",
+        icon: "fa-clipboard-check",
         body: "Kalibrer kompasset på nytt (eller sjekk at det er riktig) hver gang du flytter deg til et " +
             "nytt sted, eller etter en lengre pause - metall i bakken/bilen/utstyret ditt kan forstyrre " +
             "det.\n\nVent på et solid GPS-lås før du tar av i en Q-modus - uten " +
@@ -274,6 +288,7 @@ const ex0WizardSteps = [
     },
     {
         title: "Klar!",
+        icon: "fa-flag-checkered",
         body: "Modusbryteren er satt opp, motorstoppen er bundet, og du vet hva hver modus gjør. Du er " +
             "klar for øvelse 1 - hover-trening."
     }
@@ -679,7 +694,7 @@ function restoreWind() {
 /* ==================== Start / stopp / fremdrift ==================== */
 function startVtolExercise(id) {
     if (exerciseState.active) stopVtolExercise();
-    // Utsjekksprogrammet er FOR Heewing T2 Cruza spesifikt - bytt til DEN modellen for varigheten av
+    // Introprogrammet er FOR Heewing T2 Cruza spesifikt - bytt til DEN modellen for varigheten av
     // øvelsen, men husk hva eleven hadde valgt selv (Fly-størrelse i Fly og kamera-panelet) for å
     // gjenopprette det når øvelsen avsluttes (se stopVtolExercise/exerciseSummaryCloseBtn) - IKKE la
     // øvelsesstart trakassere brukerens eget frie-flygings-valg permanent (setPlaneClass lagrer til
@@ -1359,8 +1374,18 @@ function updateGcsScreenFields() {
    resetPlane, exerciseHudBar osv.) - disse to rører aldri planeState i det hele tatt. */
 let specialExerciseState = null; // { id, exercise, stepIndex, quizScore, quizAnswered }
 
+// "under fjernkontroll oppsett og quiz pass på at man ikke kan fly i bakgrunnen. virker distraherende at
+// flyet plutselig rører på seg i bakgrunnen" (brukeren) - updateInput() blokkerer allerede FERSK
+// styreinnput mens specialExerciseState er aktiv (se den tidligere fiksen i simulator-vtol.js), men
+// FYSIKKEN fortsatte uendret å kjøre i bakgrunnen - et fly som tilfeldigvis var luftbårent/i bevegelse idet
+// eleven åpnet veiviseren/quizen (f.eks. fra Øvelser-panelet midt i en økt) fortsatte da å falle/drifte/
+// holde en Q-modus synlig bak selve overlegget. Veiviseren/quizen er eksplisitt "ingen 3D-flyging i det
+// hele tatt" (se toppkommentaren i filen) - resetPlane() her fjerner enhver bevegelse ved å sette flyet
+// trygt til ro på bakken FØR overlegget vises, samme GROUND_SPAWN_YAW_RAD-konvensjon som resten av
+// øvelsesprogrammet (se startVtolExercise).
 function startVtolSpecialExercise(id) {
     const exercise = VTOL_EXERCISES[id];
+    resetPlane(GROUND_SPAWN_YAW_RAD);
     specialExerciseState = { id: id, exercise: exercise, stepIndex: 0, quizScore: 0, quizAnswered: false };
     document.getElementById("exercisesPanel").style.display = "none";
     document.getElementById("specialExerciseOverlay").style.display = "flex";
@@ -1388,6 +1413,10 @@ function renderSpecialExerciseStep() {
     const nextBtn = document.getElementById("wizardNextBtn");
     const closeBtn = document.getElementById("wizardCloseBtn");
     const bindGrid = document.getElementById("wizardBindGrid");
+    // "litt forstyrrende at vindusstørrelsen endrer seg hele tiden [i quizen]" (brukeren) - se
+    // .sim-wizard-card-quiz i css/style.css - låser kortets høyde KUN for quiz-visningen (spørsmål OG
+    // resultatskjermen), ikke ex0-veiviseren (se klasse-kommentaren der for hvorfor).
+    document.getElementById("wizardCard").classList.toggle("sim-wizard-card-quiz", s.exercise.special === "quiz");
     optionsEl.innerHTML = "";
     explanationEl.style.display = "none";
     closeBtn.style.display = "none";
@@ -1399,7 +1428,13 @@ function renderSpecialExerciseStep() {
     if (s.exercise.special === "wizard") {
         const step = s.exercise.wizardSteps[s.stepIndex];
         document.getElementById("wizardStepLabel").textContent = "Fjernkontroll-oppsett";
-        document.getElementById("wizardTitle").textContent = step.title;
+        // "Se om det er mulig å få med noen passende illustrasjoner på fjerknotroll oppsett kortene og på
+        // quizen" (brukeren) - step.icon (valgfritt FontAwesome-klassenavn, se ex0WizardSteps) som et lite,
+        // tematisk passende ikon foran selve steg-tittelen - samme "<i class=...></i> tekst"-mønster som
+        // resten av programmet allerede bruker for øvelses-/quiz-spørsmål-ikoner andre steder.
+        document.getElementById("wizardTitle").innerHTML = step.icon
+            ? '<i class="fa-solid ' + step.icon + ' sim-exercise-icon"></i> ' + step.title
+            : step.title;
         document.getElementById("wizardBody").textContent = step.body;
         // "det var jo meningen at brukeren får sette opp fjernkontrollen her. Klikke på knapp der inne og
         // så trykke på fjernkontrollen for å binde knappene. Så slipper man å knote i menyen." (brukeren) -
@@ -1412,7 +1447,25 @@ function renderSpecialExerciseStep() {
             const labels = {};
             step.bindActions.forEach(function (action) { labels[action] = BUTTON_ACTION_LABELS[action]; });
             bindGrid.style.display = "";
+            // "det er jo forskjell på motor emergency stop og disarm. og så kommer binding motor AV?? her
+            // skal vi bare binde emergency stop. disarm er jo fast på stikkene" (brukeren) - "Motor AV"/
+            // "Motor PÅ" (BUTTON_ACTION_LABELS.engineOff/-On) er de SAMME generiske knapp-handling-navnene
+            // Bindinger-panelet ellers bruker for Motor Emergency Stop sine to diskrete triggere (se
+            // DEFAULT_GAMEPAD_MAP-kommentaren, simulator-vtol.js) - riktige i seg selv, men rett etter en
+            // tekst som nettopp kontrasterer "Motor Emergency Stop" mot "disarm" kan de lett mistolkes som
+            // noe ANNET enn selve nødstopp-bryteren (disarm er jo bevisst IKKE bindbar - kun pinne-gesten).
+            // step.bindNote (valgfritt) gir et lite, steg-spesifikt presiseringsnotat rett under selve
+            // knapperaden - ikke en generell endring av BUTTON_ACTION_LABELS (som Bindinger-panelet ellers
+            // bruker uendret, utenfor denne konteksten). Lagt til ETTER buildGamepadButtonsGrid-kallet -
+            // den funksjonen nullstiller containerEl.innerHTML selv ved hvert kall, så et notat satt inn
+            // FØR ville blitt visket bort igjen med det samme.
             Sim.buildGamepadButtonsGrid(bindGrid, gamepadMap.buttons, labels, buttonManager, getActiveGamepad, saveGamepadMap);
+            if (step.bindNote) {
+                const note = document.createElement("p");
+                note.className = "sim-panel-hint";
+                note.textContent = step.bindNote;
+                bindGrid.appendChild(note);
+            }
         }
         document.getElementById("wizardProgress").textContent = "Steg " + (s.stepIndex + 1) + " av " + s.exercise.wizardSteps.length;
         backBtn.disabled = s.stepIndex === 0;
@@ -1449,7 +1502,12 @@ function renderSpecialExerciseStep() {
     const q = questions[s.stepIndex];
     document.getElementById("wizardStepLabel").textContent = "Teoriprøve";
     document.getElementById("wizardTitle").textContent = "Spørsmål " + (s.stepIndex + 1) + " av " + questions.length;
-    document.getElementById("wizardBody").textContent = q.question;
+    // q.icon (valgfritt, se VTOL_QUIZ_QUESTIONS) - samme "<i>...</i> tekst"-mønster som wizardsteg-tittelen
+    // over, her på selve spørsmålsteksten (wizardTitle er bare den generiske "Spørsmål N av M"-telleren,
+    // ikke tema-spesifikk nok til å bære et ikon meningsfullt).
+    document.getElementById("wizardBody").innerHTML = q.icon
+        ? '<i class="fa-solid ' + q.icon + ' sim-exercise-icon"></i> ' + q.question
+        : q.question;
     document.getElementById("wizardProgress").textContent = "Poeng så langt: " + s.quizScore + " / " + s.stepIndex;
     backBtn.style.display = "none";
     s.quizAnswered = false;
@@ -1476,7 +1534,7 @@ function defaultWizardNextHandler() {
 }
 // "Pass på at gode svaralternativer, så det ikke er åpenbart hva som er riktig" (brukeren) - umiddelbar
 // fasit+forklaring vises med en gang eleven svarer (ikke først til slutt), samme pedagogiske prinsipp som
-// resten av utsjekksprogrammet (øyeblikkelig tilbakemelding, se setWarning-bruken andre steder).
+// resten av introprogrammet (øyeblikkelig tilbakemelding, se setWarning-bruken andre steder).
 function answerQuizQuestion(question, chosenIndex, chosenBtn) {
     const s = specialExerciseState;
     if (s.quizAnswered) return;
@@ -1579,7 +1637,7 @@ function showVtolExerciseSummary(id) {
     document.getElementById("exerciseSummaryTitle").textContent = "Bestått: " + exercise.label;
     const justCompletedAll = allVtolExercisesPassed();
     document.getElementById("exerciseSummaryText").textContent = justCompletedAll
-        ? "Alle øvelsene i utsjekksprogrammet er nå bestått!"
+        ? "Alle øvelsene i Heewing T2 introprogrammet er nå bestått!"
         : "Bra jobbet. Klar for neste øvelse?";
     const nextBtn = document.getElementById("exerciseNextBtn");
     const nextIndex = VTOL_EXERCISE_ORDER.indexOf(id) + 1;
@@ -1692,4 +1750,14 @@ function initVtolExercisePanel() {
             enterStageVisuals();
         }
     });
+    // "mulig å ha en lenke som tar brukeren til vtol siden med Heewing programmet (menyen) åpent?"
+    // (brukeren) - ?exercises=1 i URL-en (f.eks. simulator-vtol.html?exercises=1) åpner
+    // øvelses-/introprogram-panelet direkte på selve LISTEN over øvelser (hopper over kategorivalget - kun
+    // én kategori finnes uansett, se exerciseCategoryView/categoryHeewingT2Btn) i stedet for å kreve at
+    // eleven trykker M/øvelser-knappen selv først. Ren query-param, ingen ruting/historikk-endring - deles
+    // som en helt vanlig lenke.
+    if (new URLSearchParams(location.search).has("exercises")) {
+        showVtolExercisePanel();
+        showVtolExerciseList();
+    }
 }

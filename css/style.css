@@ -744,6 +744,16 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     max-height: 85vh;
     overflow-y: auto;
 }
+/* "litt forstyrrende at vindusstørrelsen endrer seg hele tiden [i quizen]. kanskje sette vinduet til maks
+   av det som treng og så kan vinduet ha samme størrelse gjennom hele quizen?" (brukeren) - kortet hadde
+   ingen egen min-height, kun innhold-styrt auto-høyde - varierende spørsmål-/svartekstlengde OG
+   forklaringsboksen (kun synlig ETTER svar, se #wizardExplanation) fikk kortet til synlig å hoppe i
+   høyde mellom spørsmål og mellom "før svar"/"etter svar". Satt KUN på quiz-visningen
+   (#wizardCard.sim-wizard-card-quiz, satt av JS i renderSpecialExerciseStep - se der), IKKE hele
+   veiviser-kortet (ex0 sine steg har for ulikt innhold seg imellom - egen bindings-rutenett på noen steg,
+   ren tekst på andre - til at én felles låst høyde ville gitt mye tomrom på de korte stegene). min() mot
+   80vh av samme grunn som width-regelen over - skal ikke sprenge en liten skjerm. */
+.sim-wizard-card.sim-wizard-card-quiz { min-height: min(600px, 80vh); }
 .sim-wizard-step-label {
     font-size: 0.78rem;
     font-weight: 700;

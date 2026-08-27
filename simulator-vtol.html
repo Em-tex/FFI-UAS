@@ -440,13 +440,13 @@
                 <li><strong>Liten by</strong><span>Litt lenger øst - landemerker å navigere etter (ikke gjennomflybar)</span></li>
                 <li><strong>Tailstrike</strong><span>Halen kan treffe bakken ved for hard rotasjon/landing - gir et eget varsel</span></li>
                 <li><strong>Vind</strong><span>Aktiver i Vind-panelet - i QLOITER dreier nesen automatisk inn mot vinden (weathervaning)</span></li>
-                <li><strong>M</strong><span>Utsjekksprogram - seks øvelser for VLOS Heewing T2 Cruza VTOL, med diplom til slutt</span></li>
+                <li><strong>M</strong><span>Heewing T2 introprogram - syv øvelser for VLOS Heewing T2 Cruza VTOL, med diplom til slutt</span></li>
             </ul>
         </div>
 
         <div class="sim-panel" id="exercisesPanel" style="display:none;">
             <div class="sim-panel-header">
-                <h3>Utsjekksprogram</h3>
+                <h3>Heewing T2 introprogram</h3>
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div id="exerciseCategoryView">
@@ -454,7 +454,7 @@
                     <span class="sim-exercise-row-icon"><i class="fa-solid fa-plane-up"></i></span>
                     <span class="sim-exercise-row-main">
                         <span class="sim-exercise-row-title">VLOS - Heewing T2 Cruza VTOL</span>
-                        <span class="sim-exercise-row-desc">8 leksjoner - fjernkontrolloppsett, Q-loiter/QHOVER, overgang til/fra FBWA, QRTL, manuell retur i vind, uforutsette hendelser og en teoriprøve.</span>
+                        <span class="sim-exercise-row-desc">9 leksjoner - fjernkontrolloppsett, Q-loiter/QHOVER, overgang til/fra FBWA, rundflyging, manuell retur i vind, uforutsette hendelser, motorfeil og en teoriprøve.</span>
                     </span>
                 </button>
             </div>
@@ -499,9 +499,9 @@
                     <p class="sim-diploma-line">Dette bekrefter at</p>
                     <input type="text" id="diplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
                     <p class="sim-diploma-text">har gjennomført simulatortrening og bestått alle øvelsene i
-                        VLOS-utsjekksprogrammet for Heewing T2 Cruza VTOL - fjernkontroll-/modusoppsett, Q-loiter,
-                        overgang til og fra fastvinget flyging (FBWA), QRTL, manuell retur i vind, uforutsette
-                        hendelser og teoriprøven.</p>
+                        Heewing T2 introprogrammet - fjernkontroll-/modusoppsett, Q-loiter,
+                        overgang til og fra fastvinget flyging (FBWA), rundflyging, manuell retur i vind,
+                        uforutsette hendelser, motorfeil-nødlanding og teoriprøven.</p>
                     <p class="sim-diploma-date" id="diplomaDate"></p>
                 </div>
                 <div class="sim-diploma-actions no-print">
@@ -516,7 +516,7 @@
              startVtolSpecialExercise i js/simulator-vtol-exercises.js) - INGEN 3D-flyging involvert i noen av
              de to, derfor et eget fullskjerms-overlegg i stedet for exerciseHudBar-en resten av øvelsene bruker. -->
         <div class="sim-wizard-overlay" id="specialExerciseOverlay" style="display:none;">
-            <div class="sim-wizard-card">
+            <div class="sim-wizard-card" id="wizardCard">
                 <div class="sim-wizard-step-label" id="wizardStepLabel"></div>
                 <h3 id="wizardTitle"></h3>
                 <div class="sim-wizard-body" id="wizardBody"></div>
