@@ -24,6 +24,43 @@
             <span class="sim-crash-title">KRASJ!</span>
             <span class="sim-crash-hint">Trykk R for å resette</span>
         </div>
+        <!-- ex6 flyawayCrowd (js/simulator-vtol-exercises.js) - "samme skademeldingene" som quad-
+             simulatorens ex11 (se INJURY_TITLES/injuryBanner i simulator.html), gjenskapt her siden VTOL-
+             simulatoren fra før ikke hadde noen personskade-variant av krasj-banneret. -->
+        <div class="sim-crash-banner" id="injuryBanner">
+            <i class="fa-solid fa-user-injured sim-injury-icon"></i>
+            <span class="sim-crash-title" id="injuryBannerTitle">AU AU! DU HAR SKADET DEG SELV!</span>
+            <span class="sim-crash-hint">Legevakt: 116 117 &middot; Ambulanse: 113</span>
+            <span class="sim-crash-hint">R for å restarte</span>
+        </div>
+        <!-- "ha en liten diskre popup nede på skjermen med beskjed om hvordan man armer... gul liten boks
+             som forsvinner med en gang man får armet" (brukeren) - se .sim-mini-hint i css/style.css og
+             updateHud() i js/simulator-vtol.js. -->
+        <div class="sim-mini-hint" id="armHintBanner">
+            <i class="fa-solid fa-lock"></i>
+            <span>Ikke armert: gass i bunn + fullt sideror høyre i 5 sek for å arme (eller K)</span>
+        </div>
+        <!-- "Når flyet er resatt og throttle ikke idle og flyet ikke vil fly må det komme et lite varsel på
+             skjermen om å ta throttle til idle for å aktivere kontroll" (brukeren) - se
+             planeState.throttleSafetyPending/applyThrottleSafetyGate og updateHud() i js/simulator-vtol.js. -->
+        <div class="sim-mini-hint" id="throttleIdleHintBanner">
+            <i class="fa-solid fa-gauge"></i>
+            <span>Throttle ikke i idle - senk gasspaken helt for å aktivere kontroll</span>
+        </div>
+        <!-- "Ved resett må også en Q mode være valgt... det må komme et varsel om å sette gyldig modus også"
+             (brukeren) - ensureGroundStartMode tvinger allerede QHOVER ved selve resettet, men et fly som
+             STÅR PÅ BAKKEN i en fastvinget/MANUAL-modus i etterkant (ingen løftemotor-myndighet der, se
+             computeMcAuthority) ville ellers bare stått urørlig uten noen forklaring. -->
+        <div class="sim-mini-hint" id="invalidModeHintBanner">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>Ingen løftemotorer aktive i denne modusen - bytt til en Q-modus (f.eks. QHOVER) for å lette</span>
+        </div>
+        <!-- "gi også en liten popup om at homepoint har blitt resatt når det resettes" (brukeren) - transient,
+             se homeToastUntil i js/simulator-vtol.js/-rtl.js. -->
+        <div class="sim-mini-hint sim-mini-hint-info" id="homeSetToast">
+            <i class="fa-solid fa-house-chimney"></i>
+            <span>Hjempunkt satt</span>
+        </div>
         <div class="sim-warning-banner" id="tailstrikeBanner">
             <span class="sim-crash-title">TAILSTRIKE!</span>
         </div>
@@ -35,8 +72,11 @@
             <span class="sim-crash-title">LAVT BATTERI</span>
             <span class="sim-crash-hint">Automatisk QRTL aktivert</span>
         </div>
+        <div class="sim-warning-banner" id="exerciseWarningBanner">
+            <span class="sim-crash-title" id="exerciseWarningText"></span>
+        </div>
         <div class="sim-status-bar">
-            <div class="sim-status-item sim-dropdown">
+            <div class="sim-status-item sim-dropdown" id="hudModeItem">
                 <button type="button" class="sim-mode-toggle-overlay" id="modeToggle" title="Klikk for modusoversikt" aria-label="Modusoversikt"></button>
                 <span class="sim-status-label">Modus</span>
                 <span id="hudMode" class="sim-status-value">QHOVER</span>
@@ -88,11 +128,58 @@
             </div>
         </div>
 
+        <div class="sim-status-bar sim-exercise-hud-bar" id="exerciseHudBar" style="display:none;">
+            <div class="sim-status-item">
+                <span class="sim-status-label">Øvelse</span>
+                <span id="exerciseHudStage" class="sim-status-value">-</span>
+            </div>
+            <div class="sim-status-item">
+                <span class="sim-status-label">Status</span>
+                <span id="exerciseHudStatus" class="sim-status-value">-</span>
+            </div>
+            <div class="sim-status-item">
+                <span class="sim-status-label">Tid</span>
+                <span id="exerciseHudTimer" class="sim-status-value">0:00</span>
+            </div>
+            <button type="button" class="sim-btn" id="exerciseHudExitBtn" title="Avslutt øvelsen og gå tilbake til fri flyging">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i> Fri flyging
+            </button>
+        </div>
+
+        <!-- GCS-skjerm: en fysisk "enhet" i synsfeltet, ikke bare tekst oppå bildet - dokket (liten fane
+             nederst til høyre) til vanlig, klikk for å ta den nærmere øynene (forstørret midtstilt, med en
+             mørklegging av resten av synsfeltet - du ser IKKE like godt etter selve farkosten mens skjermen
+             er fremme), klikk bakteppet/lukk-knappen for å skyve den unna igjen og se etter dronen. -->
+        <div class="sim-gcs-screen no-print" id="gcsScreen" style="display:none;">
+            <div class="sim-gcs-backdrop" id="gcsScreenBackdrop"></div>
+            <button type="button" class="sim-gcs-tab" id="gcsScreenTab" title="Åpne GCS-skjerm">
+                <i class="fa-solid fa-tablet-screen-button"></i>
+            </button>
+            <div class="sim-gcs-panel" id="gcsScreenPanel">
+                <div class="sim-gcs-panel-header">
+                    <span><i class="fa-solid fa-satellite-dish"></i> GCS</span>
+                    <button type="button" class="sim-gcs-close" id="gcsScreenCloseBtn" title="Skyv unna"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="sim-gcs-row"><span class="sim-gcs-label">Modus</span><span id="gcsMode" class="sim-gcs-value">-</span></div>
+                <div class="sim-gcs-row"><span class="sim-gcs-label">Høyde</span><span id="gcsAlt" class="sim-gcs-value">-</span></div>
+                <div class="sim-gcs-row"><span class="sim-gcs-label">Luftfart</span><span id="gcsAirspeed" class="sim-gcs-value">-</span></div>
+                <div class="sim-gcs-row"><span class="sim-gcs-label">Avstand hjem</span><span id="gcsDistance" class="sim-gcs-value">-</span></div>
+                <div class="sim-gcs-row"><span class="sim-gcs-label">Batteri</span><span id="gcsBattery" class="sim-gcs-value">-</span></div>
+            </div>
+        </div>
+
         <div class="sim-toolbar no-print">
-            <button type="button" class="sim-btn" id="armToggleBtn"><i class="fa-solid fa-power-off"></i> Motor av (K)</button>
-            <button type="button" class="sim-btn" id="fpvHudBtn"><i class="fa-solid fa-crosshairs"></i> OSD: Crosshair (O)</button>
+            <!-- Motor av (K)/OSD (O) fjernet fra selve verktøylinjen (brukeren: "tar litt mye plass. vil
+                 klarer oss med å huske hurtigtasten eller sjekke hjelp fanen") - knappene selv (og all
+                 eksisterende JS som oppdaterer/lytter på dem, f.eks. toggleEngine/toggleFpvHud) er UENDRET,
+                 kun skjult (display:none) i stedet for fjernet fra DOM-en, slik at ingen
+                 document.getElementById-kall andre steder plutselig treffer null. Begge hurtigtastene og
+                 selve funksjonaliteten virker fortsatt akkurat som før - kun den synlige knappen er borte. -->
+            <button type="button" class="sim-btn" id="armToggleBtn" style="display:none;"><i class="fa-solid fa-power-off"></i> Motor av (K)</button>
+            <button type="button" class="sim-btn" id="fpvHudBtn" style="display:none;"><i class="fa-solid fa-crosshairs"></i> OSD: Crosshair (O)</button>
             <button type="button" class="sim-btn" id="resetBtn"><i class="fa-solid fa-rotate-left"></i> Reset (R)</button>
             <button type="button" class="sim-btn" id="toggleHelpBtn"><i class="fa-solid fa-circle-question"></i> Hjelp (H)</button>
+            <button type="button" class="sim-btn" id="toggleExercisesBtn"><i class="fa-solid fa-graduation-cap"></i> Øvelser (M)</button>
             <div class="sim-dropdown">
                 <button type="button" class="sim-btn" id="settingsToggleBtn"><i class="fa-solid fa-gear"></i> Settings</button>
                 <div class="sim-dropdown-menu" id="settingsMenu">
@@ -320,18 +407,18 @@
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <ul class="sim-help-list">
-                <li><strong>W / S</strong><span>Høyderor / pinne fram-bak (pitch)</span></li>
-                <li><strong>A / D</strong><span>Skråror / pinne venstre-høyre (roll)</span></li>
+                <li><strong>W / S</strong><span>Høyderor / stikke fram-bak (pitch)</span></li>
+                <li><strong>A / D</strong><span>Skråror / stikke venstre-høyre (roll)</span></li>
                 <li><strong>Q / E</strong><span>Sideror / gir venstre-høyre (yaw)</span></li>
                 <li><strong>Shift / Ctrl</strong><span>Gass opp / ned - kollektiv i Q-moduser, trekkmotor i MANUAL/FBWA (mål-luftfart i FBWB)</span></li>
                 <li><strong>[ / ]</strong><span>Trim høyderor ned / opp (kun FBWA/FBWB/MANUAL)</span></li>
                 <li><strong>1-4</strong><span>QSTABILIZE / QHOVER / QLOITER / QACRO (svevemodus)</span></li>
                 <li><strong>5 / 6 / 7</strong><span>MANUAL / FBWA / FBWB (fastvinget marsjflyging)</span></li>
-                <li><strong>8</strong><span>QRTL - naviger automatisk hjem (til punktet motoren sist ble slått PÅ) og land. Flyr fastvinget hvis langt unna, går over til VTOL-modus nær hjem - se RTL/failsafe-panelet</span></li>
+                <li><strong>8</strong><span>QRTL - naviger automatisk hjem (til punktet motoren sist ble slått PÅ) og land. Flyr fastvinget hvis langt unna, går over til VTOL-modus innenfor RTL_RADIUS fra hjem - se RTL/failsafe-panelet</span></li>
                 <li><strong>Bytt modus = transisjon</strong><span>Det finnes ingen egen transisjonsbryter - bytt til en Q-modus for umiddelbar svevemyndighet, bytt til MANUAL/FBWA/FBWB for å fly videre som fastvinget</span></li>
                 <li><strong>QSTABILIZE</strong><span>Selvnivellerende krengning/stigning, manuell (direkte) kollektiv gass</span></li>
                 <li><strong>QHOVER</strong><span>Som QSTABILIZE + Alt Hold (sentrert gasspak holder høyden)</span></li>
-                <li><strong>QLOITER</strong><span>Som QHOVER + posisjonsholding (slipp pinnen for å stoppe/holde) + weathervaning</span></li>
+                <li><strong>QLOITER</strong><span>Som QHOVER + posisjonsholding (slipp stikken for å stoppe/holde) + weathervaning</span></li>
                 <li><strong>QACRO</strong><span>Rate-styrt svevemodus, ingen selvnivellering (som Acro)</span></li>
                 <li><strong>MANUAL</strong><span>Direkte rorstyring, løftemotorene er alltid AV - kun for trim-sjekk/taksing</span></li>
                 <li><strong>FBWA</strong><span>Selvnivellerende fastvinget marsjflyging - løftemotorene assisterer automatisk til assist-farten nås</span></li>
@@ -353,7 +440,98 @@
                 <li><strong>Liten by</strong><span>Litt lenger øst - landemerker å navigere etter (ikke gjennomflybar)</span></li>
                 <li><strong>Tailstrike</strong><span>Halen kan treffe bakken ved for hard rotasjon/landing - gir et eget varsel</span></li>
                 <li><strong>Vind</strong><span>Aktiver i Vind-panelet - i QLOITER dreier nesen automatisk inn mot vinden (weathervaning)</span></li>
+                <li><strong>M</strong><span>Utsjekksprogram - seks øvelser for VLOS Heewing T2 Cruza VTOL, med diplom til slutt</span></li>
             </ul>
+        </div>
+
+        <div class="sim-panel" id="exercisesPanel" style="display:none;">
+            <div class="sim-panel-header">
+                <h3>Utsjekksprogram</h3>
+                <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="exerciseCategoryView">
+                <button type="button" class="sim-exercise-row" id="categoryHeewingT2Btn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-plane-up"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">VLOS - Heewing T2 Cruza VTOL</span>
+                        <span class="sim-exercise-row-desc">8 leksjoner - fjernkontrolloppsett, Q-loiter/QHOVER, overgang til/fra FBWA, QRTL, manuell retur i vind, uforutsette hendelser og en teoriprøve.</span>
+                    </span>
+                </button>
+            </div>
+            <div id="exerciseListView" style="display:none;">
+                <button type="button" class="sim-exercise-back-btn" id="exerciseBackToCategoryBtn">
+                    <i class="fa-solid fa-arrow-left"></i> Tilbake
+                </button>
+                <div id="exerciseListItems"></div>
+            </div>
+            <div id="exerciseDetailView" style="display:none;">
+                <button type="button" class="sim-exercise-back-btn" id="exerciseBackToListBtn">
+                    <i class="fa-solid fa-arrow-left"></i> Tilbake
+                </button>
+                <h4 id="exerciseDetailTitle" class="sim-exercise-detail-title"></h4>
+                <p class="sim-exercise-desc" id="exerciseDetailDescription"></p>
+                <p class="sim-panel-hint" id="exerciseDetailProgress" style="display:none;"></p>
+                <div class="sim-rate-row">
+                    <button type="button" class="sim-btn sim-btn-primary" id="exerciseStartBtn">Start</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="exerciseCancelBtn" style="display:none;">Avbryt</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="sim-exercise-summary" id="exerciseSummary" style="display:none;">
+            <h3 id="exerciseSummaryTitle"></h3>
+            <p id="exerciseSummaryText"></p>
+            <div class="sim-summary-buttons">
+                <button type="button" class="sim-btn sim-btn-primary" id="exerciseNextBtn">Neste</button>
+                <button type="button" class="sim-btn sim-btn-primary" id="exerciseSummaryCloseBtn">Lukk</button>
+            </div>
+        </div>
+
+        <div class="sim-diploma-overlay" id="diplomaOverlay" style="display:none;">
+            <div class="sim-diploma">
+                <div class="sim-diploma-border">
+                    <div class="sim-diploma-icons">
+                        <i class="fa-solid fa-plane-up sim-diploma-plane"></i>
+                        <i class="fa-solid fa-award sim-diploma-medal"></i>
+                    </div>
+                    <h2>BEKREFTELSE</h2>
+                    <p class="sim-diploma-sub">FFI UAS &ndash; VLOS Heewing T2 Cruza VTOL stikkeferdigheter</p>
+                    <p class="sim-diploma-line">Dette bekrefter at</p>
+                    <input type="text" id="diplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
+                    <p class="sim-diploma-text">har gjennomført simulatortrening og bestått alle øvelsene i
+                        VLOS-utsjekksprogrammet for Heewing T2 Cruza VTOL - fjernkontroll-/modusoppsett, Q-loiter,
+                        overgang til og fra fastvinget flyging (FBWA), QRTL, manuell retur i vind, uforutsette
+                        hendelser og teoriprøven.</p>
+                    <p class="sim-diploma-date" id="diplomaDate"></p>
+                </div>
+                <div class="sim-diploma-actions no-print">
+                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaCloseBtn">Lukk</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- "første leksjon bør være en veileder som tar brukeren gjennom konfigurering av fjernkontrollen...
+             Siste leksjon bør være en teoretisk quiz" (brukeren) - delt overlegg for begge (se
+             startVtolSpecialExercise i js/simulator-vtol-exercises.js) - INGEN 3D-flyging involvert i noen av
+             de to, derfor et eget fullskjerms-overlegg i stedet for exerciseHudBar-en resten av øvelsene bruker. -->
+        <div class="sim-wizard-overlay" id="specialExerciseOverlay" style="display:none;">
+            <div class="sim-wizard-card">
+                <div class="sim-wizard-step-label" id="wizardStepLabel"></div>
+                <h3 id="wizardTitle"></h3>
+                <div class="sim-wizard-body" id="wizardBody"></div>
+                <div class="sim-rate-grid" id="wizardBindGrid" style="display:none;"></div>
+                <div class="sim-wizard-options" id="wizardOptions"></div>
+                <div class="sim-wizard-explanation" id="wizardExplanation" style="display:none;"></div>
+                <div class="sim-wizard-nav">
+                    <span class="sim-wizard-progress" id="wizardProgress"></span>
+                    <span>
+                        <button type="button" class="sim-btn sim-btn-primary" id="wizardBackBtn">Tilbake</button>
+                        <button type="button" class="sim-btn sim-btn-primary" id="wizardNextBtn">Neste</button>
+                        <button type="button" class="sim-btn sim-btn-primary" id="wizardCloseBtn" style="display:none;">Lukk</button>
+                    </span>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -363,5 +541,7 @@
 <script src="js/simulator-vtol.js"></script>
 <script src="js/simulator-vtol-rtl.js"></script>
 <script src="js/simulator-vtol-flightlog.js"></script>
+<script src="js/simulator-vtol-quiz.js"></script>
+<script src="js/simulator-vtol-exercises.js"></script>
 </body>
 </html>

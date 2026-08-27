@@ -136,6 +136,11 @@ function captureHome() {
     rtlState.phase = "idle";
     rtlState.landedTimer = 0;
     rtlState.loiterSign = 0;
+    // "gi også en liten popup om at homepoint har blitt resatt når det resettes" (brukeren) - homeToastUntil
+    // er deklarert i simulator-vtol.js (lest/skrevet her ved KALL-tidspunkt, samme forover-referanse-
+    // mønster som resten av filsamspillet, se toppkommentaren i denne filen) - updateHud() der viser
+    // #homeSetToast en kort stund når klokken er under dette tidspunktet.
+    homeToastUntil = performance.now() + 2200;
     if (homeMarkerMesh) {
         homeMarkerMesh.visible = true;
         // Y=0.05 (IKKE 0.03) - BUG (rapportert av brukeren: "H på bakken som indikerer hjempunkt. blir
@@ -149,6 +154,17 @@ function captureHome() {
         // der: "0.02 flimret (z-fighting) mot bakkeplanet under").
         homeMarkerMesh.position.set(rtlState.home.x, 0.05, rtlState.home.z);
     }
+}
+
+// "husk forskjellen på arming og motor emergency stop... [disarm] would reset the home location and
+// require the pre-arming checks to be passed before re-arming" (brukeren, ArduPilot-sitat) - kalt KUN fra
+// en fullført pinne-disarm-gest (disarmPlane i simulator-vtol.js), ALDRI fra K-tasten/HUD-/gamepad-kill
+// (toggleEngine/setEngine der), som er en nødstopp og aldri skal røre hjempunktet. Neste armPlane()
+// fanger et nytt hjempunkt igjen (se captureHome over) - denne simulatoren har ingen egne pre-arm-sjekker
+// å kjøre på nytt, men selve hjempunkt-nullstillingen er den samme.
+function invalidateHome() {
+    rtlState.homeSet = false;
+    if (homeMarkerMesh) homeMarkerMesh.visible = false;
 }
 
 /* ---------- Hjem-markør i scenen ----------

@@ -463,6 +463,22 @@
                         captured = { type: "button", index: i };
                         break;
                     }
+                    // BUG (brukeren: "sette fjernkontroll registrerer bare knappen som røres? men den må jo
+                    // registrere selve knappeposisjonen som settes") - en fysisk 2-posisjons bryter
+                    // rapporteres ofte som ÉN knapp-indeks (trykket i den ene posisjonen, IKKE trykket i den
+                    // andre), ikke to separate knapper. Uten grenen under kunne kun "trykket"-retningen noen
+                    // gang fanges opp - å binde f.eks. engineOff til AV-posisjonen på SAMME fysiske bryter
+                    // som engineOn allerede var bundet til PÅ-posisjonen til, var umulig: den brukeren
+                    // faktisk ønsket å fange (bryteren går fra trykket->IKKE trykket) matchet aldri
+                    // "pressed && !ignore"-betingelsen over. Fanger nå SLIPPES-retningen speilvendt for
+                    // knapper som VAR trykket ved baseline (learnIgnoreButtons, se captureBaseline) - altså
+                    // presis den andre posisjonen til en bryter som allerede er delvis bundet - som en
+                    // "inverted"-binding (samme flagg som isBindingActive/describeBindingPart allerede
+                    // støtter fullt ut, se buildGamepadKillGrid sin egen "Reverser"-knapp for presedens).
+                    if (!pressed && learnIgnoreButtons.has(i)) {
+                        captured = { type: "button", index: i, inverted: true };
+                        break;
+                    }
                 }
                 if (!captured) {
                     for (let i = 0; i < gp.axes.length; i++) {
@@ -1092,6 +1108,30 @@
         return group;
     }
 
+    // Fjernkontroll holdt i begge hender foran magen på VLOS-piloten - kasse med to pinner og antenne.
+    // Flyttet hit fra js/simulator.js (quad-simulatoren hadde sin egen, lokale kopi) - VTOL-simulatoren
+    // trenger nøyaktig samme figur ("Få med at 'deg selv' står med en fjernkontroll som i quad simmen",
+    // brukeren), samme "én kilde til sannhet"-prinsipp som buildPersonFigure/buildRandomTree over.
+    function buildRemoteController() {
+        const group = new THREE.Group();
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x22262a });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.12), bodyMat);
+        body.castShadow = true;
+        group.add(body);
+        const stickMat = new THREE.MeshStandardMaterial({ color: 0x999999 });
+        [-1, 1].forEach(function (side) {
+            const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.05, 6), stickMat);
+            stick.position.set(side * 0.06, 0.04, 0);
+            group.add(stick);
+        });
+        const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.2, 6), bodyMat);
+        antenna.position.set(0, 0.09, -0.06);
+        antenna.rotation.x = -0.6; // peker skrått opp/bakover mot piloten
+        group.add(antenna);
+        group.rotation.x = 0.35; // vippet litt mot piloten, slik en sender faktisk holdes
+        return group;
+    }
+
     // To norske treslag i stedet for én generisk trekjegle - begge bygges rundt samme origo-konvensjon
     // (basen på bakken, y=0), slik at createTreeSwayManager sin pivot-rundt-basen fungerer identisk
     // for begge. Delt mellom quad- og fixed-wing-simulatoren (begge hadde hver sin nesten identiske
@@ -1443,6 +1483,7 @@
         buildWindsockPole: buildWindsockPole,
         updateWindsockVisual: updateWindsockVisual,
         buildPersonFigure: buildPersonFigure,
+        buildRemoteController: buildRemoteController,
         buildBirch: buildBirch,
         buildPine: buildPine,
         buildRandomTree: buildRandomTree,

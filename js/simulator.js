@@ -3194,26 +3194,8 @@ function buildPropeller(bladeCount, bladeLength) {
     return group;
 }
 
-// Fjernkontroll holdt i begge hender foran magen på VLOS-piloten - kasse med to pinner og antenne.
-function buildRemoteController() {
-    const group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x22262a });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.12), bodyMat);
-    body.castShadow = true;
-    group.add(body);
-    const stickMat = new THREE.MeshStandardMaterial({ color: 0x999999 });
-    [-1, 1].forEach(function (side) {
-        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.05, 6), stickMat);
-        stick.position.set(side * 0.06, 0.04, 0);
-        group.add(stick);
-    });
-    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.2, 6), bodyMat);
-    antenna.position.set(0, 0.09, -0.06);
-    antenna.rotation.x = -0.6; // peker skrått opp/bakover mot piloten
-    group.add(antenna);
-    group.rotation.x = 0.35; // vippet litt mot piloten, slik en sender faktisk holdes
-    return group;
-}
+// buildRemoteController flyttet til js/simulator-common.js (Sim.buildRemoteController) - VTOL-
+// simulatoren trenger nøyaktig samme figur, se kallstedet under (vlosPerson).
 
 // Bygger en sylinder som går nøyaktig mellom to punkter - unngår feilaktig/"skjev" vinkling
 // som lett oppstår ved å kombinere rotation.x/rotation.z manuelt på en forskjøvet posisjon.
@@ -3442,7 +3424,7 @@ function initScene() {
     vlosPerson.position.copy(vlosCamera.position);
     vlosPerson.position.y = 0;
     vlosPerson.rotation.y = Math.PI; // vendt mot flyfeltet (-Z) - figuren bygges med tærne mot +Z
-    const controller = buildRemoteController();
+    const controller = Sim.buildRemoteController();
     controller.position.set(0, 1.05, 0.28); // holdt foran magen i begge hender (lokal +Z = mot feltet etter snuingen)
     vlosPerson.add(controller);
     vlosPerson.traverse(function (obj) { obj.layers.set(1); });
