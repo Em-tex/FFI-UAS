@@ -173,7 +173,11 @@ function invalidateHome() {
    gjenkjennelige måten å markere et landingspunkt på (samme prinsipp som groundDecalProps allerede bruker
    for rullebane-/plen-/dam-teksturene, se buildGround-området). */
 function buildHomeMarkerTexture() {
-    const size = 256;
+    // "sebrastripene... fortsatt blurry" (brukeren, med skjermbilde av nettopp DENNE markøren sett på svært
+    // kort hold under et vertikalt Q-modus-innsyn rett over hjempunktet) - 256px over en 6x6 m dekal er OK
+    // sett fra vanlig høyde, men blir tydelig grøtete når flyet henger rett over den under landing
+    // (magnifisering, samme årsak/løsning som texW/texH-oppløsningen i buildRunwayTexture). 4x opp.
+    const size = 1024;
     const canvas = document.createElement("canvas");
     canvas.width = size;
     canvas.height = size;

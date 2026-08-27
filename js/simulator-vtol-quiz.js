@@ -30,31 +30,49 @@ const VTOL_QUIZ_QUESTIONS = [
     // anomalier/inklinasjon) - faktasjekket direkte mot ardupilot.org: magnetisk MISVISNING (deklinasjon)
     // slås automatisk opp fra GPS-posisjon (COMPASS_AUTODEC, standard PÅ) - ArduPilot sin egen dokumentasjon
     // er eksplisitt: "a locations magnetic declination might need to [be] manually entered... This is not
-    // necessary now." Deklinasjon er dermed IKKE grunnen til at en ny KALIBRERING anbefales - det er en
-    // egen, automatisk funksjon. Den praktiske, faktisk kalibrerings-relevante grunnen er LOKAL magnetisk
-    // interferens (metall/konstruksjoner/utstyr på det NYE stedet) - beholdt som korrekt svar, men
-    // deklinasjon brukt som en bevisst god (plausibel, men feil) distraktor i stedet for å endres til
-    // korrekt svar, nettopp fordi den er automatisk håndtert og DERFOR ikke selve kalibrerings-grunnen.
+    // necessary now."
+    // "Enig i at vi kan endre til dette?" (brukeren, med et konkret forslag til nytt spørsmål/svar/
+    // forklaring) - spørsmålet omformulert fra "hvorfor etter flytting" til det bredere "når bør du
+    // kalibrere" brukeren foreslo (dekker samme deklinasjon/lokal-interferens-poeng, PLUSS den praktiske
+    // "sjekk visuelt først"-vanen). Fact-sjekket selve PÅSTANDENE i forslaget mot ardupilot.org (WebSearch/
+    // WebFetch denne økten) før de ble tatt inn:
+    // - BEKREFTET: "PreArm: Compass Variance"/magnetfelt-sjekken (ardupilot.org/copter/docs/common-prearm-
+    //   safety-checks) er en ekte, dokumentert kalibrerings-trigger - enten kalibreringen ikke ga gode
+    //   offset, ELLER farkosten står nær en stor metallisk/magnetisk forstyrrelse.
+    // - IKKE FUNNET i offisiell dokumentasjon: brukerens forslag nevnte spesifikt "etter lang tids lagring
+    //   (30+ dager) grunnet intern magnetisk drift" fra komponenter/skruer - et konkret, plausibelt-lydende
+    //   tall/mekanisme jeg ikke fant STØTTE for i selve ardupilot.org-dokumentasjonen (kun GPS/kompass-bytte
+    //   eller ny FC-plassering er eksplisitt nevnt som en ekte maskinvare-trigger). Droppet den spesifikke
+    //   "30 dager/intern drift"-påstanden fra forklaringen under i stedet for å ta den inn ubekreftet - se
+    //   også "Selve kalibreringen («drone-dansen») må aldri utføres nær metall/armeringsjern"-poenget
+    //   brukeren la til til slutt, som ER bekreftet (PreArm magnetfelt-sjekken over) og nå flettet INN i
+    //   forklaringen i stedet for lagt til som et eget, delvis overlappende ekstra avsnitt.
     {
         icon: "fa-map-location-dot",
-        question: "Hvorfor anbefales det å kalibrere kompasset på nytt etter å ha flyttet til et nytt flysted?",
+        question: "Når er det anbefalt å utføre en ny kompasskalibrering?",
         options: [
-            "Magnetisk misvisning (deklinasjon) endrer seg med posisjonen, og må stilles inn manuelt etter hver flytting",
-            "Lokale magnetiske forstyrrelser på det nye stedet (metall, kjøretøy, konstruksjoner) kan gi en uoppdaget feil",
-            "Kompasset \"glemmer\" den gamle kalibreringen sin helt automatisk etter noen timers flytid",
-            "Det er bare en formalitet - GPS-mottakeren overstyrer uansett kompasset i alle flymoduser"
+            "Du må kalibrere kompasset fast hver 30. dag eller hver gang du flytter deg over 50 km, uavhengig av om kompassretningen og kartet på skjermen stemmer overens eller ikke",
+            "Siden ArduPilot har en innebygd kartdatabase (COMPASS_AUTODEC), er det aldri nødvendig å sjekke eller kalibrere kompasset manuelt etter at farkosten har stått ubrukt over tid",
+            "Kompasset skal alltid sjekkes visuelt mot faktisk retning før avgang, og kalibreres kun ved en faktisk feilmelding, en maskinvareendring eller mistanke om lokal magnetisk forstyrrelse",
+            "Så lenge du kalibrerer kompasset regelmessig etter tid (hver 30. dag), trenger du ikke gjøre noen visuell sjekk av retningen på kartet før du tar av"
         ],
-        correctIndex: 1,
-        explanation: "Kalibreringen kompenserer for LOKALE magnetiske forstyrrelser (metall, kjøretøy, utstyr) på akkurat dette stedet. Misvisning (deklinasjon) endrer seg riktignok også med posisjon, men ArduPilot slår automatisk opp riktig verdi fra GPS-posisjonen (COMPASS_AUTODEC) - det er altså IKKE grunnen til at en ny kalibrering anbefales."
+        correctIndex: 2,
+        explanation: "Kompasset bør sjekkes visuelt (vri farkosten og se at kartretningen følger synkront med) før hver avgang - stemmer det, er kalibrering unødvendig, og faktisk en risiko: kalibrerer du unødig nær skjult armeringsjern, kjøretøy eller annet metall, bygger du de lokale forstyrrelsene rett inn i sensoren.\n\nKalibrer i stedet kun ved en faktisk PreArm-feilmelding om kompasset, etter å ha byttet eller flyttet GPS-/kompassmodulen, eller ved mistanke om en lokal magnetisk forstyrrelse - ikke bare fordi det har gått en fast tid. Misvisning (deklinasjon) endrer seg riktignok også med posisjon, men slås automatisk opp fra GPS (COMPASS_AUTODEC) - heller ikke det er en grunn til å kalibrere på nytt."
     },
+    // "'navneforskjellen er bare historisk betinget' er jo helt merkelig ting å si og åpenbart feil. ha noe
+    // mer plausibelt med bra språk" (brukeren) - byttet til en OMVENDT/byttet-om variant av selve det
+    // korrekte svaret (QHOVER<->QLOITER sine roller speilvendt) i stedet - en langt mer plausibel felle:
+    // fanger opp eleven som husker BEGGE fakta men blander sammen HVILKEN modus som gjør hva, ikke bare
+    // noen som ikke leste spørsmålet. "'(du styrer posisjonen selv)' kan endres til '(du må korrigere
+    // posisjon selv)'" (brukeren) - samme ordlyd i begge svaralternativene nå, for konsistens.
     {
         icon: "fa-code-compare",
         question: "Hva er hovedforskjellen mellom QHOVER og QLOITER?",
         options: [
             "QHOVER er ment kun for landing, mens QLOITER kun brukes til selve avgangen fra bakken",
             "QLOITER er egentlig en fastvinget marsjmodus, mens QHOVER er en ren VTOL-hovermodus",
-            "QHOVER holder kun høyden automatisk (du styrer posisjon selv) - QLOITER holder BÅDE høyde og GPS-posisjon",
-            "Det er ingen reell funksjonsforskjell mellom dem - navneforskjellen er bare historisk betinget"
+            "QHOVER holder kun høyden automatisk (du må korrigere posisjon selv) - QLOITER holder BÅDE høyde og GPS-posisjon",
+            "QLOITER holder kun høyden automatisk (du må korrigere posisjon selv) - QHOVER holder BÅDE høyde og GPS-posisjon"
         ],
         correctIndex: 2,
         explanation: "QHOVER gir kun Alt Hold - horisontal posisjon må du holde selv med stikkene. QLOITER legger GPS-posisjonshold oppå det, og bremser til stillstand når du slipper stikkene."
@@ -105,6 +123,22 @@ const VTOL_QUIZ_QUESTIONS = [
         // "'attityde' kan være 'attitude/nesestilling'" (brukeren) - ordet byttet med noe mer entydig norsk.
         explanation: "MANUAL er ren fastvinget flyging uten noen VTOL-assistanse i det hele tatt - løftemotorene er helt uten myndighet, uansett fart eller nesestilling (attitude)."
     },
+    // "Her er det feil. Riktig svar blir vel..." (brukeren, med et konkret forslag) - den forrige "korrekte"
+    // teksten var ikke direkte FEIL (den matcher fortsatt selve simulatorens Motor Emergency Stop-oppførsel,
+    // se forrige versjon av denne kommentaren), men traff ikke den mest operasjonelt VIKTIGE forskjellen: AT
+    // en vanlig disarm normalt ikke engang LAR SEG GJØRE midt i luften, mens nødstopp er ment å virke akkurat
+    // der. Fact-sjekket brukerens forslag mot ardupilot.org (WebSearch/WebFetch denne økten) før det ble tatt
+    // inn:
+    // - BEKREFTET: ArmingPlane-dokumentasjonen ("held left rudder can disarm the vehicle in any mode IF THE
+    //   AUTOPILOT JUDGES THAT THE VEHICLE IS NOT FLYING") - en flyr-sjekk sperrer normalt stikke-disarm i
+    //   luften, nettopp for å hindre et utilsiktet feiltrykk. Nødstopp har intet slikt vilkår.
+    // - BEKREFTET: hjempunktet oppdateres normalt til farkostens posisjon ved HVER arming (HOME_RESET_ALT,
+    //   standard 0 = "continuously reset it" mens disarmert).
+    // - IKKE BEKREFTET/droppet: brukerens forslag til forklaring nevnte at farkosten "vil etter 5 sekunder
+    //   automatisk disarme på bakken" etter en nødstopp i luften - fant ingen slik 5-sekunders-regel i
+    //   dokumentasjonen (nærmeste ekte parameter, LAND_DISARMDELAY, har 20 sek som standard, og gjelder for
+    //   ØVRIG kun en normal landing, ikke spesifikt en nødstopp-hendelse) - droppet dette konkrete tallet
+    //   fra forklaringen i stedet for å ta det inn ubekreftet.
     {
         icon: "fa-ban",
         question: "Hva er forskjellen på å bruke Motor Emergency Stop (\"kill\"/nødstopp) og å disarme farkosten?",
@@ -112,18 +146,10 @@ const VTOL_QUIZ_QUESTIONS = [
             "Det er ingen reell forskjell mellom dem - begge gjør nøyaktig samme ting i praksis",
             "Disarming er den raskeste av de to å aktivere i en akutt nødsituasjon i luften",
             "Motor Emergency Stop krever et gyldig GPS-lås for å virke, disarming gjør ikke det",
-            "Motor Emergency Stop stanser motorene midlertidig - disarming nullstiller hjempunktet og krever ny arming"
+            "Motor Emergency Stop kutter strømmen til motorene umiddelbart i alle situasjoner (også i luften) - en vanlig disarm blokkeres normalt av autopiloten under flyvning for å hindre utilsiktet motorstopp"
         ],
         correctIndex: 3,
-        // "er ikke riktig. dette er vel riktig?" (brukeren, med et detaljert skille mellom ArduPilot sin
-        // enkle "Motor Emergency Stop" (opsjon 31, som DISARMER AUTOMATISK etter noen sekunder om bryteren
-        // ikke vippes tilbake) og "ARM/Motor Emergency Stop" (opsjon 165, som ALDRI tvinger frem en disarm))
-        // - faktasjekket og bekreftet mot ArduPilot sin egen kildekode/dokumentasjon. Denne simulatorens
-        // EGEN Motor Emergency Stop (K-tasten/HUD-knappen/gamepad-kill, se toggleEngine/setEngine i
-        // simulator-vtol.js) er eksplisitt bygget til ALDRI å røre armed/hjempunktet - det tilsvarer altså
-        // opsjon 165-varianten, ikke standard-opsjon 31 - korrekt svar uendret, men forklaringen nevner nå
-        // begge ekte variantene i stedet for å fremstille "forblir alltid armert" som universelt sant.
-        explanation: "Slik fungerer Motor Emergency Stop i denne simulatoren (tilsvarer ArduPilot sin \"ARM/Motor Emergency Stop\"-opsjon): motorene stanses UTEN å disarme, farkosten forblir armert. Ekte ArduPilot har også en enklere \"Motor Emergency Stop\"-opsjon som faktisk disarmer AUTOMATISK etter noen sekunder om bryteren ikke vippes tilbake - men uansett variant er det kun et FULLT disarm som nullstiller hjempunktet og krever ny arming."
+        explanation: "En dedikert nødstopp-bryter (Motor Emergency Stop) er ment å virke i ENHVER situasjon, også midt i luften - signalet til motorene kuttes umiddelbart, uten unntak.\n\nEn vanlig disarm-kommando er derimot normalt sperret av autopiloten mens den vurderer farkosten som luftbåren, nettopp for å hindre at et utilsiktet feiltrykk stanser motorene midt i flyging - nødstopp overstyrer denne sperren med hensikt.\n\nHusk hjempunktet: i ArduPilot oppdateres hjempunktet normalt til farkostens posisjon ved hver ny arming. Lander du normalt og disarmer vanlig, flytter en ny arming et annet sted hjempunktet dit. Etter en nødstopp i luften beholdes derimot det gamle hjempunktet helt til en eventuell ny arming faktisk skjer."
     },
     {
         icon: "fa-fan",
@@ -184,7 +210,8 @@ const VTOL_QUIZ_QUESTIONS = [
     // ArduPilot-parameteren som styrer hvor mye nacellene vinkles ulikt.
     {
         icon: "fa-rotate",
-        question: "Du er i QLOITER i sterk vind og gir fullt utslag på gir-pinnen (sideror) for å snu nesa 180 grader. Hvilken mekanisk risiko utsetter du Heewing T2 for akkurat under denne rotasjonen?",
+        // "'Gir-pinnen' kan fjernes siden det er elendig norsk. kan heller si 'full utslag i yaw'" (brukeren).
+        question: "Du er i QLOITER i sterk vind og gir fullt utslag i yaw (sideror) for å snu nesa 180 grader. Hvilken mekanisk risiko utsetter du Heewing T2 for akkurat under denne rotasjonen?",
         options: [
             "Ingen reell risiko - gir i QLOITER styres utelukkende av sideroret, akkurat som i fastvinget flyging",
             "Farkosten kan miste retningsstabiliteten helt og begynne å rotere ukontrollert rundt gir-aksen",
@@ -240,23 +267,32 @@ const VTOL_QUIZ_QUESTIONS = [
     // tatt går fra bakken), én luft-sjekk (selve RESPONSEN i alle tre akser, rett etter avgang, mens man
     // fortsatt kan lande trygt om noe er galt) - to distinkte, kronologisk ordnede vaner, ikke samme
     // spørsmål to ganger.
+    // "'pinne' og 'pinneutslag' skal være 'stikke' og 'stikkeutslag' på fjernkontrollen" (brukeren) - rettet.
+    // "Det feile alternativet om GPS bør endres. for det er også ganske viktig. Kanskje heller noe som 'At
+    // GPS-en viser at farkosten peker nøyaktig mot geografisk nord'? eller det var kanskje dumt? finn noe
+    // plausibelt" (brukeren) - enig i at "full GPS-lås/hjempunkt registrert" er en genuint god vane (uheldig
+    // som "feil"-svar), men selve HEADING-forslaget er faktisk et treffende, presist feil svar av en annen
+    // grunn enn brukeren kanskje tenkte: en GPS-mottaker kan IKKE alene bestemme hvilken vei nesa peker mens
+    // farkosten står helt i ro (den avleder kurs fra faktisk BEVEGELSE, "course over ground" - det er
+    // KOMPASSET, ikke GPS-en, som gir en statisk retningsavlesning). Byttet til akkurat DEN presiseringen -
+    // plausibel (høres ut som en fornuftig sjekk), men konkret feil om hva GPS-en faktisk kan måle i ro.
     {
         icon: "fa-magnifying-glass",
         question: "Hva er en av de viktigste tingene å sjekke rett FØR avgang, mens farkosten fortsatt står på bakken?",
         options: [
-            "At rorflatene (høyderor, sideror, skråror) beveger seg tydelig og i RIKTIG retning ved pinneutslag",
-            "At GPS-en har full satellittlås og hjempunktet er registrert, uansett hvilken modus du skal fly i",
+            "At rorflatene (høyderor, sideror, skråror) beveger seg tydelig og i RIKTIG retning ved stikkeutslag",
+            "At GPS-mottakeren alene viser nøyaktig hvilken retning nesa peker, selv mens farkosten står helt i ro",
             "At batteriet viser nøyaktig 100% ladning - alt lavere bør alltid avbrytes før avgang",
             "At kompasset kalibreres på nytt før HVER eneste avgang, selv uten flytting eller lengre pause"
         ],
         correctIndex: 0,
-        explanation: "En kontrollflate-sjekk (\"range check\") - beveg pinnene og se at høyderor/sideror/skråror faktisk beveger seg riktig vei - er den mest grunnleggende, universelle sjekken før enhver RC-/UAV-avgang. En reversert eller frakoblet kanal oppdages langt billigere på bakken enn i luften. GPS-lås er kun relevant for GPS-avhengige moduser, 100%-krav er unødvendig strengt, og kompasset trenger kun rekalibreres etter flytting/interferens (se spørsmålet om det over) - ikke rutinemessig hver eneste gang."
+        explanation: "En kontrollflate-sjekk (\"range check\") - beveg stikkene og se at høyderor/sideror/skråror faktisk beveger seg riktig vei - er den mest grunnleggende, universelle sjekken før enhver RC-/UAV-avgang. En reversert eller frakoblet kanal oppdages langt billigere på bakken enn i luften.\n\nEn GPS-mottaker kan ikke alene bestemme retning mens farkosten står i ro - den avleder kurs fra faktisk bevegelse. Det er kompasset (se spørsmålene om det over) som gir en pålitelig statisk retningsavlesning. 100%-krav er unødvendig strengt, og kompasset trenger kun rekalibreres ved en faktisk grunn til det - ikke rutinemessig hver eneste gang."
     },
     {
         icon: "fa-helicopter",
         question: "Hva er en av de viktigste tingene å sjekke RETT ETTER avgang, mens du fortsatt hovrer lavt og nær hjempunktet?",
         options: [
-            "At gir, stigning og rulling reagerer riktig - både retning og styrke - på pinneutslagene, før du flyr videre eller høyere",
+            "At gir, stigning og rulling reagerer riktig - både retning og styrke - på stikkeutslagene, før du flyr videre eller høyere",
             "At GCS-skjermen viser korrekt klokkeslett og dato for den aktuelle flygingen",
             "At luftfarten allerede har nådd normal marsjfart, selv om farkosten bare hovrer i ro",
             "At batteriprosenten har falt under 90%, som bekreftelse på at motorene faktisk trekker strøm"
@@ -274,11 +310,11 @@ const VTOL_QUIZ_QUESTIONS = [
         question: "Har du lov til å modifisere farkosten (f.eks. montere ekstra nyttelast) i forhold til hvordan den er registrert/godkjent?",
         options: [
             "Ja, fritt fram - så lenge du fortsatt holder deg innenfor produsentens maksimale tillatte avgangsvekt",
-            "Det avhenger av hva som faktisk er spesifisert i godkjenningen for den aktuelle aktiviteten/operasjonen",
+            "Det avhenger av hva som faktisk er spesifisert i godkjenningen for den aktuelle aktiviteten",
             "Nei, aldri under noen omstendighet - enhver fysisk endring er alltid forbudt, uansett formål",
             "Kun produsenten selv kan gjøre slike endringer - operatøren/piloten har aldri denne muligheten"
         ],
         correctIndex: 1,
-        explanation: "Godkjenningen/driftstillatelsen gjelder for en spesifikk konfigurasjon av farkosten, ikke et fritt vekt-tak alene - hva som er tillatt av modifikasjoner/ekstra nyttelast avhenger av hva som konkret er spesifisert der for akkurat den aktiviteten. En endring utenfor det den faktisk dekker krever normalt en ny vurdering/godkjenning, ikke en vurdering du tar selv i felt."
+        explanation: "Godkjenningen gjelder for en spesifikk konfigurasjon av farkosten, ikke et fritt vekt-tak alene - hva som er tillatt av modifikasjoner/ekstra nyttelast avhenger av hva som konkret er spesifisert der for akkurat den aktiviteten. En endring utenfor det den faktisk dekker krever normalt en ny vurdering/godkjenning, ikke en vurdering du tar selv i felt."
     }
 ];

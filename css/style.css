@@ -785,6 +785,10 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 .sim-wizard-option:disabled { cursor: default; }
 .sim-wizard-option.sim-wizard-option-correct { background: #d9f3e0; border-color: #2ecc71; font-weight: 600; }
 .sim-wizard-option.sim-wizard-option-wrong { background: #fbe0df; border-color: #d9564f; }
+/* "Pass på pen formatering og linjeskift i forklaringene, sånn at det er bra lesbart" (brukeren) -
+   white-space:pre-line lar quiz-forklaringene (js/simulator-vtol-quiz.js) bryte i avsnitt via \n\n, samme
+   mønster .sim-wizard-body og .sim-exercise-desc allerede bruker (se deres egne kommentarer) - elementet
+   settes fortsatt trygt via textContent, ikke innerHTML. */
 .sim-wizard-explanation {
     background: #eef4fa;
     border-radius: 8px;
@@ -792,6 +796,7 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-size: 0.85rem;
     line-height: 1.5;
     margin-bottom: 14px;
+    white-space: pre-line;
 }
 .sim-wizard-nav { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
 .sim-wizard-progress { font-size: 0.8rem; color: #667; }
@@ -845,11 +850,15 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 .sim-diploma-icons { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 10px; }
 .sim-diploma-quad { width: 2.6rem; height: 2.6rem; color: var(--ffi-blue); }
-/* .sim-diploma-quad over er stylet for et inline SVG-ikon (width/height) - VTOL-diplomets ikon bruker i
-   stedet et Font Awesome-glyf (<i>), som sizes via font-size, ikke width/height. */
-.sim-diploma-plane { font-size: 2.6rem; color: var(--ffi-blue); }
+/* "fly-Ikonet på diplomet. kan heller bruke dette vedlagte bildet av en Heewing som ikon der?" (brukeren) -
+   byttet fra et generisk Font Awesome-flygly (<i>) til et faktisk PNG-bilde av selve Heewing T2 Cruza
+   (images/Heewing-T2.png, lagt inn av brukeren) - height (ikke font-size, siden dette nå er et ekte bilde,
+   ikke et ikonfont-glyf) styrer størrelsen, width:auto bevarer bildets egne proporsjoner. */
+.sim-diploma-heewing-icon { height: 2.6rem; width: auto; }
 .sim-diploma-medal { font-size: 3rem; color: #d4af37; }
-.sim-diploma-border h2 { margin: 0 0 2px; letter-spacing: 0.35em; color: var(--ffi-blue); }
+/* "'BEKREFTELSE'-overskriften har litt mye mellomrom mellom bokstavene" (brukeren) - ned fra 0.35em (delt
+   med quad-diplomet, samme overskrift/klasse begge steder - reduksjonen gjelder derfor begge). */
+.sim-diploma-border h2 { margin: 0 0 2px; letter-spacing: 0.12em; color: var(--ffi-blue); }
 .sim-diploma-sub { margin: 0 0 20px; font-size: 0.85rem; color: #666; }
 .sim-diploma-line { margin: 0 0 8px; font-size: 0.95rem; }
 .sim-diploma-name {
@@ -857,6 +866,7 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     border-bottom: 2px solid #999;
     font-size: 1.35rem;
     text-align: center;
+    transition: background-color 0.2s ease;
     /* margin:auto sentrerer selve boksen (80% bredde) i sidekant-retningen - .sim-diploma-border ble
        flex column for å strekke rammen i høyden (se der), og et flex-element med en eksplisitt bredde
        (ikke auto) strekkes IKKE av align-items:stretch og havner da til venstre uten dette, selv om
@@ -868,7 +878,16 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     outline: none;
     background: transparent;
 }
-.sim-diploma-text { font-size: 0.9rem; line-height: 1.55; margin: 18px 0 14px; }
+/* "diplom navn. må ikke være mulig å lagre uten navn. lys svakt rødt opp navnefeltet hvis man prøver å
+   lagre uten navn" (brukeren) - "lagre" er her "Lagre som PDF"-knappen (diplomaPrintBtn, se
+   openVtolDiploma), som nå avviser tomt navn og legger på denne klassen i stedet for å kalle
+   window.print(). Samme "kort, engangs CSS-animasjon"-mønster som sim-mode-flash over. */
+.sim-diploma-name.sim-diploma-name-error { animation: sim-diploma-name-error-flash 0.6s ease; }
+@keyframes sim-diploma-name-error-flash {
+    0%, 100% { background-color: transparent; }
+    25% { background-color: rgba(217,48,37,0.28); }
+}
+.sim-diploma-text { font-size: 0.9rem; line-height: 1.55; margin: 18px 0 10px; }
 /* Bestetider per øvelse - to kolonner (navn + tid), tynn skillelinje mellom radene. */
 .sim-diploma-times {
     margin: 0 auto 16px;
@@ -887,8 +906,50 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 /* Totaltid-raden nederst i tabellen - tykkere skillelinje over og fet skrift skiller den fra de vanlige
    øvelsesradene den summerer (se openDiploma). */
 .sim-diploma-time-total { border-top: 2px solid var(--ffi-blue); border-bottom: none; margin-top: 4px; padding-top: 6px; font-weight: 700; }
+/* "lignende utforming som fra quad stabilize øvelsene. Altså liste opp alt som er gjennomgått nedover...
+   Få frem de viktigste 'læringsmålene' under hver øvelse" (brukeren) - samme liste-idé som
+   .sim-diploma-times over (én rad per øvelse, tynn skillelinje), men STABLET (tittel over, kort
+   læringsmål-tekst under) i stedet for to kolonner side ved side, siden innholdet her er en kort SETNING
+   (gjenbruker exercise.shortDescription direkte, se openVtolDiploma), ikke et enkelt tall som en tid.*/
+.sim-diploma-goals {
+    margin: 0 auto 16px;
+    max-width: 460px;
+    text-align: left;
+    font-size: 0.8rem;
+}
+/* "Få med ikonene til hver øvelse på diplomet" (brukeren) - utvidet fra en ren stablet tittel+tekst-rad til
+   samme "ikon til venstre, tekst i egen kolonne"-oppsett som .sim-exercise-row selv bruker (se
+   .sim-exercise-row-icon/-main), gjenbrukt her med et eget "goal"-navnerom siden .sim-diploma-goal-row har
+   litt annen padding/skillelinje enn selve øvelseslisten. */
+.sim-diploma-goal-row { display: flex; align-items: flex-start; gap: 10px; padding: 5px 2px; border-bottom: 1px solid #eee; }
+.sim-diploma-goal-row:last-child { border-bottom: none; }
+.sim-diploma-goal-icon { flex: 0 0 auto; width: 1.2em; text-align: center; color: var(--ffi-blue); padding-top: 0.15em; }
+.sim-diploma-goal-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.sim-diploma-goal-title { display: block; font-weight: 700; color: var(--ffi-blue); }
+.sim-diploma-goal-desc { display: block; color: #444; }
+/* "Få med total flytid i simulator på diplomet" (brukeren) - se getVtolTotalFlightSec/formatVtolFlightTime
+   i js/simulator-vtol-exercises.js. */
+.sim-diploma-flighttime { font-size: 0.85rem; color: var(--ffi-blue); font-weight: 600; margin: 0 0 4px; }
 .sim-diploma-date { font-size: 0.85rem; color: #555; margin: 0; }
+/* Delt mellom BEGGE simulatorene (css/style.css lastes av både simulator.html og simulator-vtol.html) -
+   quad-diplomet (simulator.html) har KUN de to knappene som direkte barn her, ingen notis-avsnitt. Selve
+   .sim-diploma-actions holdes derfor UENDRET (rad, kun knappene) - VTOL-diplomets ekstra notis-avsnitt (se
+   .sim-diploma-note/-action-buttons under) ligger i en EGEN, VTOL-spesifikk .sim-diploma-actions-with-note-
+   modifikator i stedet for å endre denne delte regelen (som ville stablet quad-diplomets knapper loddrett
+   ved et uhell). */
 .sim-diploma-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+/* "diplom infotakst og knappene er for tett på diplomet under. må ha litt mellomrom ned dit" (brukeren) -
+   notis+knapper (.sim-diploma-actions-with-note) ligger nå FØR .sim-diploma-border i DOM-en (se HTML-
+   kommentaren der), så den delte margin-top over (ment for da denne blokken lå ETTER rammen) gir ikke
+   lenger luft mot rammen - den luften må komme fra margin-BUND isteden, kun for denne VTOL-spesifikke
+   varianten (påvirker ikke quad-diplomets uendrede rad-layout). */
+.sim-diploma-actions.sim-diploma-actions-with-note { flex-direction: column; align-items: center; margin-bottom: 18px; }
+/* "Få med et sted (ikke på selve diplomet) at det skal fylles ut navn og sendes inn... at det lagres
+   lokalt" (brukeren) - lagt i .sim-diploma-actions (allerede no-print via body.printing-diploma-regelen
+   lenger ned - printes/lagres derfor ALDRI som del av selve PDF-en/diplomet), ikke i .sim-diploma-border
+   (selve det printbare dokumentet). */
+.sim-diploma-note { font-size: 0.78rem; color: #555; line-height: 1.4; max-width: 380px; text-align: center; margin: 0; }
+.sim-diploma-action-buttons { display: flex; gap: 8px; justify-content: center; }
 
 /* Sideoppsett for ALL utskrift på hele nettstedet (ikke bare diplomet - @page er ikke knyttet til noen
    CSS-selektor eller @media print-blokk, den gjelder rett og slett hver gang DENNE stilarket brukes til
@@ -1293,9 +1354,19 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     cursor: pointer;
 }
 .sim-exercise-row:hover { background: rgba(3, 71, 127, 0.08); }
+/* "Sjekk at teksten er justert riktig inne i knappen. nå er den helt høyrestilt" (brukeren, om
+   diplom-raden) - roten var faktisk delt av ALLE rader (ikke bare diplom-raden), bare mindre synlig med
+   lengre titler/beskrivelser: .sim-exercise-row bruker justify-content:space-between, og uten en egen
+   flex-grow her fikk selve tekstblokken (.sim-exercise-row-main) kun sin egen, naturlige (innhold-styrte)
+   bredde - space-between dyttet den da mot HØYRE kant i stedet for rett til høyre for selve ikonet, med et
+   tomt gap midt i mellom. flex:1 lar den fylle resten av knappen i stedet - teksten står nå der den
+   faktisk skal, rett ved ikonet, uansett hvor kort/lang selve teksten er (ikon/sjekkmerke beholder sin
+   egen, naturlige bredde ved siden av).
+*/
 .sim-exercise-row-main {
     display: flex;
     flex-direction: column;
+    flex: 1;
     gap: 2px;
     min-width: 0;
 }

@@ -77,7 +77,15 @@ const ROLL_DAMPING = 0.03;
 // AILERON_MAX_AOA_DEG (ikke ROLL_CONTROL_EFFECTIVENESS) er den reelle flaskehalsen for rull-autoritet:
 // vinge-modellens egen rate-demping (rollWingDampCoeff) dominerer over den flate ROLL_DAMPING-termen med
 // >5x ved marsjfart, så bare denne (som virker gjennom SAMME vinge-mekanisme) monner.
-const AILERON_MAX_AOA_DEG = 22;
+// "manuell modus roll rate. virker litt treg i roll?" (brukeren) - stabil rull-rate ved fullt utslag er
+// (per merknaden over selve rull-integrasjonen i stepPhysics) forholdet EFFECTIVENESS/DAMPING, uavhengig av
+// treghet. rollWingDampCoeff (nevneren, den dominerende dempingen) styres av vingens EGEN rate-respons
+// (hvor mye lokal AoA endres av selve rotasjonen) - IKKE av AILERON_MAX_AOA_DEG i det hele tatt. Denne
+// konstanten (telleren, differensial-løften fra selve rorutslaget) kan derfor heves for å gi en raskere
+// rull uten å røre den dominerende dempingen. Hevet fra 22 til 28 grader (~27%) - en moderat, retningsriktig
+// justering ut fra denne resonneringen, IKKE verifisert med faktisk flyging (ingen live-testing tilgjengelig
+// i dette miljøet) - gi tilbakemelding om den treffer bedre eller trenger justering igjen.
+const AILERON_MAX_AOA_DEG = 28;
 // Dihedral-effekt (Clβ - rull fra SIDESLIP-VINKEL, ikke gir-rate) - se rollTorqueFromDihedral i
 // stepPhysics. VEDVARENDE (ikke rate-avhengig som Clr/Cnp over): et sideror holdt inne gir et sideslip
 // som varer så lenge roret holdes, og dermed et rullmoment som også varer - dette er det som gjør at
@@ -380,7 +388,22 @@ const MC_MAX_LEAN_ANGLE = 30;
 // Gulv for girets EGEN aerodynamiske autoritet i Q-modus (se yawAeroAuthority-kommentaren i stepPhysics) -
 // lar finnen/halepartiet fortsatt værhane merkbart inn mot en kryssvind selv med løftemotorene i full
 // rull-/stigningskontroll, i motsetning til rull/stigning som fortsatt kuttes helt (aeroAuthority).
-const YAW_AERO_MIN_AUTHORITY_QMODE = 0.5;
+// "QLOITER yawer aggressivt inn i vinden - er dette realistisk? ... i andre Q-moduser vil det være en liten
+// naturlig værhane-effekt?" (brukeren, med en forklaring om AT den naturlige effekten fra et stort,
+// bakoverliggende haleror finnes, men holdes SVAK av (1) løftemotorenes propellstrøm/gyroskopisk motstand
+// og (3) lavt relativt lufttrykk på halen ved hover-fart) - 0.5 (halvparten av FULL fastvinget-marsjfart-
+// autoritet) var ALDRI "liten": kombinert med at sideslip-vinkelen går mot nær ±90° i ren hover (se
+// finTorqueAtYawRate/symmetricLiftCoefficient, flate-plate-modellen sin TOPP-respons ligger nettopp i det
+// området) ga dette et stort, ukommandert girmoment i ENHVER Q-modus - ikke bare når QLOITER sin EGNE
+// aktive Q_WVANE-kontroller (se wvaneEnabled-kommentaren) la et ekstra lag oppå. Redusert til en reelt
+// svak, men fortsatt merkbar, "flagrer litt urolig i vind"-følelse. MERK (bruker-forklaringens punkt 2,
+// "aktiv motstand fra autopiloten"): denne gulv-verdien er UAVHENGIG av Q-modus (isQMode dekker
+// QSTABILIZE/QHOVER/QLOITER/QACRO likt) - selve gir-RATE-holdet (mcYawTorque, se MC_YAW_RATE_GAIN) er i
+// denne modellen allerede likt aktivt i alle disse modusene (en ekte multirotor-girkontroller holder rate
+// uavhengig av hvilken posisjonsholdings-modus som er valgt), så én delt, liten verdi her gir samme
+// kvalitative "beskjeden, men til stede"-oppførsel i QHOVER/QSTABILIZE som i QLOITER uten egen
+// per-modus-gren - ikke tallfestet/verifisert mot faktisk flyging (ingen live-testing tilgjengelig).
+const YAW_AERO_MIN_AUTHORITY_QMODE = 0.15;
 // Tak (IKKE gulv - motsatt av yaw-konstanten over) for rull/stigning sin EGEN aerodynamiske autoritet i en
 // Q-modus, se aeroAuthority-bruken i stepPhysics. BUG (rapportert av brukeren, med flightlogg fra QHOVER
 // ved 15-22 m/s forover-fart, full pinneP: "wobbler noe voldsomt i roll") - da aeroAuthority ble gjort
@@ -434,6 +457,21 @@ const QLOITER_MAX_SPEED = 5;
 // (=taket) ved fullt utslag fra stillstand, uten å endre selve QLOITER_MAX_SPEED (fortsatt ArduPilot sin
 // egen 5 m/s-standardverdi, kun selve OVERSETTELSEN fart->vinkel er gjort mer aggressiv/responsiv).
 const QLOITER_VEL_TO_LEAN_DEG = 6;
+// "QLOITER og vind. kompenserer fint for vinden. men det ser litt magisk ut når flyet ikke tilter mot
+// vinden... yter flyet krefter i en retning så må jo motorene peke i riktig retning også" (brukeren) - helt
+// riktig, og en reell modellmangel: targetPitchDeg/-BankDeg over er en REN P-kontroller på FARTSAVVIK
+// (desiredFwdSpeed-fwdSpeed), ikke posisjon. I en STEDY vind holder flyet posisjonen ved at grunnfarten
+// (fwdSpeed/rightSpeed) konvergerer mot ~0 igjen ETTER en kortvarig transient - men et fartsAVVIK som har
+// konvergert mot 0 gir et P-ledd som OGSÅ har konvergert mot 0, altså null kommandert lenevinkel, selv om
+// vinden fortsatt trekker konstant i flyet og en reell motkraft (og dermed et reelt tilt av skyvekraft-
+// vektoren) fortsatt kreves for å holde den null-farten. Et rent P-ledd kan aldri holde en KONSTANT
+// forstyrrelse i sjakk uten en vedvarende feil et sted i loopen - akkurat den "ser magisk ut"-effekten
+// brukeren påpekte. Rettet med et integralledd (samme PI-prinsipp som en ekte posisjonsholdings-kontroller
+// bruker - se _qloiterLeanIntFwd/-Right i stepPhysics): akkumulerer sakte over tid mens fartsavviket er
+// ikke-null, og STÅR VÆRENDE på en ikke-null verdi i steady state - nettopp den vedvarende lenevinkelen som
+// balanserer luftmotstanden fra vinden. Ikke tallfestet mot faktisk flyging (ingen live-testing
+// tilgjengelig i dette miljøet) - kun én, retningsriktig verdi valgt ut fra resonnementet over.
+const QLOITER_VEL_INT_GAIN = 1.5; // grader/s lenevinkel-akkumulering per m/s vedvarende fartsavvik
 // "Toilet bowling"-øvelsen (js/simulator-vtol-exercises.js: VTOL_SCENARIOS.toiletbowl) skriver til DENNE
 // (0 = ingen feil, normal QLOITER for alle andre flyging/øvelser) - se den fulle mekanisme-forklaringen
 // ved bruken i stepPhysics sin QLOITER-gren under.
@@ -465,6 +503,7 @@ let _qloiterDriftVelX = 0, _qloiterDriftVelXTarget = 0;
 let _qloiterDriftVelZ = 0, _qloiterDriftVelZTarget = 0;
 let _qloiterDriftErrX = 0, _qloiterDriftErrZ = 0; // m - virtuell GPS-posisjonsfeil, world-XZ
 let _qloiterDriftTimerSec = 0;
+let _qloiterLeanIntFwd = 0, _qloiterLeanIntRight = 0; // grader - se QLOITER_VEL_INT_GAIN-kommentaren
 // "QHOVER må vel ha lignende drift som QLOITER også?" (brukeren) - QHOVER har ingen GPS-posisjonsholding
 // i det hele tatt (kun Alt Hold, se MODE_LABELS-teksten "posisjonen må du styre selv med stikkene") - det
 // finnes altså ingen fartsMÅL-løkke å legge et GPS-avvik inn i, slik QLOITER-driften over gjør. I
@@ -571,6 +610,33 @@ const CRASH_SETTLE_SPEED_MS = 0.3;
 // til å fullføres.
 const CRASH_DRAG_RATE_PER_SEC = 0.8;
 const CRASH_GROUND_ANGULAR_DRAG_PER_SEC = 0.5;
+// "blir fortsatt stående unaturlig balanserende på vingen" / (tidligere skjermbilde) "helt unaturlig. i
+// virkeligheten vil det jo tippe over og falle" (brukeren) - selv med et EKTE, fysisk dreiemoment fra
+// ALLE åtte kontaktpunktene (se resolveGroundContact) kan et vrak legitimt lande i en matematisk PERFEKT
+// balanse i DENNE per-punkt-fjærmodellen: når bare ETT punkt (nesetupp, vingetupp, ...) bærer vekten OG
+// det punktet ved en tilfeldighet ligger RETT UNDER tyngdepunktet i verdensrom (X/Z), blir selve
+// dreiemomentet r×F eksakt null - akkurat som en blyant balansert nøyaktig på spissen. Et EKTE vrak
+// treffer aldri en så eksakt symmetrisk positur (ujevnt underlag, strukturelle unøyaktigheter,
+// luftmotstand fra en uregelmessig, ødelagt form) - denne diskret simulerte, perfekt symmetriske modellen
+// KAN derimot faktisk treffe et slikt kniv-egg-punkt eksakt og bli sittende fast der for alltid, uansett
+// HVILKET punkt som er involvert. Et lite, kontinuerlig tilfeldig dreiemoment ("strukturell/bakke-
+// ufullkommenhet", se bruken i stepPhysics) løser dette GENERELT for alle slike punkter på én gang, i
+// stedet for å måtte spesialbehandle hvert enkelt scenario etter hvert som det dukker opp: ved en EKTE,
+// flerpunkts stabil hvilestilling (f.eks. flatt på buken og beina) dominerer den langt sterkere
+// gjenopprettende fjærkraften fra resolveGroundContact totalt, så denne støyen blir bare en umerkelig
+// mikroskopisk rist som dør ut momentant. Ved en USTABIL kniv-egg-balanse finnes derimot INGEN
+// gjenopprettende kraft i det hele tatt (per definisjon - det ER selve problemet) - selv denne minimale
+// dulten er da nok til å skyve flyet varig bort fra det eksakte balansepunktet, og den ekte fjærkraft-/
+// dreiemoment-fysikken tar over resten av veien ned mot en faktisk stabil hvilestilling.
+const CRASH_BALANCE_WOBBLE_MAX_RAD_S2 = 0.5;
+// Se BUG-kommentaren ved crashStuckTimerSec-bruken i stepPhysics ("insta-superlim på vingetuppene") -
+// terskler for hva som telles som "tilnærmet helt stille" (lave nok til at en EKTE, fortsatt aktivt
+// fallende/glidende krasjfase aldri feilaktig telles som "fastlåst"), og hvor raskt/hvor langt
+// wobble-styrken får lov å vokse mens farkosten forblir stille.
+const CRASH_STUCK_LINEAR_SPEED_MS = 0.15;
+const CRASH_STUCK_ANGULAR_SPEED_RAD_S = 0.05;
+const CRASH_STUCK_RAMP_RATE = 4;       // wobble-multiplikator-vekst per sekund fastlåst
+const CRASH_STUCK_RAMP_MAX_MULT = 30;  // tak - etter ca. 7-8s fastlåst er styrken 30x grunnverdien
 
 const FIXED_DT = 1 / 120;       // fysikk-tidssteg, samme substep-mønster (akkumulator) som quad-simulatoren
 // Samme verdi som Sim.rampStick sin egen interne default (simulator-common.js) - en referanse i stedet
@@ -776,6 +842,17 @@ const RATE_STORAGE_KEY = "ffi-uas:vtol-rates";
 const GAMEPAD_STORAGE_KEY = "ffi-uas:vtol-gamepad-map";
 const SETTINGS_STORAGE_KEY = "ffi-uas:vtol-settings";
 const VTOL_PARAMS_STORAGE_KEY = "ffi-uas:vtol-transition-params";
+// "Få med total flytid i simulator på diplomet" (brukeren) - akkumulert luftbåren tid (planeState.onGround
+// false), IKKE bare inneværende økt - lagret i localStorage (samme Sim.loadJSON/-saveJSON-mønster som
+// resten av filen) slik at diplomet (js/simulator-vtol-exercises.js: openVtolDiploma) kan vise et tall som
+// faktisk dekker HELE elevens treningshistorikk, ikke bare siden siste sideoppdatering. IKKE lagret hver
+// eneste fysikk-tick (120 Hz, se FIXED_DT - det ville vært unødvendig mange localStorage-skriv) - kun én
+// gang per HELE sekund akkumulert tid, pluss ved sideavslutning (window.addEventListener("beforeunload"),
+// se lenger ned) som sikkerhetsnett mot å miste den siste, ufullførte brøkdelen av et sekund.
+const VTOL_FLIGHT_TIME_STORAGE_KEY = "ffi-uas:vtol-total-flight-time";
+const vtolFlightTimeState = Sim.loadJSON(VTOL_FLIGHT_TIME_STORAGE_KEY, { totalSec: 0 });
+function saveVtolFlightTime() { Sim.saveJSON(VTOL_FLIGHT_TIME_STORAGE_KEY, vtolFlightTimeState); }
+function getVtolTotalFlightSec() { return vtolFlightTimeState.totalSec; }
 
 const DEFAULT_RATES = {
     aileron: { centerSensitivity: 80, maxRate: 260, expo: 0.25 },
@@ -882,6 +959,10 @@ const planeState = {
     injured: false,
     injuredTarget: null,
     crashed: false,
+    // Se crashStuckTimerSec-BUG-kommentaren i stepPhysics (CRASH_STUCK_*-konstantene) - hvor lenge
+    // (sammenhengende) et krasjet fly har ligget tilnærmet stille UTEN å ha funnet en EKTE, bredt
+    // understøttet hvilestilling ennå.
+    crashStuckTimerSec: 0,
     onGround: true,
     hasBeenAirborne: false,
     flightMode: "qhover",
@@ -889,6 +970,10 @@ const planeState = {
     elevatorTrimDeg: 0,
     autoTrimFilteredDeflection: 0,
     lastRollDeflection: 0, lastPitchDeflection: 0, lastYawDeflection: 0,
+    // Se lastAileronVisualDeflection-kommentaren i stepPhysics - RENT visuelle motstykker til
+    // lastRollDeflection/lastPitchDeflection over, brukt KUN av rorflate-meshene (updatePlaneVisual m.fl.),
+    // aldri av selve fysikken/motor-mixeren.
+    lastAileronVisualDeflection: 0, lastElevatorVisualDeflection: 0,
     prevBankDeg: 0, prevPitchDegForD: 0,
     filteredBankRateDeg: 0, filteredPitchRateDeg: 0,
     // FBWB sin egen klatrerate-P-regulator sitt I-ledd (se fbwbClimbIntegral-bruken i stepPhysics) -
@@ -970,7 +1055,15 @@ const DEFAULT_VTOL_PARAMS = {
     // Q_WVANE_ENABLE: aktiver weathervaning (nesen dreier inn mot vinden) i QLOITER - ArduPilot støtter
     // fem retnings-varianter (nese/hale/side inn mot vind); forenklet til av/på her, kun standardverdien
     // "Nese inn mot vind" (se computeWeathervaneYawRateRad).
-    wvaneEnabled: true,
+    // "flyet vil veldig aggressivt yawe med nesa inn i vinden i QLOITER. tror ikke weathervaning er
+    // aktivert fra boksen. så skru det av" (brukeren) - stemmer, ekte ArduPilot har Q_WVANE_ENABLE=0 (AV)
+    // som fabrikkstandard, ikke PÅ. Endret standardverdien her til å matche. Selve funksjonen/UI-bryteren
+    // (wvaneEnabledInput) er UENDRET og fortsatt tilgjengelig for den som vil demonstrere/slå den på selv -
+    // kun standardoppførselen ved en fersk/nullstilt installasjon er rettet. MERK: Sim.loadJSON slår kun
+    // sammen manglende nøkler fra default inn i allerede LAGREDE innstillinger (se loadJSON i
+    // simulator-common.js) - en nettleser som allerede har lagret wvaneEnabled:true fra før beholder den
+    // verdien uendret av denne fiksen alene; bryteren i UI-en må i så fall slås av manuelt én gang.
+    wvaneEnabled: false,
     // Q_WVANE_GAIN: konverterer kommandert lenevinkel (grader) til girrate (grader/sekund) - "1 grad
     // krengning gir 1 grad/s gir" ved standardverdien 1.
     wvaneGain: 1,
@@ -996,6 +1089,7 @@ function resetVtolState() {
     _qloiterDriftVelZ = 0; _qloiterDriftVelZTarget = 0;
     _qloiterDriftErrX = 0; _qloiterDriftErrZ = 0;
     _qloiterDriftTimerSec = 0;
+    _qloiterLeanIntFwd = 0; _qloiterLeanIntRight = 0;
     _qhoverDriftPitch = 0; _qhoverDriftPitchTarget = 0;
     _qhoverDriftBank = 0; _qhoverDriftBankTarget = 0;
     _qhoverDriftTimerSec = 0;
@@ -1007,6 +1101,15 @@ function resetVtolState() {
     _wakeTurbulenceTarget.set(0, 0, 0);
 }
 function isQMode(mode) { return mode === "qstabilize" || mode === "qhover" || mode === "qloiter" || mode === "qacro"; }
+// "pass på at det ikke er mulig å styre simulatoren i bakgrunnen mens quizen er åpen"/"når diplomet er
+// åpent. pass på at tastatur og fjernkontroll ikke gir kommandoer til simulatoren i bakgrunnen" (brukeren) -
+// FELLES sjekk for BEGGE de ikke-3D-modale overleggene (veiviseren/quizen via specialExerciseState, OG
+// diplomet via vtolDiplomaOpen - begge deklarert i js/simulator-vtol-exercises.js, lastet ETTER denne
+// filen, samme cross-file-global-mønster som resten av øvelsesintegrasjonen) - brukt av BÅDE
+// stick-/fysikk-frysingen (updateInput/animate) OG selve tastatur-snarveiene (keydown-handleren), slik at
+// et fly som er luftbårent/i bevegelse idet ETT av de to overleggene åpnes ikke kan fortsette å
+// bevege/styres i bakgrunnen bak noen av dem.
+function backgroundControlBlocked() { return !!specialExerciseState || vtolDiplomaOpen; }
 
 // Kalt ved enhver motor-restart PÅ BAKKEN (resetPlane/toggleEngine/setEngine - se disse, samme
 // onGround-vilkår som captureHome), brukertilbakemelding: "Ved restart må standard modus på bakken være
@@ -1275,11 +1378,23 @@ function updateWindSmoke(dt) {
 // langt grovere enn 4-5 cm, og å løfte flatene mer ville sett svevende ut på nært hold. polygonOffset
 // biaser dybdeverdien under rastrering i stedet - factor-leddet skaleres med dybde-gradienten, som er
 // nøyaktig kompensasjonen slake innsynsvinkler trenger. Brukes på ALLE flate bakke-dekaler.
+// "sebrastripene på rullebanen er blurry? bør vel være tydelige linjer?" (brukeren) - CanvasTexture bruker
+// standard ISOTROPISK filtrering (anisotropy=1) med mipmaps, som fungerer greit rett ovenfra, men en
+// rullebane/vei/parkeringsflate blir alltid sett i en SKARP GRAFERINGSVINKEL fra cockpit-perspektiv (nesten
+// langs selve bakkeplanet under innflyging/taksing) - UTEN anisotropisk filtrering velger GPU-en én enkelt
+// mip-nivå basert på det VERSTE tilfellet av de to teksturaksene, som over-utjevner den andre aksen langt
+// mer enn nødvendig (den klassiske "gulv-/veitekstur ser tåkete ut i det fjerne/på skrå"-artefakten i enhver
+// 3D-motor). renderer.capabilities.getMaxAnisotropy() gir den høyeste verdien selve GPU-en faktisk støtter -
+// satt her (delt av ALLE bakkedekal-teksturer via groundDecalProps, ikke bare rullebanens terskelstriper)
+// siden samme blur-artefakt gjelder alle (vei-midtstripe, parkeringslinjer ...). renderer er allerede
+// opprettet på dette tidspunktet (buildWorldObjects, som ender opp her via buildRunway m.fl., kalles etter
+// "renderer = new THREE.WebGLRenderer(...)" i init-koden).
 function groundDecalProps(opts) {
     const result = opts || {};
     result.polygonOffset = true;
     result.polygonOffsetFactor = -2;
     result.polygonOffsetUnits = -2;
+    if (result.map) result.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return result;
 }
 
@@ -1299,8 +1414,19 @@ function buildGround() {
 }
 
 // Prosedural rullebane-tekstur: asfalt, kantlinjer, stiplet midtlinje og terskelstriper i begge ender.
+// "sebrastripene på rullebanen er blurry? bør vel være tydelige linjer?" (brukeren, fulgt opp med
+// skjermbilde etter anisotropy-fiksen i groundDecalProps: "fortsatt blurry... skal vel ha tydelige
+// omriss?") - anisotropy løser KUN den ene halvparten av blur-problemet (utjevning ved SKARPE
+// grafferingsvinkler/avstand). Skjermbildet viser derimot flyet svevende RETT OVER hjemmemarkøren/
+// terskelstripene på svært kort avstand under et vertikalt Q-modus-landingsinnsyn - det er MAGNIFISERING
+// (få teksler strekt over mange skjermpiksler på klos hold), en HELT ANNEN årsak enn anisotropy adresserer.
+// 128x1024 over en 14x360 m rullebane er kun ca. 9 piksler/meter på tvers - godt nok sett fra vanlig
+// flyhøyde, men synlig grøtete på nært hold. 4x oppløsning i begge retninger (512x4096, fortsatt en
+// beskjeden <8 MB GPU-tekstur) gir en langt skarpere terskelstripe/kantlinje selv helt nede ved bakken,
+// uten å røre noen av tegne-kallene under (de er alle proporsjonale texW/texH-brøker, ikke faste
+// pikseltall, og skalerer derfor automatisk med).
 function buildRunwayTexture() {
-    const texW = 128, texH = 1024;
+    const texW = 512, texH = 4096;
     const canvas = document.createElement("canvas");
     canvas.width = texW;
     canvas.height = texH;
@@ -1313,7 +1439,11 @@ function buildRunwayTexture() {
     // flat gråtone (brukeren rapporterte direkte: "ha litt fin tekstur på rullebanen. så man bedre kan se
     // dybde. veldig flatt nå"). Tegnes FØR kantlinjene/midtlinjen/terskelstripene under, slik at DE
     // fortsatt står rene og skarpe oppå kornet, ikke selv sprutet til.
-    const grainCount = 14000;
+    // Skalert opp 16x (samme forhold som texW*texH-arealøkningen over, 128x1024->512x4096) - uendret
+    // ANTALL ville gitt 16x LAVERE korn-TETTHET på det nye, større kanvaset (samme antall prikker spredt
+    // over 16x arealet), altså en synlig GLATTERE, mindre kornete rullebane enn før - stikk i strid med
+    // selve hensikten (se BUG-kommentaren over). Engangskostnad ved sceneoppbygging (ikke per bilderute).
+    const grainCount = 14000 * 16;
     for (let i = 0; i < grainCount; i++) {
         const gx = Math.random() * texW;
         const gy = Math.random() * texH;
@@ -3993,7 +4123,10 @@ function updateInput(dt) {
     // veiviserens EGEN "Sett"-knappebindingsfangst (se renderSpecialExerciseStep/step.bindActions i
     // simulator-vtol-exercises.js) er selv avhengig av nettopp den, og et par knappetrykk/modusbytter i
     // bakgrunnen er ikke den samme typen kontinuerlige, distraherende bevegelsen selve stick-aksene ville gitt.
-    if (specialExerciseState) {
+    // "når diplomet er åpent. pass på at tastatur og fjernkontroll ikke gir kommandoer til simulatoren i
+    // bakgrunnen" (brukeren) - backgroundControlBlocked() dekker nå OGSÅ diplomet (vtolDiplomaOpen), ikke
+    // bare veiviseren/quizen (specialExerciseState) - se dens egen kommentar.
+    if (backgroundControlBlocked()) {
         updateGamepadAxesReadout(gp);
         return;
     }
@@ -4226,6 +4359,38 @@ function stepPhysics(dt) {
         planeState.velocity.y -= GRAVITY * dt;
         planeState.position.add(planeState.velocity.clone().multiplyScalar(dt));
         resolveGroundContact(dt);
+        // Se CRASH_BALANCE_WOBBLE_MAX_RAD_S2-kommentaren ved konstanten - kun mens flyet faktisk er i
+        // bakkekontakt (samme "gir ingen fysisk mening luftbårent"-prinsipp som resten av denne grenen).
+        // BUG (rapportert av brukeren TO ganger nå, med skjermbilder: "står fortsatt og balanserer sånn...
+        // virker som det er insta-superlim på vingetuppene jo. biter seg fast i bakken. helt urealistisk")
+        // - en FAST wobble-styrke løser KUN de aller mest eksakte kniv-egg-balansene raskt; en balanse som
+        // er NESTE så eksakt (et lite, men reelt gjenopprettende moment, akkurat svakt nok til å vinne over
+        // selve wobble-styrken hver eneste tick) kunne fortsatt "henge fast" på ubestemt tid - i praksis
+        // umulig å garantere en fast styrke er "sterk nok" for ALLE slike nesten-treff uten samtidig å gjøre
+        // en EKTE, allerede stabilt hvilende vrak synlig urolig. Løsningen er derfor en STIGENDE styrke:
+        // crashStuckTimerSec (se planeState-deklarasjonen) teller opp for hver tick farkosten ligger
+        // TILNÆRMET HELT STILLE (både lineær- OG vinkelfart under en liten terskel) mens krasjet - en EKTE
+        // flerpunkts hvilestilling (flatt på buk/ben) blir raskt "stille" og FORBLIR det uansett hvor lenge
+        // timeren løper, siden den sterke, ekte gjenopprettende fjærkraften (resolveGroundContact) uansett
+        // absorberer selv en stor wobble-dult momentant og setter farkosten rett tilbake - mens en
+        // kniv-egg-/nesten-kniv-egg-balanse (som per definisjon IKKE har noen reell gjenopprettende kraft)
+        // garantert til slutt blir dyttet permanent ut av likevekten når styrken vokser stort nok, uansett
+        // hvor "nesten stabil" den så ut. Rampen resettes til 0 så snart farkosten faktisk beveger seg
+        // (fortsatt midt i en ekte velte-/glidefase - ingen ekstra dult trengs der).
+        const stuckLinearSpeed = planeState.velocity.length();
+        const stuckAngularSpeed = Math.hypot(planeState.angularVelocity.pitch, planeState.angularVelocity.roll, planeState.angularVelocity.yaw);
+        if (planeState.onGround && stuckLinearSpeed < CRASH_STUCK_LINEAR_SPEED_MS && stuckAngularSpeed < CRASH_STUCK_ANGULAR_SPEED_RAD_S) {
+            planeState.crashStuckTimerSec += dt;
+        } else {
+            planeState.crashStuckTimerSec = 0;
+        }
+        if (planeState.onGround) {
+            const wobbleMag = CRASH_BALANCE_WOBBLE_MAX_RAD_S2 *
+                Math.min(CRASH_STUCK_RAMP_MAX_MULT, 1 + planeState.crashStuckTimerSec * CRASH_STUCK_RAMP_RATE);
+            planeState.angularVelocity.pitch += (Math.random() * 2 - 1) * wobbleMag * dt;
+            planeState.angularVelocity.roll += (Math.random() * 2 - 1) * wobbleMag * dt;
+            planeState.angularVelocity.yaw += (Math.random() * 2 - 1) * wobbleMag * dt;
+        }
         // BUG (rapportert av brukeren TO ganger nå, med skjermbilder: "sklir med vingen nedi bakken.
         // stopper aldri å skli") - selv med CRASH_FRICTION_MULTIPLIER og det brukne vingepunktet fjernet
         // (se resolveGroundContact) kan et krasjet skrog fortsatt "rulle" seg fremover UTEN reell
@@ -4451,6 +4616,11 @@ function stepPhysics(dt) {
         rollDeflection = clamp(computeRate(stick.roll, rates.aileron) / rates.aileron.maxRate, -1, 1);
         pitchDeflection = clamp(computeRate(stick.pitch, rates.elevator) / rates.elevator.maxRate, -1, 1);
         yawDeflection = clamp(computeRate(stick.yaw, rates.rudder) / rates.rudder.maxRate, -1, 1);
+        // Se lastAileronVisualDeflection-kommentaren lenger ned (der de selvnivellerende modusene setter
+        // den) - her er selve rollDeflection/pitchDeflection ALLEREDE et rent pinneutslag (ingen
+        // vinkelavviks-konvergens å kompensere for), så det visuelle feltet er identisk med det ekte.
+        planeState.lastAileronVisualDeflection = rollDeflection;
+        planeState.lastElevatorVisualDeflection = pitchDeflection;
     } else {
         // fbwa/fbwb/qstabilize/qhover/qloiter: alle fem er selvnivellerende vinkel-P(D)-moduser - SAMME
         // kontrollov (uendret nedenfor). Kun selve MÅLVINKELEN (targetBankDeg/-PitchDeg) beregnes ulikt:
@@ -4549,8 +4719,20 @@ function stepPhysics(dt) {
             // Samme FORTEGN som den direkte pinne->vinkel-kommandoen under (stick.pitch/roll -> target-
             // Deg direkte) - dette ER akkurat den kommandoen, bare med et fartsAVVIK i stedet for selve
             // pinneposisjonen som P-leddets inngang. Klemmes til MC_MAX_LEAN_ANGLE (Q_LOIT_ANG_MAX).
-            targetPitchDeg = clamp((desiredFwdSpeed - fwdSpeed) * QLOITER_VEL_TO_LEAN_DEG, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
-            targetBankDeg = clamp((desiredRightSpeed - rightSpeed) * QLOITER_VEL_TO_LEAN_DEG, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
+            const fwdVelErr = desiredFwdSpeed - fwdSpeed, rightVelErr = desiredRightSpeed - rightSpeed;
+            // Integralledd (se QLOITER_VEL_INT_GAIN-kommentaren) - kun mens luftbåren (samme "ingenting skal
+            // kunne akkumulere en parkert/landet farkost"-begrunnelse som _qloiterDriftErrX rett over), og
+            // klemt til akkurat samme tak som selve lenevinkelen (anti-windup - uten dette kunne leddet
+            // fortsette å vokse ubegrenset mens flyet allerede sitter fast mot MC_MAX_LEAN_ANGLE, og deretter
+            // overskyte/henge igjen idet forstyrrelsen forsvinner).
+            if (!planeState.onGround) {
+                _qloiterLeanIntFwd = clamp(_qloiterLeanIntFwd + fwdVelErr * QLOITER_VEL_INT_GAIN * dt, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
+                _qloiterLeanIntRight = clamp(_qloiterLeanIntRight + rightVelErr * QLOITER_VEL_INT_GAIN * dt, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
+            } else {
+                _qloiterLeanIntFwd = 0; _qloiterLeanIntRight = 0;
+            }
+            targetPitchDeg = clamp(fwdVelErr * QLOITER_VEL_TO_LEAN_DEG + _qloiterLeanIntFwd, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
+            targetBankDeg = clamp(rightVelErr * QLOITER_VEL_TO_LEAN_DEG + _qloiterLeanIntRight, -MC_MAX_LEAN_ANGLE, MC_MAX_LEAN_ANGLE);
 
             // Weathervane (se computeWeathervaneYawRateRad) - KUN aktiv i QLOITER, matcher ArduPilot:
             // "not active in QSTABILIZE and QHOVER modes as those are not position controlled modes...
@@ -4704,6 +4886,40 @@ function stepPhysics(dt) {
         const selfLevelDGainBlend = 1 - mcAuthority;
         rollDeflection = clamp((targetBankDeg - currentBankDeg) / STABILIZED_BANK_AUTHORITY_DEG - planeState.filteredBankRateDeg * STABILIZED_BANK_D_GAIN * selfLevelDGainBlend, -1, 1);
         pitchDeflection = clamp((targetPitchDeg - currentPitchDeg) / STABILIZED_PITCH_AUTHORITY_DEG - planeState.filteredPitchRateDeg * STABILIZED_PITCH_D_GAIN * selfLevelDGainBlend, -1, 1);
+        // "ailerons. skal vel gi utsalg i Q moduser også? nå står de rorene helt i ro ser det ut som"
+        // (brukeren) - rollDeflection/pitchDeflection over er et vinkel-AVVIKS-signal: det konvergerer
+        // korrekt mot ~0 så snart farkosten faktisk HOLDER den kommanderte krengingen/stigningen stabilt
+        // (riktig fysikk - null dreiemoment trengs for å OPPRETTHOLDE en allerede oppnådd, konstant
+        // vinkel). I en hover holdes en kommandert helning ofte lenge og konstant (i motsetning til FBWA,
+        // der man sjelden holder en fast krengevinkel like lenge) - rorflatene så derfor synlig "stille"
+        // ut det meste av tiden selv med pinnen tydelig utslått. lastAileronVisualDeflection/
+        // -ElevatorVisualDeflection under er EGNE, RENT VISUELLE felt (rører IKKE selve rollDeflection/
+        // pitchDeflection - mcRollTorque/mcPitchTorque og liftRollMix/-PitchMix lenger ned MÅ fortsatt
+        // bruke det ekte, avviks-styrte signalet for korrekt fysikk/motor-visualisering) som i stedet
+        // speiler selve MÅL-vinkelen (targetBankDeg/-PitchDeg) som brøkdel av modusens vinkeltak - forblir
+        // dermed synlig utslått HELE tiden pinnen holdes utslått, ikke bare i selve overgangsøyeblikket.
+        // Kun i de tre "rene" selvnivellerende Q-modusene (mcAuthority>0.01 - se qloiter-grenens egen
+        // terskel over) - FBWA/FBWB beholder det ekte avviks-signalet uendret (upåvirket av denne fiksen),
+        // siden det der representerer en ekte AERODYNAMISK trim-tilstand, ikke bare et hover-manøversignal.
+        // "Ser fortsatt ikke balanserorbevegelse eller høyderorbevegelse på bakken i Q modus" (brukeren,
+        // oppfølging) - targetBankDeg/-PitchDeg tvinges til 0 mens flyet står PÅ BAKKEN (se
+        // "planeState.onGround && mcAuthority>0.01"-klemmen over, lagt til tidligere for å hindre at
+        // farkosten prøver å tippe over mens den står parkert) - speilet man MÅL-vinkelen direkte ville
+        // dermed OGSÅ det rent visuelle rorutslaget blitt tvunget til 0 på bakken, uansett pinneutslag. En
+        // ekte servo/rorflate beveger seg derimot med pinnen UANSETT om farkosten står på bakken eller ei -
+        // det er kun selve FLYKOMMANDOEN (dreiemomentet/hover-vinkelen) som med hensikt undertrykkes der,
+        // ikke rorflatenes fysiske posisjon. Speiler derfor RÅ pinneposisjon direkte (samme formel som
+        // manual/qacro-grenen) mens flyet står på bakken, uavhengig av modus/mcAuthority.
+        if (planeState.onGround) {
+            planeState.lastAileronVisualDeflection = clamp(computeRate(stick.roll, rates.aileron) / rates.aileron.maxRate, -1, 1);
+            planeState.lastElevatorVisualDeflection = clamp(computeRate(stick.pitch, rates.elevator) / rates.elevator.maxRate, -1, 1);
+        } else if (mcAuthority > 0.01) {
+            planeState.lastAileronVisualDeflection = clamp(targetBankDeg / MC_MAX_LEAN_ANGLE, -1, 1);
+            planeState.lastElevatorVisualDeflection = clamp(targetPitchDeg / MC_MAX_LEAN_ANGLE, -1, 1);
+        } else {
+            planeState.lastAileronVisualDeflection = rollDeflection;
+            planeState.lastElevatorVisualDeflection = pitchDeflection;
+        }
         // Ingen automatisk sideror-koordinering her - en tidligere åpen-løkke-versjon (proporsjonal med
         // kommandert krengning) fightet mot finnens ekte aerodynamiske respons (retningsstabilitet+demping)
         // og vingenes adverse yaw, som ga periodisk sideror-oscillering i svinger. Sideroret er derfor
@@ -5450,7 +5666,7 @@ function checkTailStrike(spec) {
 }
 
 // Gjenbrukte "scratch"-objekter for resolveGroundContact - samme begrunnelse som _tailStrikeScratch over.
-const GROUND_CONTACT_POINT_COUNT = 8;
+const GROUND_CONTACT_POINT_COUNT = 16;
 const _groundContactLocalPts = Array.from({ length: GROUND_CONTACT_POINT_COUNT }, function () { return new THREE.Vector3(); });
 const _groundContactWorldPts = Array.from({ length: GROUND_CONTACT_POINT_COUNT }, function () { return new THREE.Vector3(); });
 const _groundContactEuler = new THREE.Euler();
@@ -5556,17 +5772,38 @@ function resolveGroundContact(dt) {
     const noseTipZWorld = -(cabinLenWorld / 2 + noseLenWorld);
     const noseTipRadiusWorld = CABIN_RADIUS_BUILD * NOSE_TIP_RADIUS_RATIO * spec.visualScale;
     _groundContactLocalPts[3].set(0, -noseTipRadiusWorld, noseTipZWorld);
-    // 5.-6. punkt (NYTT): vingetuppene - BUG (rapportert av brukeren: "vingetuppen skal ikke glitche
-    // gjennom bakken. men ta nedi og simuleres de også") - ingen av de andre punktene ligger i nærheten av
-    // vingespennet, så en hard/skjev landing med krengning kunne tidligere la en vingetupp visuelt
-    // penetrere bakken helt uten fysisk reaksjon. wingMountYWorld/wingRootZWorld MÅ matche buildPlane sin
-    // faktiske vingeplassering (WING_MOUNT_HEIGHT_RATIO delt via CABIN_RADIUS_BUILD, samme "0.02"
-    // Z-forskyvning som wing.position der) - X er allerede ekte verdensrom (spec.wingSpan/2, samme
-    // konvensjon som legXWorld over).
+    // 5.-6. punkt (NYTT, senere UTVIDET - se BUG-kommentaren ved punkt 14-15 under): vingetuppene - BUG
+    // (rapportert av brukeren: "vingetuppen skal ikke glitche gjennom bakken. men ta nedi og simuleres de
+    // også") - ingen av de andre punktene ligger i nærheten av vingespennet, så en hard/skjev landing med
+    // krengning kunne tidligere la en vingetupp visuelt penetrere bakken helt uten fysisk reaksjon.
+    // wingMountYWorld/wingRootZWorld MÅ matche buildPlane sin faktiske vingeplassering
+    // (WING_MOUNT_HEIGHT_RATIO delt via CABIN_RADIUS_BUILD, samme "0.02" Z-forskyvning som wing.position
+    // der) - X er allerede ekte verdensrom (spec.wingSpan/2, samme konvensjon som legXWorld over).
+    // BUG (rapportert av brukeren, med skjermbilde: "her er heewingen delvis glitchet gjennom med
+    // vingespissen i rullebanen - står og wobler og balanserer") - wingRootZWorld ALENE (vingens
+    // MONTERINGS-Z på skroget, samme "0.02" som wing.position) er IKKE der selve vingetuppens synlige
+    // MESH faktisk ligger i Z: buildHeewingWing sveiper OG avsmalner vingen fra rot til tupp (rootChord
+    // 1.2x/tipChord 0.8x snittkorden, forkant sveipet 0.104*rotkorde bakover mot tuppen, se
+    // rootLEz/LE_SWEEP_AFT/tipLEz/tipChord der) - selve tuppens forkant/bakkant ligger dermed et godt
+    // stykke FORAN/BAK denne ene monterings-Z-en, ikke rett PÅ den. Et enkelt punkt midt i vingerotens Z
+    // "traff" derfor ofte IKKE der tuppens ekte, sveipede for-/bakkant faktisk penetrerte bakken ved en
+    // krengning, og en snau, ikke helt fullført balanse på selve MESH-kanten (utenfor det spurte punktet)
+    // kunne se stabil ut for fysikken samtidig som meshet visuelt glitchet - se punkt 14-15 under, som
+    // legger til nøyaktig de to manglende for-/bakkant-punktene med SAMME sveip-/kordeformel som
+    // buildHeewingWing selv bruker (deler wingChordWorld, som allerede er identisk med wingChordAvg der).
     const wingMountYWorld = CABIN_RADIUS_BUILD * WING_MOUNT_HEIGHT_RATIO * spec.visualScale;
     const wingRootZWorld = 0.02 * spec.visualScale;
-    _groundContactLocalPts[4].set(spec.wingSpan / 2, wingMountYWorld, wingRootZWorld);
-    _groundContactLocalPts[5].set(-spec.wingSpan / 2, wingMountYWorld, wingRootZWorld);
+    // Samme rot-/tupp-korde-/sveipformel som buildHeewingWing (se kommentaren der) - MÅ holdes i synk,
+    // akkurat som resten av understellet. Punkt 4-5 bruker bakkanten (tipTEzWorld, lengst AKTER, der
+    // aileronets hengsel/droop faktisk sitter - se brokenWingSide-bruken rett under), punkt 14-15 (satt
+    // lenger ned) bruker forkanten (tipLEzWorld).
+    const rootChordWorld = wingChordWorld * 1.2;
+    const tipChordWorld = wingChordWorld * 0.8;
+    const rootLEzWorld = -rootChordWorld / 2;
+    const tipLEzWorld = rootLEzWorld + rootChordWorld * 0.104;
+    const tipTEzWorld = tipLEzWorld + tipChordWorld;
+    _groundContactLocalPts[4].set(spec.wingSpan / 2, wingMountYWorld, wingRootZWorld + tipTEzWorld);
+    _groundContactLocalPts[5].set(-spec.wingSpan / 2, wingMountYWorld, wingRootZWorld + tipTEzWorld);
     // Brukket, hengende vingetupp (se triggerCrash()/brokenWingSide og BROKEN_WING_DROOP_RAD i
     // updatePlaneVisual) - BUG (rapportert av brukeren: "kollisjon og friksjon må detekteres med
     // vingetuppen mot bakken også") - den visuelle aileron-hengselen droopet ned til en fast, overdrevet
@@ -5600,9 +5837,58 @@ function resolveGroundContact(dt) {
     // nødvendigvis skrogets faktisk LAVESTE punkt ved en brå/ekstrem stigning-/krengevinkel (f.eks. rett
     // etter en for hard rotasjon i Q-modus) - uten dette kunne selve skrogbuken svinge ned GJENNOM
     // bakkeplanet mens de andre kontaktpunktene (plassert lenger ut mot vingene/halen/nesa) fortsatt
-    // teknisk sto klar, som brukeren rapporterte tidligere ("kroppen glitcher gjennom bakken"). Fortsatt
-    // et rent sikkerhetsnett (IKKE med i fjærkraft-/friksjons-loopen under, se kommentaren der).
+    // teknisk sto klar, som brukeren rapporterte tidligere ("kroppen glitcher gjennom bakken").
+    // BUG (rapportert av brukeren, med skjermbilde: et krasjet fly ble stående fastfrosset med nesa dypt
+    // ned i bakken og halen løftet ustøtt i luften - "helt unaturlig. i virkeligheten vil det jo tippe
+    // over og falle") - dette punktet var TIDLIGERE et "rent sikkerhetsnett", eksplisitt utelatt fra
+    // fjærkraft-/friksjons-/dreiemoment-loopen under (kun brukt til maxPenetration-korreksjonen av
+    // planeState.position.y). Ved en bratt nese-ned-attityde er det derimot ofte NETTOPP skrogbuken (ikke
+    // nesetuppen eller noe av de andre syv ekte punktene) som er skrogets faktisk dypeste - flyet ble da
+    // løftet opp av selve Y-korreksjonen (som om det HVILTE på et ekte kontaktpunkt), samtidig som INGEN
+    // reell kraft/moment noensinne virket der, og de andre punktene typisk IKKE penetrerte etter
+    // korreksjonen - dreiemoment-loopen fant dermed rett og slett INGEN penetrerende punkt i det hele
+    // tatt, og vinkelfarten forble uendret tick etter tick: flyet så ut til å "hvile" i en fysisk umulig
+    // positur, men var i virkeligheten aldri i noen ekte kontakt overhodet, kun posisjonsmessig klemt opp
+    // av sikkerhetsnettet. Nå en EKTE, om enn grov, åttende kontaktflate (samme fjærkraft-/
+    // friksjonsmodell som resten, se loopen under) - engasjeres først når den faktisk ER skrogets dypeste
+    // punkt, og gir da et EKTE støttemoment akkurat der skroget faktisk hviler, slik at en ubalansert
+    // positur (tyngdepunktet forskjøvet fra selve kontaktflaten) fortsetter å tippe/falle i stedet for å
+    // fryse.
     _groundContactLocalPts[7].set(0, -CABIN_RADIUS_BUILD * spec.visualScale, BOOM_CENTER_Z_BUILD * spec.visualScale);
+    // 9.-14. punkt (NYTT): to hele "ringer" (buk/venstre/høyre) rundt kabinsylinderen, én FORAN og én BAK
+    // det ene sentrums-bukpunktet over (punkt 7) - BUG (rapportert av brukeren, med skjermbilder: "kroppen
+    // glitcher gjennom rullebanen etter å ha tippet over" og, en oppfølging, "hender at også deler av
+    // flyet glitcher gjennom bakken") - kabinen er en SYLINDER med tilnærmet konstant radius over hele sin
+    // lengde (cabinLenWorld), ikke bare i det ene midtpunktet punkt 7 sjekker. Siden skroget er en STIV
+    // kropp beveger en rett linje mellom to punkter på sylinderens overflate seg som en rett linje i
+    // verdensrom uansett rotasjon - to ringer (fremst og bakerst på kabinen) er derfor NOK til å garantere
+    // at HELE den rette linjen mellom dem (altså hele kabinens synlige overflate langsetter, i praksis) er
+    // over bakkeplanet når begge ringenes punkter er det, uansett stigning/krengning/gir-kombinasjon - ett
+    // midtpunkt alene ga ingen slik garanti (midten kunne være trygt over bakken mens enden av kabinen,
+    // nærmere nesen eller halen, likevel stakk ned i den, spesielt ved en KOMBINERT stigning+krengning der
+    // dypeste punkt langs skroget flytter seg avhengig av akkurat hvilken vei flyet heller). Samme
+    // fjærkraft-/friksjonsmodell som resten (se loopen under) - gir dermed også et EKTE støttemoment
+    // gjennom hele velteforløpet fra buk-hvile til side-hvile, ikke bare ved de to endepunktene "flatt på
+    // buken" og "flatt på siden" slik ett enkelt sentrumspunkt+ett sidepunkt-par ga.
+    const cabinRadiusWorld = CABIN_RADIUS_BUILD * spec.visualScale;
+    const cabinFrontZWorld = BOOM_CENTER_Z_BUILD * spec.visualScale - cabinLenWorld / 2;
+    const cabinBackZWorld = BOOM_CENTER_Z_BUILD * spec.visualScale + cabinLenWorld / 2;
+    _groundContactLocalPts[8].set(0, -cabinRadiusWorld, cabinFrontZWorld);
+    _groundContactLocalPts[9].set(cabinRadiusWorld, 0, cabinFrontZWorld);
+    _groundContactLocalPts[10].set(-cabinRadiusWorld, 0, cabinFrontZWorld);
+    _groundContactLocalPts[11].set(0, -cabinRadiusWorld, cabinBackZWorld);
+    _groundContactLocalPts[12].set(cabinRadiusWorld, 0, cabinBackZWorld);
+    _groundContactLocalPts[13].set(-cabinRadiusWorld, 0, cabinBackZWorld);
+    // 15.-16. punkt (NYTT): vingetuppenes FORKANT - se BUG-kommentaren ved punkt 4-5 sitt oppsett over
+    // (samme skjermbilde: "vingespissen i rullebanen - står og wobler og balanserer"). Punkt 4-5 dekker nå
+    // tuppens BAKKANT (tipTEzWorld) - denne dekker FORKANTEN (tipLEzWorld), slik at hele vingetuppens
+    // synlige korde (for- til bakkant, samme sveipede geometri som buildHeewingWing selv bygger) er
+    // rammet inn av et EKTE kontaktpunkt i begge endene, av nøyaktig samme "stiv kropp -> rett linje
+    // mellom to punkter er alltid trygg hvis begge endene er det"-grunn som kabinringene over. IKKE
+    // koblet til brokenWingSide-droopen (kun aileronets EGEN TE-hengsel droopet ved brudd, se punkt 4-5 -
+    // forkanten på en brukket tupp henger fortsatt fysisk fast i resten av vingestrukturen).
+    _groundContactLocalPts[14].set(spec.wingSpan / 2, wingMountYWorld, wingRootZWorld + tipLEzWorld);
+    _groundContactLocalPts[15].set(-spec.wingSpan / 2, wingMountYWorld, wingRootZWorld + tipLEzWorld);
     let maxPenetration = -Infinity;
     for (let i = 0; i < GROUND_CONTACT_POINT_COUNT; i++) {
         _groundContactWorldPts[i].copy(_groundContactLocalPts[i])
@@ -5695,9 +5981,15 @@ function resolveGroundContact(dt) {
     // et fly som skulle hvilt flatt på f.eks. nese+hale kunne dermed finne en falsk likevekt der KUN nesa
     // (eller et ben/en vingetupp) faktisk dyttet tilbake, mens halepartiet forble "hengende" understøttet av
     // ingenting. Utvidet til 7 (indeks 0-6) - halespissen deltar nå i akkurat samme fjærkraft-/
-    // friksjonsreaksjon som resten av punktene, se _groundContactLocalPts[6] og bevisst IKKE
-    // punkt 7 (skrogbuken, fortsatt kun sikkerhetsnett).
-    for (let i = 0; i < 7; i++) {
+    // friksjonsreaksjon som resten av punktene, se _groundContactLocalPts[6].
+    // Utvidet videre til 8 (indeks 0-7) - skrogbuken (punkt 7) er nå ALLTID med i denne samme reaksjonen
+    // også, ikke lenger et unntak - se BUG-kommentaren ved _groundContactLocalPts[7]-oppsettet over for
+    // hvorfor et rent posisjons-sikkerhetsnett uten egen kraft/moment kunne fryse flyet i en fysisk umulig
+    // positur. Utvidet videre til 16 (indeks 0-15, altså hele GROUND_CONTACT_POINT_COUNT) - kabinringene
+    // (punkt 8-13) og vingetupp-forkantene (punkt 14-15) deltar nå på nøyaktig samme måte, se
+    // BUG-kommentarene ved _groundContactLocalPts[8..13]/[14-15]-oppsettet over for hvorfor skroget/
+    // vingetuppen kunne glitche gjennom bakken uten dem.
+    for (let i = 0; i < GROUND_CONTACT_POINT_COUNT; i++) {
         // Brukket vingetupp (se triggerCrash()/brokenWingSide) - IKKE lenger et kontaktpunkt i det hele
         // tatt. BUG (rapportert av brukeren, med skjermbilde: "i noen krasj ruller flyet unaturlig lenge
         // rundt. vingetippen fungerer som hjul... vingen som slås i bakken må jo knekke av") - roten til
@@ -5715,14 +6007,22 @@ function resolveGroundContact(dt) {
         // flatere, mer stabil hvilestilling (buken/nesen/halen/det gjenværende benet/vingetuppen) styrt av
         // de RESTERENDE kontaktpunktene og flyets egen vekt - den "vekt og balanse"-oppførselen brukeren
         // etterlyste, uten å måtte bygge en egen separat masse-/balansemodell.
-        if (planeState.crashed && ((i === 4 && planeState.brokenWingSide > 0) || (i === 5 && planeState.brokenWingSide < 0))) continue;
+        // Punkt 4/14 er begge på HØYRE vingetupp (bakkant/forkant), 5/15 begge på VENSTRE - en brukket
+        // vinge mister BEGGE, ikke bare den opprinnelige bakkant-prøven (se BUG-kommentaren ved
+        // _groundContactLocalPts[14]/[15]-oppsettet over for hvorfor forkanten ble lagt til i det hele
+        // tatt).
+        if (planeState.crashed && (
+            (planeState.brokenWingSide > 0 && (i === 4 || i === 14)) ||
+            (planeState.brokenWingSide < 0 && (i === 5 || i === 15))
+        )) continue;
         const pen = -_groundContactWorldPts[i].y;
         if (pen <= 0) continue;
-        // Vingetupp-krasj (se WING_STRIKE_CRASH_PEN_M-kommentaren ved konstanten) - punkt 4/5 ER
-        // vingetuppene (se _groundContactLocalPts-oppsettet over). Sjekket FØR selve fjærkraft-/
-        // friksjonsreaksjonen under, slik at et krasj utløst her fortsatt rekker å bli behandlet av
-        // triggerCrash() (og dermed CRASH_FRICTION_MULTIPLIER-oppbremsingen) i AKKURAT denne samme tick.
-        if ((i === 4 || i === 5) && pen > WING_STRIKE_CRASH_PEN_M && planeState.velocity.length() > WING_STRIKE_CRASH_SPEED_MS) {
+        // Vingetupp-krasj (se WING_STRIKE_CRASH_PEN_M-kommentaren ved konstanten) - punkt 4/5/14/15 ER
+        // vingetuppene (bakkant OG forkant, se _groundContactLocalPts-oppsettet over). Sjekket FØR selve
+        // fjærkraft-/friksjonsreaksjonen under, slik at et krasj utløst her fortsatt rekker å bli
+        // behandlet av triggerCrash() (og dermed CRASH_FRICTION_MULTIPLIER-oppbremsingen) i AKKURAT denne
+        // samme tick.
+        if ((i === 4 || i === 5 || i === 14 || i === 15) && pen > WING_STRIKE_CRASH_PEN_M && planeState.velocity.length() > WING_STRIKE_CRASH_SPEED_MS) {
             triggerCrash();
         }
         _groundContactOffsetScratch.copy(_groundContactWorldPts[i]).sub(planeState.position);
@@ -5855,6 +6155,22 @@ const WINDSOCK_COLLISION_HEIGHT_M = 7.3; // vindpølsestolpens høyde (se Sim.bu
 // fanges ikke opp av det rene posisjonspunktet (samme forenkling som treet/vindpølse-sjekkene over), så en
 // nulltykkelse-sjekk ville latt vingetuppene glitche gjennom mens senterpunktet så vidt klarer seg.
 const BUILDING_WALL_HIT_MARGIN_M = 0.9;
+// "pass på kollisjon i bygningene... det registreres krasj, men heewingen glitcher fortsatt rett gjennom
+// veggene" (brukeren) - triggerCrash() (kalt under ved et veggtreff) setter riktignok crashed=true
+// (derav "registreres"), MEN gjør ALDRI noe med selve POSISJONEN, og reduserer farten kun med den
+// generiske CRASH_ENERGY_LOSS_FRAC (0.6 - ment for en landingsstell-hard LANDING, ikke en fullstendig
+// solid vegg i full marsjfart). I motsetning til bakken (resolveGroundContact, som aktivt dytter flyet
+// tilbake med en fjærkraft HVER tick) er denne sjekken et rent engangs "oppdag og sett et flagg"-treff -
+// resten av flyets betydelige, kun 40% reduserte hastighet fikk dermed lov til å fortsette å integrere
+// posisjonen rett gjennom veggen i etterfølgende tick, akkurat som om ingenting fysisk stoppet det. En
+// solid trevegg/mur stopper i realiteten et fly nesten momentant (langt hardere enn en myk landing) -
+// BUILDING_HIT_VELOCITY_KEEP_FRAC under er derfor mye strengere enn den generelle krasj-reduksjonen
+// (samme prinsipp/størrelsesorden som PERSON_HIT_VELOCITY_KEEP_FRAC ved et pilot-/publikumstreff, se der -
+// en vegg er om noe enda mer ettergivelsesløs enn en person). Selve POSISJONEN klemmes samtidig tilbake
+// til akkurat utenfor veggflaten (samme lokale lx/lz-akse kollisjonen allerede er beregnet i) - uten
+// dette ville flyet fortsatt bli stående synlig NEDSENKET i/forbi veggen selve treff-ticken, uansett hvor
+// hardt farten kuttes ETTERPÅ.
+const BUILDING_HIT_VELOCITY_KEEP_FRAC = 0.04;
 function checkVtolBuildingCollision(px, py, pz) {
     for (let i = 0; i < buildingCollisionData.length; i++) {
         const b = buildingCollisionData[i];
@@ -5875,7 +6191,9 @@ function checkVtolBuildingCollision(px, py, pz) {
         // Sideveggene (lokal x=±width/2) er HELE - ingen åpning, i motsetning til front-/bakveggen.
         if (Math.abs(lz) <= b.depth / 2 &&
             (Math.abs(Math.abs(lx) - b.width / 2) <= BUILDING_WALL_HIT_MARGIN_M)) {
-            triggerCrash(); return;
+            triggerCrash();
+            stopVtolAtBuildingWall(b, cos, sin, Math.sign(lx || 1) * b.width / 2, lz);
+            return;
         }
         // Front-/bakveggen (lokal z=±depth/2) - solid UNNTATT selve vindusåpningen eleven skal fly gjennom
         // (se buildOpenBuilding sin windowWall) - kun et treff hvis punktet er nær veggflaten OG UTENFOR
@@ -5884,9 +6202,26 @@ function checkVtolBuildingCollision(px, py, pz) {
             Math.abs(Math.abs(lz) - b.depth / 2) <= BUILDING_WALL_HIT_MARGIN_M) {
             const throughWindow = Math.abs(lx) <= b.windowW / 2 - BUILDING_WALL_HIT_MARGIN_M &&
                 py >= b.sillY + BUILDING_WALL_HIT_MARGIN_M && py <= b.sillY + b.windowH - BUILDING_WALL_HIT_MARGIN_M;
-            if (!throughWindow) { triggerCrash(); return; }
+            if (!throughWindow) {
+                triggerCrash();
+                stopVtolAtBuildingWall(b, cos, sin, lx, Math.sign(lz || 1) * b.depth / 2);
+                return;
+            }
         }
     }
+}
+// Se BUILDING_HIT_VELOCITY_KEEP_FRAC-kommentaren over - klemmer flyets VERDENSPOSISJON tilbake til akkurat
+// utenpå veggflaten (clampedLx/clampedLz er ALLEREDE klemt til riktig side av kolliderte veggen av
+// kalleren over, samme lokale rom lx/lz ble beregnet i) via samme rotasjon i revers, og stanser farten
+// nesten helt (i stedet for kun triggerCrash() sin generiske, mye svakere reduksjon).
+function stopVtolAtBuildingWall(b, cos, sin, clampedLx, clampedLz) {
+    const dx = clampedLx * cos + clampedLz * sin, dz = -clampedLx * sin + clampedLz * cos;
+    planeState.position.x = b.x + dx;
+    planeState.position.z = b.z + dz;
+    planeState.velocity.multiplyScalar(BUILDING_HIT_VELOCITY_KEEP_FRAC);
+    planeState.angularVelocity.pitch *= BUILDING_HIT_VELOCITY_KEEP_FRAC;
+    planeState.angularVelocity.roll *= BUILDING_HIT_VELOCITY_KEEP_FRAC;
+    planeState.angularVelocity.yaw *= BUILDING_HIT_VELOCITY_KEEP_FRAC;
 }
 // "husk kollisjon på porter... skal ikke kunne glitche gjennom" (brukeren) - portene (buildGate) hadde
 // samme mangel som byggene hadde FØR checkVtolBuildingCollision: en fangst-radius for ØVELSES-fremgang
@@ -5968,6 +6303,7 @@ function resetPlane(yawRad) {
     planeState.injured = false;
     planeState.injuredTarget = null;
     planeState.crashed = false;
+    planeState.crashStuckTimerSec = 0;
     planeState.brokenWingSide = 0;
     planeState.brokenPusherProp = false;
     planeState.onGround = true;
@@ -6147,9 +6483,9 @@ function updatePlaneVisual(dt) {
     // modellene (samme buildWing()-vinge, se buildHeewingPlane) - resten (V-hale vs. T-hale) er gjort inne
     // i update*PlaneVisual over, siden de to modellene har helt ulike rorflate-oppsett der.
     planeAileronLeft.rotation.x = (planeState.crashed && planeState.brokenWingSide < 0)
-        ? BROKEN_WING_DROOP_RAD : planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
+        ? BROKEN_WING_DROOP_RAD : planeState.lastAileronVisualDeflection * SURFACE_MAX_DEFLECTION_RAD;
     planeAileronRight.rotation.x = (planeState.crashed && planeState.brokenWingSide > 0)
-        ? BROKEN_WING_DROOP_RAD : -planeState.lastRollDeflection * SURFACE_MAX_DEFLECTION_RAD;
+        ? BROKEN_WING_DROOP_RAD : -planeState.lastAileronVisualDeflection * SURFACE_MAX_DEFLECTION_RAD;
 }
 
 /* ---------- Heewing T2 Cruza - visuell animasjon ----------
@@ -6249,7 +6585,7 @@ function updateHeewingPlaneVisual(dt) {
     // stick.pitch/targetPitchDeg er etablert som NESE NED i denne kodebasen) - stikk motsatt av ekte
     // høyderor-konvensjon (pinnen fremover/nese ned skal gi bakkant NED, ikke opp). Rettet ved å fjerne
     // negasjonen.
-    if (planeElevator) planeElevator.rotation.x = planeState.lastPitchDeflection * SURFACE_MAX_DEFLECTION_RAD;
+    if (planeElevator) planeElevator.rotation.x = planeState.lastElevatorVisualDeflection * SURFACE_MAX_DEFLECTION_RAD;
     if (planeRudder) planeRudder.rotation.y = planeState.lastYawDeflection * SURFACE_MAX_DEFLECTION_RAD;
 }
 
@@ -6368,7 +6704,7 @@ function updateGenericPlaneVisual(dt) {
     // stigningskomponenten adderer - altså PITCH. Den opprinnelige koden hadde disse BYTTET OM
     // (pitchCmd som felles-modus, yawCmd som differensial-modus) - brukeren rapporterte nettopp dette
     // ("ser ut som yaw styrer høyde og omvendt"). Rettet: yawCmd er nå felles-modus, pitchCmd differensial.
-    const pitchCmd = planeState.lastPitchDeflection, yawCmd = planeState.lastYawDeflection;
+    const pitchCmd = planeState.lastElevatorVisualDeflection, yawCmd = planeState.lastYawDeflection;
     planeVtailLeft.rotation.y = (yawCmd - pitchCmd) * SURFACE_MAX_DEFLECTION_RAD * 0.6;
     planeVtailRight.rotation.y = (yawCmd + pitchCmd) * SURFACE_MAX_DEFLECTION_RAD * 0.6;
 }
@@ -6647,7 +6983,11 @@ function animate(now) {
     // et steg/spørsmål i flere minutter) ført til at HELE den opparbeidede tiden ble kjørt igjennom som
     // fysikk-steg i én eneste rasende rekke idet overlegget lukkes ("spiral of death"-mønsteret et fast
     // tidssteg ellers er sårbart for), i stedet for at flyet ganske enkelt fortsetter fra der det sto.
-    if (specialExerciseState) accumulator = 0; else accumulator += frameDt;
+    // "når diplomet er åpent... pass på at tastatur og fjernkontroll ikke gir kommandoer til simulatoren i
+    // bakgrunnen" (brukeren) - backgroundControlBlocked() (se dens egen kommentar) dekker nå diplomet på
+    // akkurat samme måte som veiviseren/quizen allerede var dekket: samme "ikke la akkumulatoren bygge seg
+    // opp"-begrunnelse gjelder likt uansett HVILKET av de to overleggene som er årsaken.
+    if (backgroundControlBlocked()) accumulator = 0; else accumulator += frameDt;
     viewportWatcher();
 
     updateWind(frameDt);
@@ -6666,11 +7006,21 @@ function animate(now) {
     // er åpent - veiviseren/quizen er eksplisitt "ingen 3D-flyging i det hele tatt" (se toppkommentaren i
     // js/simulator-vtol-exercises.js), så en fullstendig frosset farkost er riktig oppførsel, ikke bare en
     // tilnærming.
-    if (!specialExerciseState) {
+    if (!backgroundControlBlocked()) {
         while (accumulator >= FIXED_DT) {
             stepPhysics(FIXED_DT);
             accumulator -= FIXED_DT;
         }
+    }
+
+    // Total flytid (se VTOL_FLIGHT_TIME_STORAGE_KEY-kommentaren) - kun mens FAKTISK luftbåren (samme vilkår
+    // som resten av fysikken over, IKKE bare armert/motorene i gang på bakken) og ikke frosset av
+    // backgroundControlBlocked() (veiviser/quiz/diplom). Bruker selve frameDt (ikke FIXED_DT*substep-tallet) - "total flytid" trenger
+    // ikke 120 Hz-presisjon, kun et rimelig sekundtall over tid.
+    if (!backgroundControlBlocked() && !planeState.onGround) {
+        const prevWholeSec = Math.floor(vtolFlightTimeState.totalSec);
+        vtolFlightTimeState.totalSec += frameDt;
+        if (Math.floor(vtolFlightTimeState.totalSec) > prevWholeSec) saveVtolFlightTime();
     }
 
     // Se funksjonenes egne kommentarer - UBETINGET, ikke bare i én øvelse (samme "alltid aktiv"-mønster
@@ -6884,11 +7234,27 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     window.addEventListener("keydown", function (e) {
+        // "Navnefelt på diplomet -- må være mulig å ha mellomrom der" (brukeren) - preventDefault(Space)
+        // under er GLOBALT (uansett hva som har fokus) - traff også diplomets navnefelt, som slukte
+        // mellomromstasten der i stedet for å faktisk skrive et mellomrom. Skipper HELE denne håndteringen
+        // (ikke bare Space) når et tekstfelt faktisk har fokus - de øvrige simulator-snarveiene
+        // (modusbytte/kill/reset/kamera osv.) skal uansett heller ikke reagere mens eleven skriver.
+        const typingInField = document.activeElement &&
+            (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA");
+        if (typingInField) return;
         if (["ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Space"].indexOf(e.code) !== -1) {
             e.preventDefault();
         }
         keys.add(e.code);
         if (e.repeat) return;
+        // "når diplomet er åpent. pass på at tastatur og fjernkontroll ikke gir kommandoer til simulatoren
+        // i bakgrunnen" (brukeren) - samme "blokker bakgrunnsstyring"-prinsipp som allerede gjelder for
+        // veiviseren/quizen (specialExerciseState, se backgroundControlBlocked-kommentaren der/i
+        // js/simulator-vtol-exercises.js), nå utvidet til ALLE modusbytte-/kill-/reset-/kamera-tastene
+        // (ikke bare kamera-/FPV-tastene som fra før) - diplomet kan åpnes MENS en øvelse fortsatt er aktiv
+        // (Se diplom-knappen i selve øvelseslisten, se renderVtolExerciseList), så et fly som allerede er i
+        // luften kan fortsatt motta styrekommandoer i bakgrunnen der uten dette.
+        if (backgroundControlBlocked()) return;
         switch (e.code) {
             case "Digit1": trySetFlightMode("qstabilize"); break;
             case "Digit2": trySetFlightMode("qhover"); break;
@@ -6922,6 +7288,11 @@ document.addEventListener("DOMContentLoaded", function () {
     // fokus/fanen skjules, slik at en "spøkelses"-tast aldri kan bli hengende slik.
     window.addEventListener("blur", function () { keys.clear(); });
     document.addEventListener("visibilitychange", function () { if (document.hidden) keys.clear(); });
+    // Sikkerhetsnett for total flytid (se VTOL_FLIGHT_TIME_STORAGE_KEY) - selve akkumulatoren lagrer kun én
+    // gang per HELE sekund (se bruken i animate()), så opptil ~1 sek med den nyeste, ennå ulagrede
+    // brøkdelen kan gå tapt ved en vanlig sideavslutning uten dette - lagrer den siste, delvise resten idet
+    // fanen faktisk lukkes/lastes på nytt.
+    window.addEventListener("beforeunload", saveVtolFlightTime);
 
     requestAnimationFrame(animate);
 });

@@ -65,6 +65,11 @@ const VTOL_FENCE_ALT_M = 120;       // "120m (vertikalt)"
 // hover ETTER at farkosten faktisk er luftbåren (ikke fra selve øvelsesstarten - eleven bruker ulik tid på
 // å ta av) før selve feilen/hendelsen inntreffer.
 const VTOL_SCENARIO_SETTLE_SEC = 6;
+// "øvelse 6. må være landet i 3 sekunder før reset for neste gjennomføring" (brukeren) - toiletbowlLand sin
+// pass-sjekk (se update() der) godkjente tidligere i samme øyeblikk hjulene traff bakken, uten noen
+// holdetid - samme prinsipp som VTOL_LANDING_SETTLE_SEC bruker for de vanlige land-manual-stegene, men et
+// eget tall (brukeren ba spesifikt om 3 sek her, ikke de 2,5 sek VTOL_LANDING_SETTLE_SEC allerede bruker).
+const VTOL_SCENARIO_LANDED_HOLD_SEC = 3;
 // Kollisjon mot pilot/publikum (VTOL_PILOT_POSITION/VTOL_CROWD_CENTER/VTOL_BYSTANDER_HIT_RADIUS_M m.fl.) er
 // flyttet til js/simulator-vtol.js - piloten/tilskuerne er nå PERMANENTE verdensobjekter og kollisjonen
 // (checkVtolPersonCollision) kjøres UBETINGET hver frame, ikke bare inne i ex6 sitt flyawayCrowd-scenario
@@ -256,9 +261,20 @@ const VTOL_TOUR_BUILDING_WAYPOINTS = [
 // ≈ 17.8 m totalt fra bakken, fabrikkpipa (stackHeight) er 20 m - senket fra 25 til 14 m, trygt UNDER
 // begge (og fortsatt godt over husenes egne mønehøyder ~6-8 m) for en lav "under tårnet"-forbiflyging i
 // stedet for en høy oversikts-passering.
+// "gul indikatorer ved klokketårn og fabrikk kan være litt større. pass på at de ikke er inni bygningene"
+// (brukeren) - punktene lå tidligere REM PÅ selve klokketårnets/fabrikkpipas eget senter-XZ (kun høyden
+// var senket, se merknaden over): klokketårnets murkropp (buildClockTower, kalt fra buildTownHall) spenner
+// lokalt X ±1.44 m, Z -2.64..0.24 m ved 14 m høyde - waypointet (lokal X=0, Z=0) lå altså BOKSTAVELIG inni
+// selve tårnkroppen, usett bak murveggen. Fabrikkpipa (radius ~1.5 m ved 14 m høyde, sentrert 3 m unna i
+// lokal X) hadde et trangt ~1.5 m klaring - nok til den gamle, vesle 0.45 m-markøren, men ikke til en
+// tydelig større en. Begge punkt flyttet 12 m sidelengs vekk fra selve tårnet/pipa (fortsatt "ved" samme
+// landemerke, samme høyde) - gir >10 m klaring til nærmeste murvegg/pipevegg, rikelig plass til en mye
+// større markør (se VTOL_LANDMARK_MARKER_RADIUS) uten at den skjærer inn i bygget. Andre strukturer i byen
+// (hus, benker, flaggstang) er alle lavere enn husenes egne mønehøyder (~6-8 m, se merknaden over) - godt
+// under 14 m uansett sideveis posisjon, så kun tårnet/pipa trengte denne sjekken.
 const VTOL_TOUR_LANDMARK_WAYPOINTS = [
-    new THREE.Vector3(TOWN_CENTER_X, 14, TOWN_CENTER_Z),                          // klokketårnet/rådhuset
-    new THREE.Vector3(TOWN_CENTER_X + FACTORY_DX, 14, TOWN_CENTER_Z + FACTORY_DZ) // fabrikken
+    new THREE.Vector3(TOWN_CENTER_X + 12, 14, TOWN_CENTER_Z),                          // klokketårnet/rådhuset
+    new THREE.Vector3(TOWN_CENTER_X + FACTORY_DX - 12, 14, TOWN_CENTER_Z + FACTORY_DZ) // fabrikken
 ];
 // "fløy gjennom en port i ytterkanten uten at passering ble registrert" (brukeren) - fangst måles som
 // AVSTAND TIL PORTENS SENTERPUNKT (se updateWaypointsStage), men en 9 m bred åpning (GATE_SIZE) har et
@@ -270,6 +286,11 @@ const VTOL_TOUR_LANDMARK_WAYPOINTS = [
 const VTOL_GATE_WAYPOINT_RADIUS = 6.5;    // m - dekker hele portåpningen (9 m, halv diagonal ~6.4 m), ikke bare senteret
 const VTOL_BUILDING_WAYPOINT_RADIUS = 3;  // m - vindusåpningene er trangere enn portene (5.5-6 m brede)
 const VTOL_LANDMARK_WAYPOINT_RADIUS = 30; // m - en forbiflyging, ikke en presisjonsport
+// "gul indikatorer... kan være litt større" (brukeren) - opp fra default 0.45 m (for trangt/nært, se
+// markerRadius-merknaden ved addWaypointMarkers) til en tydelig synlig kule på lang avstand, trygt innenfor
+// klaringen den nye VTOL_TOUR_LANDMARK_WAYPOINTS-posisjonen gir (se dens egen merknad, >10 m til nærmeste
+// murvegg/pipevegg).
+const VTOL_LANDMARK_MARKER_RADIUS = 3;    // m
 // "ha litt vind" (brukeren) - samme "jevn vind"-styrke som ex1/ex2 sitt tredje trinn, brukt gjennom hele
 // rundflygingen (se wind-feltet på hver "waypoints"-stage i VTOL_EXERCISES.ex4 under).
 const VTOL_TOUR_WIND = { speed: 4, directionDeg: 50, gust: 0.2 };
@@ -391,14 +412,22 @@ const VTOL_EXERCISES = {
         startDisarmed: true,
         fullDescription: "Fire runder à minst " + VTOL_HOVER_HOLD_SEC + " sek stillestående hover på ca. " + VTOL_HOVER_ALT +
             " m, økende vanskelighetsgrad: QLOITER (GPS-posisjonshold) -> QHOVER (kun Alt Hold, du holder " +
-            "posisjonen selv) -> QHOVER i jevn vind -> QHOVER i skiftende vind.\n\n" +
+            "posisjonen selv) -> QHOVER i vind -> QSTABILIZE i vind.\n\n" +
             "Land manuelt i QLOITER, og disarm igjen til slutt.",
+        // "gjelder alle øvelsene. første tooltip må være det man skal gjøre, og ikke svada/dobbel
+        // informasjon i tooltips. kort og konsist. trenger ikke tallnummerering" (brukeren) - "N)"-prefikset
+        // kuttet fra alle stegene under (se samme kutt i resten av øvelsene).
+        // "siste der kan heller være QSTABILIZE i jevn vind. og kutt 'jevn'/'skiftende' fra all info. holder
+        // å bare si 'vind'" (brukeren) - runde 4 byttet fra QHOVER+skiftende vind til QSTABILIZE (enda
+        // mindre automatikk enn QHOVER - verken posisjons- eller høydeholding) + SAMME faste vindstyrke som
+        // runde 3 (ikke windVariable lenger) - vanskelighetsgraden øker fortsatt, nå via selve modusen i
+        // stedet for vindtypen. "jevn"/"skiftende" fjernet fra begge vind-labelene, kun "vind" igjen.
         stages: [
-            { type: "await-arm", label: "0) Arm motorene" },
-            { type: "hover", label: "1) Hover i QLOITER", requireMode: "qloiter", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT },
-            { type: "hover", label: "2) Hover i QHOVER (uten posisjonshold)", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT },
-            { type: "hover", label: "3) Hover i QHOVER med jevn vind", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT, wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
-            { type: "hover", label: "4) Hover i QHOVER med skiftende vind", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT, wind: {}, windVariable: true },
+            { type: "await-arm", label: "Arm motorene" },
+            { type: "hover", label: "Hover i QLOITER", requireMode: "qloiter", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT },
+            { type: "hover", label: "Hover i QHOVER (uten posisjonshold)", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT },
+            { type: "hover", label: "Hover i QHOVER med vind", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT, wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
+            { type: "hover", label: "Hover i QSTABILIZE med vind", requireMode: "qstabilize", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT, wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
             { type: "land-manual", label: "Landing" }
         ]
     },
@@ -406,13 +435,16 @@ const VTOL_EXERCISES = {
         id: "ex2", icon: "fa-vector-square", label: "2. Svevemanøvrering - firkant",
         shortDescription: "4 runder firkant i hover-modus, samme vanskelighetsstige som øvelse 1.",
         fullDescription: "Fly gjennom de fire markørene i firkanten, i rekkefølge, fire runder à økende " +
-            "vanskelighetsgrad (samme stige som hover-treningen): QLOITER -> QHOVER -> QHOVER i jevn vind " +
-            "-> QHOVER i skiftende vind.\n\nLand manuelt i QLOITER når alle fire rundene er fullført.",
+            "vanskelighetsgrad (samme stige som hover-treningen): QLOITER -> QHOVER -> QHOVER i vind " +
+            "-> QSTABILIZE i vind.\n\nLand manuelt i QLOITER når alle fire rundene er fullført.",
+        // "endre siste gjennomføringen til stabilize i vind. fjerne 'jevn' og 'skiftende' fra tekst"
+        // (brukeren) - samme endring som ex1 (se dens egen kommentar): runde 4 QSTABILIZE + samme faste
+        // vindstyrke som runde 3 i stedet for QHOVER + skiftende vind.
         stages: [
-            { type: "waypoints", label: "1) Firkant i QLOITER", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qloiter" },
-            { type: "waypoints", label: "2) Firkant i QHOVER", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover" },
-            { type: "waypoints", label: "3) Firkant i QHOVER med jevn vind", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover", wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
-            { type: "waypoints", label: "4) Firkant i QHOVER med skiftende vind", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover", wind: {}, windVariable: true },
+            { type: "waypoints", label: "Firkant i QLOITER", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qloiter" },
+            { type: "waypoints", label: "Firkant i QHOVER", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover" },
+            { type: "waypoints", label: "Firkant i QHOVER med vind", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover", wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
+            { type: "waypoints", label: "Firkant i QSTABILIZE med vind", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qstabilize", wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
             { type: "land-manual", label: "Landing" }
         ]
     },
@@ -456,26 +488,24 @@ const VTOL_EXERCISES = {
             "FBWA og fly en full landingsrunde rundt rullebanen (utflyging - kryssvind - medvind - base - " +
             "finale, se de gule markørene). Transiter tilbake til QLOITER på finalen og land manuelt.\n\n" +
             "To runder: én uten vind, én med jevn vind.",
+        // "gjelder alle øvelsene. første tooltip må være det man skal gjøre, og ikke svada/dobbel
+        // informasjon i tooltips. kort og konsist. trenger ikke tallnummerering" (brukeren) - "N)"-prefikset
+        // kuttet fra alle stegene under. Klatre-steget sin egen hint ("Klatre til minst 20 m.") fjernet OGSÅ
+        // - den fantes kun som en omvei for at den FØRSTE meldingen skulle nevne klatring i det hele tatt
+        // (se den forrige, nå fjernede kommentaren her), men startVtolExercise viser nå selve steg-labelen
+        // direkte som første melding (se dens egen kommentar) - "Klatre til minst 20 m" i BÅDE label og hint
+        // samtidig ville nå vært akkurat den slags dobbel/duplisert tekst brukeren ba om å fjerne.
         stages: [
-            { type: "climb", label: "1) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
-            { type: "transition-out", label: "1) Overgang til FBWA" },
-            { type: "waypoints", label: "1) Landingsrunde (uten vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true },
-            // "tooltip etter siste kule. kan være innflyging og landing i QLOITER. trenger ikke flere tips
-            // etter det" (brukeren) - ÉN samlet melding her dekker BEGGE de gjenværende stegene (transition-
-            // back OG land-manual under) - ingen egen hint lagt til på land-manual i tillegg.
-            // "siste tooltip før landing fjern den første delen. masse unødvendig dobbel tekst. holder med
-            // fortsett innflygning og land i QLOITER" (brukeren, oppfølging) - stageStartMessage limer alltid
-            // sammen "Fullført! Neste: " + label (+ " - " + hint hvis satt), så en egen hint her ("Innflyging
-            // og landing i QLOITER") ved SIDEN AV en label som allerede sa "Overgang tilbake til Q-loiter"
-            // ga en klart overlappende, dobbel Q-loiter-setning. Droppet hint-feltet og lagt HELE
-            // instruksjonen direkte i selve labelen i stedet - kun ÉN, sammenhengende setning igjen.
-            { type: "transition-back", label: "1) Fortsett innflygning og land i QLOITER" },
-            { type: "land-manual", label: "1) Landing" },
-            { type: "climb", label: "2) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
-            { type: "transition-out", label: "2) Overgang til FBWA" },
-            { type: "waypoints", label: "2) Landingsrunde (med vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true, wind: { speed: 5, directionDeg: 60, gust: 0.3 } },
-            { type: "transition-back", label: "2) Fortsett innflygning og land i QLOITER" },
-            { type: "land-manual", label: "2) Landing" }
+            { type: "climb", label: "Klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
+            { type: "transition-out", label: "Overgang til FBWA" },
+            { type: "waypoints", label: "Landingsrunde (uten vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true },
+            { type: "transition-back", label: "Fortsett innflygning og land i QLOITER" },
+            { type: "land-manual", label: "Landing" },
+            { type: "climb", label: "Klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
+            { type: "transition-out", label: "Overgang til FBWA" },
+            { type: "waypoints", label: "Landingsrunde (med vind)", waypoints: VTOL_PATTERN_WAYPOINTS, closeLoop: false, radius: VTOL_WAYPOINT_RADIUS_CRUISE, markerRadius: 5, requireFixedWing: true, warnLowIas: true, wind: { speed: 5, directionDeg: 60, gust: 0.3 } },
+            { type: "transition-back", label: "Fortsett innflygning og land i QLOITER" },
+            { type: "land-manual", label: "Landing" }
         ]
     },
     // Erstattet fra bunnen av - BRUKEREN: "4. QRTL - automatisk retur. øvelsen går bare ut på å bruke RTL?
@@ -490,14 +520,14 @@ const VTOL_EXERCISES = {
         id: "ex4", icon: "fa-route", label: "4. Rundflyging - bli kjent med flyet",
         allowFreeCamera: true,
         spawnYawRad: 0, // "nese med rullebaneretningen" (brukeren) - se spawnYawRad-kommentaren i startVtolExercise
-        shortDescription: "Rundflyging med chase-kamera - portene i FBWA, bygningene/landemerkene i MANUAL - land selv i QHOVER.",
+        shortDescription: "Rundflyging med chase-kamera - portene i FBWA, bygningene/landemerkene i MANUAL - land selv i en Q-modus.",
         fullDescription: "Ta av i QLOITER, klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m og transiter til " +
             "FBWA. Fly deretter én sammenhengende rundflyging for å bli kjent med hvordan flyet oppfører " +
             "seg i fastvinget flyging - med chase-kamera i stedet for VLOS denne gangen:\n\n" +
             "• Gjennom de fire portene vest for rullebanen, fortsatt i FBWA\n" +
             "• Bytt til MANUAL, og gjennom vindusåpningene i bygningene øst for rullebanen\n" +
             "• Forbi klokketårnet og fabrikken lenger unna\n\n" +
-            "Litt vind underveis. Transiter til slutt tilbake til en Q-modus og land selv i QHOVER.",
+            "Litt vind underveis. Transiter til slutt tilbake til en Q-modus og land selv.",
         // "man blir bedt om overgang til manuel modus etter 20 m på øvelse 4. men man kan jo ikke gå direkte
         // til manual. først fbwa for å få fart" (brukeren) - transition-out (steg 2) godtar generelt enhver
         // fastvinget modus (isFixedWingMode, se updateTransitionOutStage) - lot seg dermed "juksefullføre"
@@ -509,30 +539,43 @@ const VTOL_EXERCISES = {
         // (trangest av gjennomflygingene, rett etter selve overgangen) flys nå i FBWA - fortsatt
         // selvnivellerende/steilingssikret, lettere å treffe presist rett etter en fersk overgang - før
         // eleven bytter til rent manuell kontroll for resten av rundflygingen (bygningene/landemerkene).
+        // "øvelse 5 tooltips. alt for lange... mente øvelse 4 rundflyging her" (brukeren) - feilen var
+        // faktisk her hele tiden, ikke i øvelse 5 (se dens egen ex5-kommentar, reversert igjen). To
+        // separate problemer, begge rettet: (1) hver label hadde et unødvendig "N)"-rundetall-prefiks -
+        // kuttet på alle steg. (2) fire av stegene hadde en EGEN hint som bare gjentok labelen med andre ord
+        // ("Gjennom portene" -> "Fly gjennom portene", "Forbi klokketårnet og fabrikken" -> "Fly forbi
+        // klokketårnet og fabrikken" osv, se stageStartMessage - samme dupliserings-mønster som ble rettet i
+        // landingsrunden/ex3) - disse hintene fjernet, selve handlingen skrevet direkte inn i labelen i
+        // stedet (kun ÉN, kort setning per steg igjen). Beholdt KUN MANUAL-bytte-hintet (tastatursnarveien),
+        // som faktisk gir NY informasjon, ikke bare en omskriving av labelen.
+        // "Tooltippet etter flyby av klokketårnet/fabrikken skal bare være returner og land. alt for tidlig
+        // å sette Q-modus ved fabrikken. skal lande ved avgangsplassen" (brukeren) - "Overgang tilbake til
+        // Q-modus" instruerte reelt et umiddelbart modusbytte midt ved fabrikken, langt fra rullebanen -
+        // misvisende siden selve landingen skjer ved avgangsplassen. Endret til en enkel "Returner og
+        // land"-instruks i stedet (selve transition-back-steget/logikken er UENDRET, kun teksten).
         stages: [
-            // "første tooltip på øvelsen skal være å klatre til 20 meter" (brukeren) - hint her vises i selve
-            // "Øvelse startet: ..."-meldingen (se stageStartMessage) idet øvelsen begynner, i tillegg til den
-            // løpende høyde-fremdriften i HUD-statusfeltet (se "climb"-grenen i updateExerciseHud).
-            { type: "climb", label: "1) Klatre til ≥" + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT, hint: "Klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m." },
-            { type: "transition-out", label: "2) Overgang til FBWA" },
+            { type: "climb", label: "Klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
+            { type: "transition-out", label: "Overgang til FBWA" },
             {
-                type: "waypoints", label: "3) Gjennom portene (FBWA)", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
-                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "fbwa", wind: VTOL_TOUR_WIND, showBearing: true,
-                hint: "Fly gjennom portene."
+                type: "waypoints", label: "Fly gjennom portene", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
+                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "fbwa", wind: VTOL_TOUR_WIND, showBearing: true
             },
-            { type: "await-mode", label: "4) Bytt til MANUAL", mode: "manual", hint: "Tast 5 på tastaturet, eller bryteren på senderen." },
+            { type: "await-mode", label: "Bytt til MANUAL", mode: "manual", hint: "Tast 5 på tastaturet, eller bryteren på senderen." },
             {
-                type: "waypoints", label: "5) Gjennom låvene og huset", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
-                radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
-                hint: "Fly gjennom bygningene."
+                type: "waypoints", label: "Fly gjennom låvene og huset", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
+                radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true
             },
             {
-                type: "waypoints", label: "6) Forbi klokketårnet og fabrikken", waypoints: VTOL_TOUR_LANDMARK_WAYPOINTS, closeLoop: false,
+                type: "waypoints", label: "Fly forbi klokketårnet og fabrikken", waypoints: VTOL_TOUR_LANDMARK_WAYPOINTS, closeLoop: false,
                 radius: VTOL_LANDMARK_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
-                hint: "Fly forbi klokketårnet og fabrikken."
+                markerRadius: VTOL_LANDMARK_MARKER_RADIUS
             },
-            { type: "transition-back", label: "7) Overgang tilbake til Q-modus" },
-            { type: "land-manual", label: "8) Landing i QHOVER", requireMode: "qhover" }
+            { type: "transition-back", label: "Returner og land" },
+            // "Øvelse 4 landingen MÅ ikke være i QHOVER. kan være fri Q-modus for landing" (brukeren) -
+            // reverserer den tidligere "må ikke godkjenne QLOITER"-innsnevringen (se den nå utdaterte
+            // kommentaren ved updateLandManualStage/stageModeOk). requireQMode (allerede støttet av
+            // stageModeOk, se der) godtar enhver Q-modus i stedet for kun requireMode:"qhover".
+            { type: "land-manual", label: "Landing", requireQMode: true }
         ]
     },
     // Erstattet fra bunnen av - BRUKEREN: "øvelse 5 er en vits. fjern de scenarione. denne kan heller være
@@ -547,13 +590,18 @@ const VTOL_EXERCISES = {
             "hjem igjen, og land manuelt nær hjempunktet - IKKE bruk QRTL. Tre runder med økende vind.\n\n" +
             "Poenget er å øve på å finne veien hjem og lande for egen maskin når GPS ikke er tilgjengelig - " +
             "QRTL under et forsøk teller som ikke bestått for den runden.",
+        // "første tooltip må jo være hva man skal gjøre. altså ta av og fly i FBWA ut til 300 m... gjelder
+        // alle øvelsene, kort og konsist, trenger ikke tallnummerering" (brukeren) - "N)"-prefikset kuttet,
+        // og depart-distance-labelen skriver nå ut hele den faktiske handlingen (ta av + transiter til FBWA
+        // + fly ut til avstanden), ikke bare selve avstandsmålet - dette er nå ordrett det FØRSTE eleven ser
+        // (se startVtolExercise, viser steg 0 sin egen label direkte).
         stages: [
-            { type: "depart-distance", label: "1) Fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (lett vind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 3, directionDeg: 45, gust: 0.2 } },
-            { type: "return-manual", label: "1) Returner og land manuelt", wind: { speed: 3, directionDeg: 45, gust: 0.2 } },
-            { type: "depart-distance", label: "2) Fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (frisk vind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 6, directionDeg: 160, gust: 0.3 } },
-            { type: "return-manual", label: "2) Returner og land manuelt", wind: { speed: 6, directionDeg: 160, gust: 0.3 } },
-            { type: "depart-distance", label: "3) Fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (kraftig kastevind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 9, directionDeg: 260, gust: 0.5 } },
-            { type: "return-manual", label: "3) Returner og land manuelt", wind: { speed: 9, directionDeg: 260, gust: 0.5 } }
+            { type: "depart-distance", label: "Ta av, transiter til FBWA og fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (lett vind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 3, directionDeg: 45, gust: 0.2 } },
+            { type: "return-manual", label: "Returner og land manuelt", wind: { speed: 3, directionDeg: 45, gust: 0.2 } },
+            { type: "depart-distance", label: "Ta av, transiter til FBWA og fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (frisk vind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 6, directionDeg: 160, gust: 0.3 } },
+            { type: "return-manual", label: "Returner og land manuelt", wind: { speed: 6, directionDeg: 160, gust: 0.3 } },
+            { type: "depart-distance", label: "Ta av, transiter til FBWA og fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (kraftig kastevind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 9, directionDeg: 260, gust: 0.5 } },
+            { type: "return-manual", label: "Returner og land manuelt", wind: { speed: 9, directionDeg: 260, gust: 0.5 } }
         ]
     },
     // Erstattet fra bunnen av - BRUKEREN: "øvelse 6. her kan vi ha toilet bowl og fly away. ikke noe auto
@@ -578,9 +626,16 @@ const VTOL_EXERCISES = {
             "Lurt å vite akkurat hvor QHOVER-bryteren og Motor Emergency Stop-bryteren er bundet på " +
             "senderen FØR du starter - se øvelse 0 om du er usikker.",
         noTiming: true,
+        // "Øvelse 6. trenger tooltip på starten om hva som skal gjøres" (brukeren) - selve
+        // scenario-setup()-funksjonene (VTOL_SCENARIOS.toiletbowlLand/flyawayCrowd) viser allerede en egen,
+        // mer beskrivende melding ("Ta av og hold en stabil hover i QLOITER.") et par sekund idet runden
+        // starter, MEN kun midlertidig (4 sek) - den VEDVARENDE steg-labelen (vises resten av runden i
+        // HUD-en, se exerciseHudStage) sa bare det vage "Hold stabil hover", uten selve ta av/QLOITER-
+        // instruksjonen. Utvidet begge til å si det samme som setup()-meldingen, slik den vedvarende
+        // labelen fortsatt er nyttig etter at den midlertidige popup-en har forsvunnet.
         stages: [
-            { type: "scenario", key: "toiletbowlLand", label: "1) Hold stabil hover" },
-            { type: "scenario", key: "flyawayCrowd", label: "2) Hold stabil hover" }
+            { type: "scenario", key: "toiletbowlLand", label: "Ta av og hold stabil hover i QLOITER", showHoverMarker: true, targetAlt: VTOL_HOVER_ALT },
+            { type: "scenario", key: "flyawayCrowd", label: "Ta av og hold stabil hover i QLOITER", showHoverMarker: true, targetAlt: VTOL_HOVER_ALT }
         ]
     },
     // Ny øvelse - BRUKEREN: "legg til en øvelse med motorfeil. VLOS kamera drona er i fwba oppe i lufta.
@@ -592,18 +647,22 @@ const VTOL_EXERCISES = {
     // på nettopp denne ID-strengen) - kun selve LABEL-tallet er justert (se ex7 sin egen label under).
     ex6b: {
         id: "ex6b", icon: "fa-bolt", label: "7. Motorfeil - nødlanding",
-        shortDescription: "Motoren stopper i FBWA oppe i lufta - glid til rullebanen og land. 2 runder, den andre med litt vind.",
+        shortDescription: "Motoren stopper i FBWA oppe i lufta - glid til rullebanen og land. 3 runder: én uten vind, to med vind fra hver sin kant.",
         fullDescription: "Du blir teleportert opp i FBWA. Bruk de første " + ENGINE_FAILURE_PREP_SEC +
             " sekundene til å bli komfortabel med kontrollen - deretter stopper motoren.\n\n" +
-            "Glid til rullebanen og land. To runder: én uten vind, én med jevn vind.",
+            "Glid til rullebanen og land. Tre runder: én uten vind, to med vind - fra hver sin kant.",
         noTiming: true,
-        // "to runder på øvelse [motorfeil]. andre runde med litt vind" (brukeren) - samme scenario-nøkkel
-        // (engineFailureGlide) begge runder er trygt (updateScenarioStage nullstiller exerciseState.scenario
-        // ved fullført/feilet forsøk, og re-initialiserer via def.setup() neste tick uansett om nøkkelen er
-        // uendret) - kun stage.wind skiller de to (se applyStageWind-utvidelsen i enterStageVisuals over).
+        // "Ta tre runder en uten vind, og de to neste med vind. men bytt på vindretningene på de to siste"
+        // (brukeren) - utvidet fra 2 til 3 runder. Samme scenario-nøkkel (engineFailureGlide) alle tre
+        // (updateScenarioStage nullstiller exerciseState.scenario ved fullført/feilet forsøk, og
+        // re-initialiserer via def.setup() neste tick uansett om nøkkelen er uendret) - kun stage.wind
+        // skiller dem. De to siste bruker MOTSATT vindretning av hverandre (30°/210°, nøyaktig 180° fra
+        // hverandre) - ikke bare "litt ulik", en reelt forskjellig glidesituasjon (med-/motvind-komponenten
+        // snur helt) fra samme vindstyrke.
         stages: [
-            { type: "scenario", key: "engineFailureGlide", label: "1) Glid til rullebanen etter motorfeil" },
-            { type: "scenario", key: "engineFailureGlide", label: "2) Glid til rullebanen etter motorfeil (med vind)", wind: { speed: 4, directionDeg: 30, gust: 0.25 } }
+            { type: "scenario", key: "engineFailureGlide", label: "Glid til rullebanen etter motorfeil" },
+            { type: "scenario", key: "engineFailureGlide", label: "Glid til rullebanen etter motorfeil (med vind)", wind: { speed: 4, directionDeg: 30, gust: 0.25 } },
+            { type: "scenario", key: "engineFailureGlide", label: "Glid til rullebanen etter motorfeil (med vind fra motsatt kant)", wind: { speed: 4, directionDeg: 210, gust: 0.25 } }
         ]
     },
     // "Siste leksjon bør være en teoretisk quiz (multipple choice?) med spørsmål spesifikt for Heewing og
@@ -896,7 +955,14 @@ function startVtolExercise(id) {
     document.getElementById("exercisesPanel").style.display = "none";
     document.getElementById("exerciseHudBar").style.display = "flex";
     document.getElementById("gcsScreen").style.display = "block";
-    setWarning(stageStartMessage("Øvelse startet: " + getExercise().label), true, getStage().hint ? 6000 : 3000);
+    // "første tooltip må jo være hva man skal gjøre... og ikke svada/dobbel informasjon i tooltips. kort og
+    // konsist hva som skal gjøres. trenger ikke tallnummerering" (brukeren, gjelder ALLE øvelsene) - denne
+    // meldingen brukte tidligere "Øvelse startet: " + ØVELSENS EGEN navn (f.eks. "3. Landingsrunde") som
+    // det aller første eleven ser, ikke selve HANDLINGEN (steg 0 sin egen label) - eksercisnavnet er allerede
+    // synlig i selve panelet/HUD-en før øvelsen starter, ikke ny informasjon her. Viser nå direkte det
+    // FØRSTE steget sin egen (nå nummererings-/svada-frie, se hver øvelses egen stages-kommentar) label i
+    // stedet - samme mønster som "Fullført! Neste: ..." allerede bruker for hvert påfølgende steg.
+    setWarning(stageStartMessage(getStage().label), true, getStage().hint ? 6000 : 3000);
 }
 // "øvelse 4. må ha noe mer indikatorer eller meldinger til brukeren hva/hvor hen skal fly?" (brukeren) -
 // stage.hint (valgfritt, se VTOL_EXERCISES.ex4 sine "waypoints"-steg) gir et konkret, i ord beskrevet mål
@@ -913,6 +979,14 @@ function enterStageVisuals() {
     const stage = getStage();
     if (stage.type === "waypoints") addWaypointMarkers(stage.waypoints, stage.closeLoop, stage.markerRadius);
     else if (stage.type === "hover") addHoverMarker(stage);
+    // "øvelse 6. må være satt opp som at det ser ut som en hover øvelse som øvelse 1 med indikator. så
+    // brukeren har et utgangspunkt for hva som skal gjøres" (brukeren) - ex6 sine to "scenario"-steg
+    // (VTOL_SCENARIOS.toiletbowlLand/flyawayCrowd) er begge reelt sett en hover-i-QLOITER-oppgave inntil
+    // feilen inntreffer, men hadde INGEN visuell indikator i det hele tatt - eleven måtte gjette hvor/hvor
+    // høyt uten noe å sikte inn mot. addHoverMarker (samme gule beacon+ring som ex1) gjenbrukes direkte -
+    // stage.showHoverMarker (satt kun på ex6 sine to steg, se VTOL_EXERCISES.ex6) skiller dette fra ex6b sitt
+    // scenario (engineFailureGlide, en luftbåren glidefeil, ikke en hover-oppgave - skal IKKE ha markøren).
+    else if (stage.type === "scenario" && stage.showHoverMarker) addHoverMarker(stage);
     // "3 runder med forskjellig vind" (ex5, se VTOL_EXERCISES.ex5) - depart-distance/return-manual må også
     // kunne bære et stage.wind, ikke bare hover/waypoints (ellers ville vinden nullstilt seg selv midt i
     // hver runde, i overgangen fra utflygingen til returen).
@@ -1010,13 +1084,21 @@ function stageNeedsModeSwitch(stage) {
     if (stage.type === "transition-out") return !isFixedWingMode(planeState.flightMode);
     if (stage.type === "transition-back") return !isQMode(planeState.flightMode);
     if (stage.type === "hover" || stage.type === "waypoints") return !stageModeOk(stage);
-    if (stage.type === "land-manual" && stage.requireMode) return planeState.onGround && !stageModeOk(stage);
+    if (stage.type === "land-manual" && (stage.requireMode || stage.requireQMode)) return planeState.onGround && !stageModeOk(stage);
     return false;
 }
 function stageModeWarning(stage) {
     // "'Vær i QHOVER for denne runden.' skal heller være 'Bytt til QHOVER'" (brukeren) - en mer direkte,
     // handlingsrettet formulering (samme endring for alle moduser, ikke bare QHOVER spesifikt).
-    if (stage.requireMode) return "Bytt til " + (MODE_LABELS[stage.requireMode] || stage.requireMode) + ".";
+    // "tooltip om bytte til qstabilize. få med hvilken tast på tastaturet det er" (brukeren) - samme
+    // MODE_KEY_LABELS-oppslag som ex4 sitt eget MANUAL-bytte-hint (se await-mode-statusText i
+    // updateExerciseHud) allerede bruker, her generelt for ALLE stage.requireMode-varsler (ikke bare
+    // QSTABILIZE spesifikt) - gjelder dermed automatisk enhver hover-/waypoints-/land-manual-runde som
+    // krever en bestemt modus, ikke bare det ene stedet brukeren nevnte.
+    if (stage.requireMode) {
+        return "Bytt til " + (MODE_LABELS[stage.requireMode] || stage.requireMode) +
+            (MODE_KEY_LABELS[stage.requireMode] ? " (tast " + MODE_KEY_LABELS[stage.requireMode] + " på tastaturet)" : "") + ".";
+    }
     if (stage.requireQMode) return "Vær i en Q-modus for at dette skal telle.";
     if (stage.requireFixedWing) return "Vær i en fastvinget modus for at dette skal telle.";
     return "";
@@ -1048,14 +1130,17 @@ function updateHoverStage(stage, dt) {
     if (exerciseState.hoverHoldSec >= stage.holdSec) advanceStage();
 }
 
-// "Landing i QHOVER må ikke godkjenne QLOITER på øvelse 4" (brukeren) - stage.requireMode (valgfritt, kun
-// satt av ex4 sitt siste steg, se VTOL_EXERCISES.ex4) gjenbruker SAMME stageModeOk/-Warning-mønster som
-// hover-/waypoints-stegene allerede bruker. De andre øvelsenes land-manual-steg setter IKKE requireMode -
-// uendret oppførsel (godtar landing i enhver modus) for dem.
+// stage.requireMode/requireQMode (begge valgfrie, se stageModeOk) gjenbruker SAMME mønster som
+// hover-/waypoints-stegene allerede bruker for et land-manual-steg som krever en bestemt modus å lande i.
+// "Landing i QHOVER må ikke godkjenne QLOITER på øvelse 4" (brukeren, TIDLIGERE) -> "Øvelse 4 landingen MÅ
+// ikke være i QHOVER. kan være fri Q-modus" (brukeren, REVERSERT) - ex4 sitt siste steg satte først
+// requireMode:"qhover" (kun QHOVER godkjent), nå requireQMode:true (enhver Q-modus godkjent) i stedet - se
+// VTOL_EXERCISES.ex4. De andre øvelsenes land-manual-steg setter INGEN av delene - uendret oppførsel
+// (godtar landing i enhver modus) for dem.
 function updateLandManualStage(stage, dt) {
     if (currentAltitude() > 2) exerciseState.wasAirborne = true;
     if (exerciseState.wasAirborne && planeState.onGround && !planeState.crashed) {
-        if (stage.requireMode && !stageModeOk(stage)) {
+        if ((stage.requireMode || stage.requireQMode) && !stageModeOk(stage)) {
             exerciseState.groundedHoldSec = 0;
             setWarning(stageModeWarning(stage), false, 2500);
             return;
@@ -1242,9 +1327,20 @@ const VTOL_SCENARIOS = {
         setup: function () {
             resetPlane(GROUND_SPAWN_YAW_RAD); // se resetPlane-kommentaren i simulator-vtol.js
             setWarning("Ta av og hold en stabil hover i QLOITER.", true, 4000);
-            return { settleUntil: null, headingErrorRad: 0, startX: 0, startZ: 0, recognizedAt: null };
+            return { settleUntil: null, headingErrorRad: 0, startX: 0, startZ: 0, recognizedAt: null, groundedHoldSec: 0 };
         },
         update: function (scenario, dt) {
+            // "hvis man skader seg selv eller publikum er øvelsen feilet og man får ikke godkjent. må
+            // restarte da" (brukeren) - flyawayCrowd (under)/engineFailureGlide (ex6b) sjekket allerede
+            // planeState.injured (checkVtolPersonCollision kjører UBETINGET hver frame uansett scenario, se
+            // toppkommentaren over VTOL_SCENARIOS), men DENNE runden gjorde det ALDRI - en toilet-bowling-
+            // drift kan fint drive innom piloten sin egen posisjon, og traff den ville rett og slett bli
+            // oversett/ikke telle som feil. Samme sjekk lagt til her.
+            if (planeState.injured) {
+                scenario.result = "fail";
+                scenario.failReason = planeState.injuredTarget === "pilot" ? "traff piloten" : "traff en person i publikum";
+                return;
+            }
             if (planeState.crashed) { scenario.result = "fail"; scenario.failReason = "krasjet"; return; }
             if (!scenario.settleUntil) {
                 if (currentAltitude() > 2) scenario.settleUntil = performance.now() + VTOL_SCENARIO_SETTLE_SEC * 1000;
@@ -1273,7 +1369,16 @@ const VTOL_SCENARIOS = {
                 scenario.recognizedAt = performance.now();
                 setWarning("Bra - driften stanser når QLOITER forlates. Land i QHOVER.", true, 3500);
             }
-            if (scenario.recognizedAt && planeState.onGround) scenario.result = "pass";
+            // "må være landet i 3 sekunder før reset for neste gjennomføring" (brukeren) - godkjente
+            // tidligere i SAMME frame hjulene traff bakken, uten noen holdetid (i motsetning til de vanlige
+            // land-manual-stegene, se VTOL_LANDING_SETTLE_SEC-bruken der). Samme mønster her nå, med sitt
+            // eget tall (VTOL_SCENARIO_LANDED_HOLD_SEC).
+            if (scenario.recognizedAt && planeState.onGround) {
+                scenario.groundedHoldSec += dt;
+                if (scenario.groundedHoldSec >= VTOL_SCENARIO_LANDED_HOLD_SEC) scenario.result = "pass";
+            } else {
+                scenario.groundedHoldSec = 0;
+            }
         }
     },
     // Runde 2 (ex6) - "ta av og hovre, så får man fly away mot publikum og må kille." Samme
@@ -1491,7 +1596,7 @@ function updateExerciseHud() {
                 (stage.showBearing && target ? " · " + relativeBearingText(target) : "");
         }
         else if (stage.type === "land-manual" || stage.type === "return-manual" || stage.type === "hold-mode-until-landed") {
-            if (stage.requireMode && planeState.onGround && !stageModeOk(stage)) {
+            if ((stage.requireMode || stage.requireQMode) && planeState.onGround && !stageModeOk(stage)) {
                 statusText = "feil modus (" + (MODE_LABELS[planeState.flightMode] || planeState.flightMode) + ")";
             } else {
                 statusText = planeState.onGround
@@ -1545,6 +1650,14 @@ function updateGcsScreenFields() {
    IKKE bygget på exerciseState/startVtolExercise (som forutsetter en faktisk flytur - planeClass-bytte,
    resetPlane, exerciseHudBar osv.) - disse to rører aldri planeState i det hele tatt. */
 let specialExerciseState = null; // { id, exercise, stepIndex, quizScore, quizAnswered }
+// "når diplomet er åpent. pass på at tastatur og fjernkontroll ikke gir kommandoer til simulatoren i
+// bakgrunnen" (brukeren) - diplomet (openVtolDiploma under) kan åpnes MENS en øvelse/flytur fortsatt
+// pågår (fra "Se diplom"-raden i selve øvelseslisten), i motsetning til veiviseren/quizen (som alltid
+// nullstiller flyet FØR den vises, se startVtolSpecialExercise). Egen boolsk flagg (ikke gjenbruk av
+// specialExerciseState, som har en annen FORM - {id, exercise, stepIndex, ...} - og andre konsumenter, se
+// renderSpecialExerciseStep) - lest av backgroundControlBlocked() i simulator-vtol.js (lastet FØR denne
+// filen, samme cross-file-global-mønster som resten av øvelsesintegrasjonen, se specialExerciseState).
+let vtolDiplomaOpen = false;
 
 // "under fjernkontroll oppsett og quiz pass på at man ikke kan fly i bakgrunnen. virker distraherende at
 // flyet plutselig rører på seg i bakgrunnen" (brukeren) - updateInput() blokkerer allerede FERSK
@@ -1736,6 +1849,21 @@ function answerQuizQuestion(question, chosenIndex, chosenBtn) {
 function renderVtolExerciseList() {
     const container = document.getElementById("exerciseListItems");
     container.innerHTML = "";
+    // "Diplom knappen i menyen. når diplomet er tilgjengelig skal den knappen være øverste valg i menyen"
+    // (brukeren) - bygget/lagt til FØRST nå (var tidligere lagt til SIST, etter hele forEach-løkken under,
+    // som satte den nederst i listen).
+    if (allVtolExercisesPassed()) {
+        const diplomaRow = document.createElement("button");
+        diplomaRow.type = "button";
+        diplomaRow.className = "sim-exercise-row sim-exercise-row-diploma";
+        diplomaRow.innerHTML =
+            '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
+            '<span class="sim-exercise-row-main">' +
+            '<span class="sim-exercise-row-title">Alle øvelser bestått!</span>' +
+            '<span class="sim-exercise-row-desc">Se diplomet ditt</span></span>';
+        diplomaRow.addEventListener("click", openVtolDiploma);
+        container.appendChild(diplomaRow);
+    }
     VTOL_EXERCISE_ORDER.forEach(function (id) {
         const exercise = VTOL_EXERCISES[id];
         const progress = vtolExerciseProgress[id] || { passed: false };
@@ -1752,18 +1880,6 @@ function renderVtolExerciseList() {
         row.addEventListener("click", function () { showVtolExerciseDetail(id); });
         container.appendChild(row);
     });
-    if (allVtolExercisesPassed()) {
-        const diplomaRow = document.createElement("button");
-        diplomaRow.type = "button";
-        diplomaRow.className = "sim-exercise-row sim-exercise-row-diploma";
-        diplomaRow.innerHTML =
-            '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
-            '<span class="sim-exercise-row-main">' +
-            '<span class="sim-exercise-row-title">Alle øvelser bestått!</span>' +
-            '<span class="sim-exercise-row-desc">Se diplomet ditt</span></span>';
-        diplomaRow.addEventListener("click", openVtolDiploma);
-        container.appendChild(diplomaRow);
-    }
 }
 // Kategorivisning ("hvilket fartøy") FØR selve øvelseslisten - i dag kun ett program (Heewing T2 Cruza
 // VTOL), men lagt opp med samme tre-nivås struktur som quad-simulatorens øvelsespanel (kategori -> liste
@@ -1814,6 +1930,18 @@ function showVtolExerciseSummary(id) {
     const nextBtn = document.getElementById("exerciseNextBtn");
     const nextIndex = VTOL_EXERCISE_ORDER.indexOf(id) + 1;
     const nextId = VTOL_EXERCISE_ORDER[nextIndex];
+    // "Bra jobbet-meldingen i øvelsen. Må få med der hva neste øvelse heter og hva den går ut på så
+    // brukeren er forberedt" (brukeren) - "Klar for neste øvelse?" over nevnte aldri HVILKEN øvelse eller
+    // hva den faktisk innebar, kun at det FANTES en neste. Legger nå til navn+kortbeskrivelse (samme
+    // shortDescription-felt selve øvelseslisten viser, se renderVtolExerciseList) i et eget avsnitt.
+    const nextInfoEl = document.getElementById("exerciseSummaryNextInfo");
+    if (!justCompletedAll && nextId) {
+        const nextExercise = VTOL_EXERCISES[nextId];
+        nextInfoEl.textContent = "Neste: " + nextExercise.label + " - " + nextExercise.shortDescription;
+        nextInfoEl.style.display = "";
+    } else {
+        nextInfoEl.style.display = "none";
+    }
     if (justCompletedAll) {
         nextBtn.textContent = "Se diplom";
         nextBtn.onclick = function () { overlay.style.display = "none"; openVtolDiploma(); };
@@ -1841,16 +1969,75 @@ function showVtolExerciseSummary(id) {
     overlay.style.display = "";
 }
 
+// "Diplom øvelsesbeskrivelse... er for knotete beskrivelse. Heller f.eks '1. Hover / Holde fartøyet i
+// stabil hover i forskjellige Q-moduser'" (brukeren, med konkrete forslag for flere øvelser) - egne, korte
+// tittel+læringsmål-par KUN for diplomet, IKKE en endring av exercise.label/shortDescription selv (de
+// brukes fortsatt slik de er i selve øvelseslisten/detaljvisningen - se renderVtolExerciseList - som har
+// et annet formål og trenger mer presise, fullstendige beskrivelser enn diplomets korte oppsummering).
+const VTOL_DIPLOMA_GOALS = {
+    ex0: { title: "Oppsett", desc: "Sette opp fjernkontroll og modusvalg." },
+    ex1: { title: "1. Hover", desc: "Holde fartøyet i stabil hover i forskjellige Q-moduser." },
+    ex2: { title: "2. Firkant", desc: "Fly firkant i forskjellige Q-moduser." },
+    ex3: { title: "3. Landingsrunde", desc: "Med og uten vind. Landing i Q-modus." },
+    ex4: { title: "4. Rundflyging", desc: "Manøvrering i manuell modus." },
+    ex5: { title: "5. Manuell retur", desc: "Finne veien hjem og lande manuelt i vind." },
+    ex6: { title: "6. Uforutsette hendelser", desc: "Bytte til QHOVER ved kompassfeil. Bruk av killswitch ved kontrolltap." },
+    ex6b: { title: "7. Motorfeil", desc: "Motorstopp med glidelandinger på rullebanen." },
+    ex7: { title: "8. Teoriprøve", desc: "Bestått skriftlig prøve om Heewing T2 og ArduPilot." }
+};
+// "Få med total flytid i simulator på diplomet" (brukeren) - getVtolTotalFlightSec (simulator-vtol.js) er
+// akkumulert luftbåren tid, IKKE bare inneværende økt (se dens egen kommentar). Format: t/min for alt over
+// et minutt (en total over flere økter blir fort for stort for MM:SS, se formatMMSS-kommentaren), rene
+// sekunder for de aller første minuttene av trening.
+function formatVtolFlightTime(sec) {
+    sec = Math.max(0, Math.round(sec));
+    if (sec < 60) return sec + " sek";
+    const totalMin = Math.floor(sec / 60);
+    const h = Math.floor(totalMin / 60), m = totalMin % 60;
+    return h > 0 ? h + "t " + m + "min" : m + " min";
+}
 function openVtolDiploma() {
     const overlay = document.getElementById("diplomaOverlay");
+    // "liste opp alt som er gjennomgått nedover... de viktigste 'læringsmålene' under hver øvelse. Kort og
+    // konsist" (brukeren) - samme "én rad per øvelse"-idé som quad-simulatorens eget diplom (openDiploma,
+    // js/simulator.js), men uten en TID (de fleste VTOL-øvelsene her er ikke tidtatt, se noTiming-bruken).
+    // "Få med ikonene til hver øvelse på diplomet" (brukeren) - exercise.icon (samme Font Awesome-glyf
+    // øvelseslisten selv viser) gjenbrukt direkte.
+    const goalsEl = document.getElementById("diplomaGoals");
+    goalsEl.innerHTML = "";
+    VTOL_EXERCISE_ORDER.forEach(function (id) {
+        const exercise = VTOL_EXERCISES[id];
+        const goal = VTOL_DIPLOMA_GOALS[id];
+        const row = document.createElement("div");
+        row.className = "sim-diploma-goal-row";
+        row.innerHTML =
+            '<span class="sim-diploma-goal-icon"><i class="fa-solid ' + exercise.icon + '"></i></span>' +
+            '<span class="sim-diploma-goal-main">' +
+            '<span class="sim-diploma-goal-title">' + goal.title + "</span>" +
+            '<span class="sim-diploma-goal-desc">' + goal.desc + "</span></span>";
+        goalsEl.appendChild(row);
+    });
+    document.getElementById("diplomaFlightTime").textContent = "Total flytid i simulator: " + formatVtolFlightTime(getVtolTotalFlightSec());
     document.getElementById("diplomaDate").textContent =
         "Dato: " + new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "2-digit", day: "2-digit" });
     document.getElementById("diplomaPrintBtn").onclick = function () {
+        // "må ikke være mulig å lagre uten navn. lys svakt rødt opp navnefeltet hvis man prøver å lagre
+        // uten navn" (brukeren) - trim() slik at et navnefelt med KUN mellomrom (nå gyldig å skrive inn,
+        // se diplomaNameInput-fiksen i initVtolExercisePanel) fortsatt telles som tomt.
+        const nameInput = document.getElementById("diplomaNameInput");
+        if (!nameInput.value.trim()) {
+            nameInput.classList.remove("sim-diploma-name-error");
+            void nameInput.offsetWidth; // tving reflow - restarter CSS-animasjonen selv ved gjentatte klikk på rad
+            nameInput.classList.add("sim-diploma-name-error");
+            nameInput.focus();
+            return;
+        }
         document.body.classList.add("printing-diploma");
         window.print();
         document.body.classList.remove("printing-diploma");
     };
-    document.getElementById("diplomaCloseBtn").onclick = function () { overlay.style.display = "none"; };
+    document.getElementById("diplomaCloseBtn").onclick = function () { vtolDiplomaOpen = false; overlay.style.display = "none"; };
+    vtolDiplomaOpen = true;
     overlay.style.display = "";
 }
 
@@ -1916,6 +2103,19 @@ function initVtolExercisePanel() {
     document.getElementById("gcsScreenTab").addEventListener("click", openGcsScreen);
     document.getElementById("gcsScreenCloseBtn").addEventListener("click", closeGcsScreen);
     document.getElementById("gcsScreenBackdrop").addEventListener("click", closeGcsScreen);
+    // "'Skriv navnet ditt her' hjelpeteksten må forsvinne når brukeren klikker i navnefeltet for å skrive"
+    // (brukeren) - et vanlig placeholder-attributt forsvinner først når man begynner å SKRIVE, ikke ved
+    // selve fokuset. Tømmer/gjenoppretter derfor placeholder-attributtet manuelt på focus/blur i stedet.
+    // Wired ÉN gang her (ikke i openVtolDiploma, som kjøres på nytt hver gang diplomet åpnes) - elementet
+    // finnes allerede i det statiske HTML-et, ingen grunn til å risikere flere stablede lyttere.
+    // sim-diploma-name-error (se diplomaPrintBtn over) fjernes idet animasjonen er ferdig, av samme grunn.
+    (function () {
+        const nameInput = document.getElementById("diplomaNameInput");
+        const originalPlaceholder = nameInput.placeholder;
+        nameInput.addEventListener("focus", function () { nameInput.placeholder = ""; });
+        nameInput.addEventListener("blur", function () { nameInput.placeholder = originalPlaceholder; });
+        nameInput.addEventListener("animationend", function () { nameInput.classList.remove("sim-diploma-name-error"); });
+    })();
     window.addEventListener("keydown", function (e) {
         if (e.repeat) return;
         if (e.code === "KeyM") toggleVtolExercisesPanel();

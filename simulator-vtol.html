@@ -482,6 +482,7 @@
         <div class="sim-exercise-summary" id="exerciseSummary" style="display:none;">
             <h3 id="exerciseSummaryTitle"></h3>
             <p id="exerciseSummaryText"></p>
+            <p id="exerciseSummaryNextInfo" style="display:none;"></p>
             <div class="sim-summary-buttons">
                 <button type="button" class="sim-btn sim-btn-primary" id="exerciseNextBtn">Neste</button>
                 <button type="button" class="sim-btn sim-btn-primary" id="exerciseSummaryCloseBtn">Lukk</button>
@@ -490,24 +491,32 @@
 
         <div class="sim-diploma-overlay" id="diplomaOverlay" style="display:none;">
             <div class="sim-diploma">
+                <!-- "diplom tekstforklaring og knapper øverst i vinduet" (brukeren) - flyttet FØR selve
+                     .sim-diploma-border (det printbare dokumentet), ikke etter - synlig med det samme uten
+                     å måtte scrolle forbi hele diplomet først. Fortsatt no-print (se body.printing-diploma-
+                     regelen i css/style.css), så rekkefølgen her påvirker ALDRI selve PDF-en/utskriften. -->
+                <div class="sim-diploma-actions sim-diploma-actions-with-note no-print">
+                    <p class="sim-diploma-note">Fyll inn navnet ditt under og send diplomet (PDF) til
+                        <a href="mailto:rpas@ffi.no"><strong>rpas@ffi.no</strong></a> for registrering.
+                        Denne siden er statisk og lagrer informasjon kun lokalt i din egen nettleser - ingen informasjon sendes noe sted.</p>
+                    <div class="sim-diploma-action-buttons">
+                        <button type="button" class="sim-btn sim-btn-primary" id="diplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
+                        <button type="button" class="sim-btn sim-btn-primary" id="diplomaCloseBtn">Lukk</button>
+                    </div>
+                </div>
                 <div class="sim-diploma-border">
                     <div class="sim-diploma-icons">
-                        <i class="fa-solid fa-plane-up sim-diploma-plane"></i>
+                        <img src="images/Heewing-T2.png" alt="Heewing T2 Cruza" class="sim-diploma-heewing-icon">
                         <i class="fa-solid fa-award sim-diploma-medal"></i>
                     </div>
                     <h2>BEKREFTELSE</h2>
-                    <p class="sim-diploma-sub">FFI UAS &ndash; VLOS Heewing T2 Cruza VTOL stikkeferdigheter</p>
+                    <p class="sim-diploma-sub">Heewing T2 Cruza VTOL &ndash; VLOS simulatortrening</p>
                     <p class="sim-diploma-line">Dette bekrefter at</p>
                     <input type="text" id="diplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
-                    <p class="sim-diploma-text">har gjennomført simulatortrening og bestått alle øvelsene i
-                        Heewing T2 introprogrammet - fjernkontroll-/modusoppsett, Q-loiter,
-                        overgang til og fra fastvinget flyging (FBWA), rundflyging, manuell retur i vind,
-                        uforutsette hendelser, motorfeil-nødlanding og teoriprøven.</p>
+                    <p class="sim-diploma-text">har gjennomført og bestått Heewing T2 Cruza VTOL &ndash; VLOS simulatortrening ved FFI:</p>
+                    <div class="sim-diploma-goals" id="diplomaGoals"></div>
+                    <p class="sim-diploma-flighttime" id="diplomaFlightTime"></p>
                     <p class="sim-diploma-date" id="diplomaDate"></p>
-                </div>
-                <div class="sim-diploma-actions no-print">
-                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
-                    <button type="button" class="sim-btn sim-btn-primary" id="diplomaCloseBtn">Lukk</button>
                 </div>
             </div>
         </div>
