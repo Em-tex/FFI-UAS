@@ -629,14 +629,25 @@ const CRASH_GROUND_ANGULAR_DRAG_PER_SEC = 0.5;
 // dulten er da nok til å skyve flyet varig bort fra det eksakte balansepunktet, og den ekte fjærkraft-/
 // dreiemoment-fysikken tar over resten av veien ned mot en faktisk stabil hvilestilling.
 const CRASH_BALANCE_WOBBLE_MAX_RAD_S2 = 0.5;
-// Se BUG-kommentaren ved crashStuckTimerSec-bruken i stepPhysics ("insta-superlim på vingetuppene") -
-// terskler for hva som telles som "tilnærmet helt stille" (lave nok til at en EKTE, fortsatt aktivt
-// fallende/glidende krasjfase aldri feilaktig telles som "fastlåst"), og hvor raskt/hvor langt
-// wobble-styrken får lov å vokse mens farkosten forblir stille.
+// Se BUG-kommentaren ved crashStuckTimerSec-bruken i stepPhysics ("insta-superlim på vingetuppene", nå
+// rapportert TRE ganger). BUG i selve FORRIGE forsøk (fant ved etterregning, ikke bare skjermbildet): en
+// stigende wobble-styrke MÅLER om farkosten er "fastlåst" ut fra hvor lav VINKELFARTEN er akkurat nå - men
+// selve WOBBELEN (påført forrige tick) er SELV hovedbidraget til den vinkelfarten. Med
+// CRASH_STUCK_ANGULAR_SPEED_RAD_S satt for lavt (0.05) traff wobbelens EGEN typiske "hvilefart" (utledet
+// ved en enkel AR(1)-likevektsanalyse av selve støy-/dempeligningen under: std ≈ 0.5*dt/sqrt(3*(1-decay²))
+// per akse ≈ 0.026 rad/s, kombinert over tre akser ≈ 0.045 rad/s) nesten NØYAKTIG denne terskelen - timeren
+// ble dermed nullstilt av sin EGEN støy omtrent halvparten av tickene, og rakk sjelden å bygge seg opp til
+// noe reelt. Enda verre: styrken VOKSER jo lenger den (feilaktig sjelden) får stå på - som igjen øker
+// wobbelens egen hvilefart proporsjonalt (∝ styrke), en selvmotvirkende tilbakekobling som i praksis
+// begrenset seg selv til et middelmådig nivå i stedet for å vokse fritt mot taket. Terskelen er derfor satt
+// LANGT over wobbelens egen hvilefart selv ved MAKS styrke (0.045*sqrt(CRASH_STUCK_RAMP_MAX_MULT)≈0.045*
+// sqrt(30)≈0.25 rad/s ved tak) - 2.0 rad/s gir god margin i HELE rampens virkeområde, samtidig som en EKTE
+// aktiv velte-/fallfase (mye kraftigere vinkelfart fra ekte fjærkraft-/tyngdekraft-dynamikk) fortsatt
+// trygt nullstiller timeren idet noe faktisk begynner å skje.
 const CRASH_STUCK_LINEAR_SPEED_MS = 0.15;
-const CRASH_STUCK_ANGULAR_SPEED_RAD_S = 0.05;
-const CRASH_STUCK_RAMP_RATE = 4;       // wobble-multiplikator-vekst per sekund fastlåst
-const CRASH_STUCK_RAMP_MAX_MULT = 30;  // tak - etter ca. 7-8s fastlåst er styrken 30x grunnverdien
+const CRASH_STUCK_ANGULAR_SPEED_RAD_S = 2.0;
+const CRASH_STUCK_RAMP_RATE = 10;      // wobble-multiplikator-vekst per sekund fastlåst
+const CRASH_STUCK_RAMP_MAX_MULT = 30;  // tak - etter ca. 2.9s fastlåst er styrken 30x grunnverdien
 
 const FIXED_DT = 1 / 120;       // fysikk-tidssteg, samme substep-mønster (akkumulator) som quad-simulatoren
 // Samme verdi som Sim.rampStick sin egen interne default (simulator-common.js) - en referanse i stedet
