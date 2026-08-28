@@ -1029,6 +1029,13 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     cursor: not-allowed;
 }
 .sim-btn-primary:disabled:hover { background: #e2e2e2; color: #999; }
+/* Liten variant for tettpakkede knapperader der en full .sim-btn (8px 14px/0.85rem) blir for dominerende
+   ved siden av andre - f.eks. "Kalibrer fullt utslag"/"Nullstill kalibrering" i fjernkontroll-panelet,
+   som står side om side med en statustekst i samme rad. */
+.sim-btn-sm {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+}
 
 .sim-dropdown {
     position: relative;

@@ -85,7 +85,13 @@
     function canvasYToRate(y, scale) { return clamp(-(y - RATE_CURVE_H / 2) / (RATE_CURVE_H / 2) * scale, -scale, scale); }
     function rateToCanvasY(rate, scale) { return RATE_CURVE_H / 2 - (rate / scale) * (RATE_CURVE_H / 2); }
 
-    function drawRateCurve(ctx, axisRates) {
+    // liveStick (valgfri, -1..1): faktisk pinneposisjon AKKURAT NÅ - tegner en grønn "output"-prikk på
+    // kurven der pinnen faktisk står, med tynne hjelpelinjer ut til aksene, slik at man SER at rate-
+    // instillingene faktisk virker (og at pinnebevegelse beveger prikken) i stedet for bare å stole på
+    // tallene i sliderne. Helt uavhengig av de to faste, draggbare håndtakene (blå maxRate/rødt
+    // centerSensitivity, se buildRateAxisBox) - de flytter seg kun når INNSTILLINGENE endres, ikke når
+    // pinnen beveger seg.
+    function drawRateCurve(ctx, axisRates, liveStick) {
         const scale = rateCurveScale(axisRates.maxRate);
         ctx.clearRect(0, 0, RATE_CURVE_W, RATE_CURVE_H);
         ctx.strokeStyle = "#e0e0e0";
@@ -122,6 +128,26 @@
         ctx.beginPath();
         ctx.arc(csX, csY, 5, 0, Math.PI * 2);
         ctx.fill();
+
+        if (typeof liveStick === "number" && !isNaN(liveStick)) {
+            const liveRate = computeRate(clamp(liveStick, -1, 1), axisRates);
+            const liveX = stickToCanvasX(clamp(liveStick, -1, 1));
+            const liveY = rateToCanvasY(liveRate, scale);
+            ctx.strokeStyle = "rgba(46, 204, 113, 0.55)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(liveX, RATE_CURVE_H / 2);
+            ctx.lineTo(liveX, liveY);
+            ctx.lineTo(0, liveY);
+            ctx.stroke();
+            ctx.fillStyle = "#2ecc71";
+            ctx.beginPath();
+            ctx.arc(liveX, liveY, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "#1e8449";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
     }
 
     // Løser centerSensitivity slik at kurven treffer et gitt punkt ved RATE_CURVE_CENTER_STICK.
@@ -132,7 +158,7 @@
         const swe3 = Math.pow(Math.abs(swe), 3) * Math.sign(swe);
         const denom = swe - swe3;
         if (Math.abs(denom) < 1e-6) return axisRates.centerSensitivity;
-        return clamp((targetRate - axisRates.maxRate * swe3) / denom, 0, 300);
+        return clamp((targetRate - axisRates.maxRate * swe3) / denom, 0, 1200);
     }
 
     // Bygger en komplett rate-akse-boks (tittel + center/max/expo-slidere + draggbar kurve) for én akse
@@ -148,7 +174,14 @@
         const inputs = {};
         const spans = {};
         [
-            { key: "centerSensitivity", label: "Center sens.", min: 0, max: 300, step: 5 },
+            // max hevet til å MATCHE maxRate sin egen (1200, se raden under) - BUG (brukerens spørsmål:
+            // "må jo være mulig å få en helt lineær kurve uten å justere max rate?"): computeRate() sin
+            // formel (cs*w + (mr-cs)*|w|^3*sign(w), se der) blir nøyaktig LINEÆR bare når
+            // centerSensitivity===maxRate (kubikkleddets koeffisient (mr-cs) blir da null). Med taket på
+            // 300 her var det umulig å noensinne NÅ det punktet for noen maxRate over 300 - altså for
+            // alle vanlige acro-instillinger (roll/pitch-standarden alene er 620). Linær-kurve var derfor
+            // reelt UOPPNÅELIG, ikke bare vanskelig, akkurat som brukeren mistenkte.
+            { key: "centerSensitivity", label: "Center sens.", min: 0, max: 1200, step: 5 },
             { key: "maxRate", label: "Max rate", min: 100, max: 1200, step: 10 },
             { key: "expo", label: "Expo", min: 0, max: 1, step: 0.05 }
         ].forEach(function (param) {
@@ -187,11 +220,24 @@
         const hint = document.createElement("p");
         hint.className = "sim-panel-hint";
         hint.style.margin = "6px 0 0 0";
-        hint.textContent = "Dra blått punkt (max rate) eller rødt punkt (center sensitivity) direkte på kurven.";
+        hint.textContent = "Dra blått punkt (max rate) eller rødt punkt (center sensitivity) direkte på kurven. " +
+            "Grønn prikk viser sanntids pinne->rate akkurat nå.";
         box.appendChild(hint);
 
         const ctx = canvas.getContext("2d");
-        function redraw() { drawRateCurve(ctx, axisRates); }
+        // liveStick lagres her (ikke bare et parameter til redraw) slik at et senere kall til f.eks.
+        // onChange-utløste redraw()-kall (slidere/drag over) ikke later som pinnen sto midt på (0) og
+        // dermed rykker den grønne live-prikken feilaktig til senter hvert eneste tastetrykk i panelet.
+        let liveStick = null;
+        function redraw() { drawRateCurve(ctx, axisRates, liveStick); }
+        // Eksponert slik at simulatorens per-bilde input-løkke kan mate inn FAKTISK pinneposisjon (se
+        // updateRatesPanelLive i simulator.js) - helt uavhengig av onChange over, som kun kjører når
+        // selve rate-INNSTILLINGENE endres, ikke når pinnen beveger seg. Ubrukt (ufarlig) for andre
+        // sider som bruker samme buildRateAxisBox uten å kalle setLiveStick.
+        box.setLiveStick = function (value) {
+            liveStick = value;
+            redraw();
+        };
 
         let dragging = null;
         canvas.addEventListener("pointerdown", function (e) {
@@ -351,7 +397,18 @@
                 if (onDone) onDone();
             }
         }
-        return { start: start, isActive: isActive, remainingMs: remainingMs, poll: poll };
+        // Nullstiller KUN skaleringen (til 1, "ikke justert") for de fire kanalene - IKKE akse-
+        // tilordning/reversering (se resetGamepadMapBtn for et fullt fabrikk-reset av HELE oppsettet,
+        // inkl. knappemapping). BUG rapportert av brukeren: en kalibrering utført UTEN faktisk fysisk
+        // fullt utslag på spakene (f.eks. glemte å presse helt ut, eller rakk ikke i løpet av de fire
+        // sekundene) låser inn en falsk, for høy skalering permanent - det finnes ingen vei tilbake uten
+        // enten å kalibrere PERFEKT på nytt eller nullstille rent manuelt i konsollen. Denne knappen er
+        // den enkle veien ut av en mislykket kalibrering.
+        function resetScale() {
+            channels.forEach(function (ch) { channelMap[ch].scale = 1; });
+            if (onDone) onDone();
+        }
+        return { start: start, isActive: isActive, remainingMs: remainingMs, poll: poll, resetScale: resetScale };
     }
 
     // Sjekker om en lagret binding er aktiv AKKURAT NÅ (holdt inne) - eksponert på Sim slik at
@@ -953,6 +1010,17 @@
                 }
             }, 150);
         });
+
+        // Nullstill-knapp (se axisCalibrationManager.resetScale-kommentaren) - valgfri (resetBtnEl er
+        // ikke satt for alle bruksteder av denne veiviseren ennå).
+        if (opts.resetBtnEl) {
+            opts.resetBtnEl.addEventListener("click", function () {
+                stopCalibrateTick();
+                opts.calibrateBtnEl.disabled = false;
+                opts.axisCalibrationManager.resetScale();
+                opts.calibrateStatusEl.textContent = "Kalibrering nullstilt.";
+            });
+        }
 
         opts.saveBtnEl.addEventListener("click", function () {
             markSeen();

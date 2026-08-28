@@ -227,13 +227,24 @@
             <div class="sim-rate-grid" id="gamepadGrid"></div>
             <p class="sim-panel-hint" style="margin-top:0;">Beveg en spak for å se hvilken kanal som endrer seg i tabellen under. Pilen (→) viser hva kanalen faktisk gir spillet akkurat nå for de fire mappede kanalene.</p>
             <div id="gamepadAxesReadout" class="sim-axes-readout"></div>
-            <div class="sim-rate-row">
-                <button type="button" class="sim-btn sim-btn-primary" id="calibrateAxesBtn"
+            <div class="sim-rate-row" style="margin:12px 0;">
+                <button type="button" class="sim-btn sim-btn-primary sim-btn-sm" id="calibrateAxesBtn"
                     title="For sendere som ikke når helt ut til ±1.0 selv ved fysisk fullt utslag. Trykk, før så ALLE spaker (inkl. gass) helt til alle ytterpunkter noen ganger i løpet av de neste sekundene.">
                     Kalibrer fullt utslag
                 </button>
+                <button type="button" class="sim-btn sim-btn-sm" id="resetAxisCalibrationBtn"
+                    title="Nullstiller kun skaleringen fra 'Kalibrer fullt utslag' (til uendret 1×) - IKKE kanal-/reverstilordningen. Bruk denne hvis en tidligere kalibrering ble gjort uten å faktisk føre spakene helt til ytterpunktene (gir en for høy, permanent skalering som gjør styringen overfølsom nær midten).">
+                    Nullstill kalibrering
+                </button>
                 <span class="sim-rate-value" id="calibrateAxesStatus" style="flex:1; text-align:left;"></span>
             </div>
+            <!-- "Knapper"-avlesningen (rå knappeverdier) i et EGET element, atskilt fra kanal-avlesningen
+                 over - se Sim.updateGamepadAxesReadout sin includeButtons-kommentar. Uten dette hang hele
+                 knappelisten som en hale NEDERST i gamepadAxesReadout, under kalibreringsknappene
+                 (brukeren: "vi skal flytte knappen opp, så de er rett under kanalene og rett over
+                 'Knapper'") - nå kommer selve knappene mellom kanal-listen og "Knapper", akkurat som i
+                 fjernkontroll-veiviseren (gamepadWizardButtonsReadout). -->
+            <div id="gamepadButtonsReadout" class="sim-axes-readout"></div>
             <h3 style="margin-top:16px;">Kill/Arm-sikring</h3>
             <div class="sim-rate-grid" id="gamepadKillGrid"></div>
             <p class="sim-panel-hint" style="margin-top:0;">"+ Legg til" og bruk deretter bryteren - kan gjentas for å kreve flere brytere samtidig (f.eks. kanal 5 OG 8). "⇄" bytter om hvilken posisjon som telles som PÅ for den bryteren.</p>
@@ -260,10 +271,14 @@
                     <p class="sim-panel-hint">Beveg en spak for å se hvilken kanal som endrer seg i tabellen under.</p>
                     <div id="gamepadWizardReadout" class="sim-axes-readout"></div>
                     <p class="sim-panel-hint">Ved fullt utslag på stikkene skal verdiene over kunne bevege seg til ytterpunktene -1.00 og 1.00. Hvis de ikke gjør det, må du kalibrere fullt utslag ved å trykke på knappen under.</p>
-                    <div class="sim-rate-row" style="margin-top:10px;">
-                        <button type="button" class="sim-btn sim-btn-primary" id="gamepadWizardCalibrateBtn"
+                    <div class="sim-rate-row" style="margin:12px 0;">
+                        <button type="button" class="sim-btn sim-btn-primary sim-btn-sm" id="gamepadWizardCalibrateBtn"
                             title="For sendere som ikke når helt ut til ±1.0 selv ved fysisk fullt utslag. Trykk, før så ALLE spaker (inkl. gass) helt til alle ytterpunkter noen ganger i løpet av de neste sekundene.">
                             Kalibrer fullt utslag
+                        </button>
+                        <button type="button" class="sim-btn sim-btn-sm" id="gamepadWizardResetCalibrationBtn"
+                            title="Nullstiller kun skaleringen fra 'Kalibrer fullt utslag' (til uendret 1×). Bruk denne hvis en tidligere kalibrering ble gjort uten å faktisk føre spakene helt til ytterpunktene.">
+                            Nullstill kalibrering
                         </button>
                         <span class="sim-rate-value" id="gamepadWizardCalibrateStatus" style="flex:1; text-align:left;"></span>
                     </div>

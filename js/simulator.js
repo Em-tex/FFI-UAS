@@ -141,6 +141,20 @@ const EDGE_PIVOT_MAX_PENETRATION = 0.03; // m - over dette er det en ekte kollis
 const GROUND_SCRAPE_SPEED = 1.5;     // m/s horisontalfart i bakkekontakt før det regnes som skraping
 const OVERTURN_CRASH_TILT_DEG = 100; // tilt på bakken forbi dette = veltet = krasj (disarm + reset)
 
+// Yaw-spesifikk bakkefriksjon (BUG rapportert av brukeren: "quaden kan yawe rundt mens den står på
+// bakken - nå kan den det med null throttle og yaw input"): en ekte quad står med hele vekten sin på
+// beina/rammeunderkanten mens den er i ro på bakken - normalkraften der gir en friksjon (mu*N*benavstand)
+// som er LANGT sterkere enn det puslete reaksjonsmomentet fire propeller kan yawe imot (derfor har
+// inertiaYaw alltid høyere treghet enn rull/pitch i utgangspunktet, se DRONE_CLASSES-kommentaren - selv i
+// FRI luft er yaw den svakeste aksen). Piloten skal derfor ikke merke NOE av yaw-pinnen før nok av vekten
+// er lettet av beina at friksjonen slipper taket - se groundYawAuthority i stepPhysics.
+// Bruker PILOTENS ØNSKEDE gass (baseCmd, FØR motor-mikseren) i stedet for den faktisk oppnådde
+// trekkraften etter mikser/airmode - uten mixMotors kan et fullt yaw-utslag alene løfte to av fire
+// motorer til 50% (se MOTOR_MIX/mixMotors-kommentaren), som ellers ville gitt en falsk egen-forsterkende
+// løkke der "yawe hardt nok" i seg selv later som beina lettes og låser opp MER yaw-autoritet.
+const GROUND_YAW_UNLOCK_THRUST_FRAC_START = 0.5;  // andel av hover-trekkraft (vekt) før friksjonen begynner å slippe
+const GROUND_YAW_UNLOCK_THRUST_FRAC_FULL = 0.95;  // andel av hover-trekkraft der beina er tilnærmet vektløse -> full yaw-autoritet
+
 const PASSIVE_ANGULAR_DAMPING = 0.995; // demping av rotasjon når disarmet (fritt fall/tumling)
 const ANGLE_P_GAIN = 6;             // ytre selvnivellerings-lookk (Stabilized/Alt Hold), 1/s
 const MAX_SELF_LEVEL_ANGLE = 35;    // grader
@@ -324,7 +338,11 @@ const DEFAULT_SETTINGS = {
     fpvTiltDeg: DEFAULT_FPV_TILT_DEG,
     droneClass: DEFAULT_DRONE_CLASS,
     realisticMode: false,
-    airmodeEnabled: false,
+    // Standard PÅ (brukervalg, se mixMotors-fiksen rett over) - matcher hvordan en ekte freestyle-/
+    // racing-drone faktisk settes opp (aldri av for den typen flyging), og gir DEFAULT-opplevelsen full,
+    // gassnivå-uavhengig rull/pitch/yaw-autoritet uansett hvor pinnen/gassen står - nærmest mulig
+    // følelsen FØR selve motor-mikseren (med sin gass-avhengige metning) ble innført 31. juli.
+    airmodeEnabled: true,
     inputSource: "auto", // "auto" | "keyboard" | gamepad-indeks som streng ("0", "1", ...)
     wind: DEFAULT_WIND,
     cloudsEnabled: true,
@@ -991,6 +1009,7 @@ const GAME_KEY_CODES = new Set([
 ]);
 
 let renderer, scene, chaseCamera, fpvCamera, vlosCamera, activeCamera;
+let skyMesh; // se updateInCloudFog - skjules mens droneen er inni en sky, ellers ville den blå himmelen skint gjennom eventuelle hull i den (nå dobbeltsidige) sky-meshen
 let viewportWatcher; // se Sim.createViewportWatcher - fanger opp DPI-/vindusstørrelse-endringer ved skjermbytte som en enkelt resize-event ikke er pålitelig for
 let droneGroup, dronePropellers;
 let heliHandle, airplaneHandle, pedestrianHandle; // se buildHelicopter/buildAirplane/buildPedestrianGroup - kun brukt av ex11
@@ -1137,8 +1156,20 @@ function mountainProfileHeightFrac(distFrac, topRadiusFrac, curvePower) {
 // fargestopp i stedet for separate meshes med harde fargegrenser (det ga tidligere en synlig skarp
 // overgang der snø-/stein-meshene møttes). Jitteren dempes (ikke fjernes helt) nær toppen, for en
 // avrundet/erodert topp i stedet for enten en skarp spiss eller en unaturlig helt glatt/flat platå-sirkel.
+// BUG (rapportert av brukeren: "kolliderer i løse luften nært fjellsider") - mountainHeightAt (se der)
+// regner kollisjonsflaten fra den NØYAKTIGE, kontinuerlige jitter-formelen ved enhver vinkel, men denne
+// meshen tegnet bare 14 radiale segmenter (~25,7° mellom hver vertex). Jitteret har to sinusledd, opp
+// til sin(vinkel*11*noiseFreqMul) - med noiseFreqMul opptil 1.4 (se MOUNTAIN_DEFS) svinger det leddet
+// >15 ganger rundt fjellet, LANGT mer enn 14 vertekser i det hele tatt kan gjengi (Nyquist krever minst
+// 2x så mange sampler som svingninger). Mellom to nabovertekser tegnes bare en RETT strek (korde) - der
+// den sanne, glatte kollisjonsflaten kollisjonen faktisk bruker buer utover forbi den korden ser
+// spilleren åpen luft mens hitboksen fortsatt stikker ut dit. RADIAL_SEGMENTS økt godt forbi Nyquist-
+// grensa (2*15,4≈31) med en trygg margin, slik at silhuetten faktisk gjengir samme kurve som
+// mountainHeightAt regner på - ikke bare en grovere tilnærming av den, som lett kunne avvike usynlig i
+// akkurat de taggete forsenkningene brukeren fløy inn i.
+const MOUNTAIN_RADIAL_SEGMENTS = 48;
 function buildGradientPeakGeometry(radius, height, seed, colorStops, jaggedness, topRadiusFrac, curvePower, noiseFreqMul) {
-    const geo = new THREE.CylinderGeometry(radius, radius, height, 14, 7);
+    const geo = new THREE.CylinderGeometry(radius, radius, height, MOUNTAIN_RADIAL_SEGMENTS, 7);
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     const tmp = new THREE.Color();
@@ -1660,10 +1691,16 @@ const cloudClusters = []; // fylt av buildClouds() - hver er en THREE.Group, fly
 // transparent+opacity gir en lett, dis-aktig kant i stedet for en helt solid, hard silhuett -
 // depthWrite er fortsatt PÅ som standard (selv med transparent:true), som holder overlappende puffer
 // noenlunde riktig sortert i stedet for å bli fullt gjennomsiktighets-sortert (det ga synlige glitch).
+// side: DoubleSide (BUG rapportert av brukeren: "flyr man inn i skyen så bare forsvinner skyen man er
+// inni") - standard (FrontSide) tegner bare utsiden av kule-meshen; flyr kameraet INN i den, peker
+// samtlige trekanter man da er omgitt av bort fra kameraet og blir bak-flate-kuttet (culling), så hele
+// skyen forsvinner akkurat idet man er inni den. DoubleSide tegner innsiden også, slik at man fortsatt
+// ser de myke, hvite skyveggene rundt seg. Se updateInCloudFog for selve "tåke"-effekten (redusert sikt)
+// mens man faktisk er inni en - denne innsiden alene ville bare vist en tom, hul hvit ballong.
 const CLOUD_SHADE_MATERIALS = [0xff, 0xeb, 0xd7, 0xc3].map(function (shade) {
     return new THREE.MeshStandardMaterial({
         color: (shade << 16) | (shade << 8) | shade, roughness: 0.9,
-        transparent: true, opacity: 0.95
+        transparent: true, opacity: 0.95, side: THREE.DoubleSide
     });
 });
 // ÉN sammenhengende, myk kule i stedet for flere separate, overlappende sfærer - uansett hvor tett
@@ -1702,6 +1739,12 @@ function buildCloudCluster(seed) {
     mesh.scale.set(1 + Math.abs(Math.sin(seed * 2.1)) * 0.4, 0.6, 1 + Math.abs(Math.cos(seed * 1.8)) * 0.35);
     const group = new THREE.Group();
     group.add(mesh);
+    // Husket for updateInCloudFog sin ellipsoide "er droneen inni denne klyngen"-test - meshScale er
+    // FAST (satt rett over, aldri endret senere), mens selve klyngens egen (uniforme) scale endres
+    // dynamisk hvert bilde av updateClouds (skydekke-vekst) - begge trengs for å regne dagens faktiske
+    // verdens-radius langs hver akse.
+    group.userData.radius = radius;
+    group.userData.meshScale = mesh.scale;
     return group;
 }
 function buildClouds() {
@@ -1765,6 +1808,74 @@ function updateClouds(dt) {
         cluster.visible = coverageStep > 0 && (i % coverageStep) === 0;
         cluster.scale.setScalar(cluster.userData.baseScale * growth);
     });
+}
+
+// "Tåkete inni skyen" (BUG rapportert av brukeren, se DoubleSide-kommentaren ved CLOUD_SHADE_MATERIALS
+// for den andre halvparten av samme feilrapport): en ekte cumulus-sky er ikke bare et hult skall man kan
+// se rett gjennom innsiden av - den er en diffus vanndråpe-tåke som stryker sikten kraftig ned uansett
+// hvilken retning man ser. Testes med en grov, akse-rettet ELLIPSOIDE per klynge (samme radius/meshScale
+// som selve visnings-meshen, se userData i buildCloudCluster - "kilde til sannhet" for kollisjon/tåke
+// matcher det man faktisk SER, samme prinsipp som mountainHeightAt/MOUNTAIN_PEAKS). Kun én sky trenger
+// å treffe (dvs. IKKE avstandssortert/nærmeste-først) - droneen er uansett aldri inni mer enn én
+// klynge om gangen i praksis, klyngene overlapper ikke vesentlig.
+// BUG (rapportert av brukeren: "skyene er litt gjennomsiktige fra utsiden men blir plutselig mye
+// tettere når man flyr inn i dem") - forrige versjon slo fog-en helt AV/PÅ som en TERSKEL akkurat idet
+// man krysset kloden sin overflate, rett fra "ingen fog i det hele tatt" til et tett near=1/far=16-
+// hvitt-ut på én eneste frame - en hard, synlig "vegg" i tetthet som ikke hadde noe med den myke,
+// halvgjennomsiktige overflaten man nettopp så utenfra å gjøre. Gradert nå etter PENETRASJONSDYBDE
+// (0 rett ved overflaten, økende inn mot senteret - samme ellipsoide-avstand som før, bare IKKE
+// klippet til en boolsk inni/utenfor) - fog-en er myk/lett akkurat idet man krysser overflaten (matcher
+// hvor "litt gjennomsiktig" den så ut utenfra) og strammer seg gradvis til et tett hvitt-ut først et
+// stykke lenger inn, i stedet for å hoppe dit momentant.
+const CLOUD_FOG_COLOR = 0xe7e7ec; // gjennomsnittlig, litt kjølig hvit-grå - matcher CLOUD_SHADE_MATERIALS
+const CLOUD_FOG_EDGE_NEAR = 20, CLOUD_FOG_EDGE_FAR = 70;  // rett innenfor overflaten - fortsatt lett disete
+const CLOUD_FOG_CORE_NEAR = 1, CLOUD_FOG_CORE_FAR = 16;   // godt inne i klyngen - tett "IMC"-hvitt-ut
+let insideCloud = false; // kun av/på-tilstanden for sky-skjuling/bakgrunn under, IKKE selve tettheten
+function updateInCloudFog() {
+    let maxPenetration = 0;
+    if (settings.cloudsEnabled) {
+        const p = droneState.position;
+        for (let i = 0; i < cloudClusters.length; i++) {
+            const cluster = cloudClusters[i];
+            if (!cluster.visible) continue;
+            // cluster.scale er alltid uniform (satt via setScalar i updateClouds over) - .x holder for alle tre.
+            const s = cluster.userData.radius * cluster.scale.x;
+            const ms = cluster.userData.meshScale;
+            const dx = (p.x - cluster.position.x) / (s * ms.x);
+            const dy = (p.y - cluster.position.y) / (s * ms.y);
+            const dz = (p.z - cluster.position.z) / (s * ms.z);
+            // 0 = akkurat på overflaten, 1 = i sentrum - se BUG-kommentaren over. Flere klynger kan i
+            // prinsippet overlappe: bruker den DYPESTE (mest tåkete) av dem, ikke bare den første truffet.
+            const penetration = clamp(1 - Math.sqrt(dx * dx + dy * dy + dz * dz), 0, 1);
+            if (penetration > maxPenetration) maxPenetration = penetration;
+        }
+    }
+    const inside = maxPenetration > 0;
+    if (inside) {
+        const near = THREE.MathUtils.lerp(CLOUD_FOG_EDGE_NEAR, CLOUD_FOG_CORE_NEAR, maxPenetration);
+        const far = THREE.MathUtils.lerp(CLOUD_FOG_EDGE_FAR, CLOUD_FOG_CORE_FAR, maxPenetration);
+        // Justerer near/far på et EKSISTERENDE Fog-objekt (i stedet for å lage et nytt hvert bilde) når
+        // man allerede er inni - unngår at scene.fog sin referanse endres kontinuerlig for ingenting.
+        if (scene.fog) { scene.fog.near = near; scene.fog.far = far; }
+        else scene.fog = new THREE.Fog(CLOUD_FOG_COLOR, near, far);
+    } else if (scene.fog) {
+        scene.fog = null;
+    }
+    if (inside === insideCloud) return;
+    insideCloud = inside;
+    // Himmelkulen (Sim.buildGradientSky) har sin egen håndskrevne shader UTEN fog-uniformen scene.fog
+    // ellers injiserer automatisk i standardmaterialer - den ville IKKE blitt hvit av fog-en over, og
+    // ville skint gjennom som en synlig blå flekk overalt der (nå dobbeltsidige, men fortsatt en
+    // lavpoly-kule med hull mellom bulkene) sky-meshens innside ikke akkurat dekker synsfeltet. Enklest
+    // robuste fiks: bare skjul himmelen fullstendig mens man er inni en sky - man skal uansett ikke se
+    // "ekte" himmel gjennom tett skydis. Dette er fortsatt en TERSKEL (av/på idet man krysser
+    // overflaten, ikke gradert) - det er en synlighets-KORREKTHET, ikke en tetthets-FORNEMMELSE, så den
+    // samme brå av/på-logikken som før er fortsatt riktig her.
+    // scene.background settes til samme farge som fog-en (renderer/scene har ellers ingen bakgrunn satt
+    // - standard clear-farge er SORT) slik at et ev. hull i den (fortsatt lavpoly) sky-meshen viser mer
+    // tåke i stedet for et synlig svart glimt.
+    skyMesh.visible = !inside;
+    scene.background = inside ? new THREE.Color(CLOUD_FOG_COLOR) : null;
 }
 
 // Enkel bil, bygg med flatt tak og trær - prosedurale former i realistisk skala mot droneen.
@@ -2594,7 +2705,19 @@ function buildClockTexture() {
 let clockHandles = [];
 function buildClockFace(radius) {
     const group = new THREE.Group();
-    const face = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), new THREE.MeshStandardMaterial({ map: buildClockTexture() }));
+    // BUG (rapportert av brukeren: "klokken på klokketårnet flimrer på avstand") - klokkeskiven henger
+    // kun 0.02 m foran tårnveggen (se faceOffset i buildClockTower). På kort hold er det god nok klaring,
+    // men depth-bufferet her spenner fra kamera-near (0.05-0.1, se initScene) til far=2000 - en
+    // standard (ikke-logaritmisk) dybdebuffer bruker mesteparten av presisjonen sin nær kameraet, så
+    // langt unna blir 2 cm mindre enn ÉN dybde-bufferverdi og de to flatene bytter tilfeldig på å vinne
+    // depth-testen bilde for bilde (klassisk z-fighting). polygonOffset dytter klokkeskivens EGNE
+    // dybdeverdier konsekvent nærmere kameraet FØR depth-testen, uavhengig av avstand - løser flimringen
+    // på avstand uten å røre selve geometrien eller det globale depth-bufferet.
+    const faceMat = new THREE.MeshStandardMaterial({
+        map: buildClockTexture(),
+        polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
+    });
+    const face = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), faceMat);
     group.add(face);
 
     const handMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28 });
@@ -3375,7 +3498,8 @@ function initScene() {
     }, false);
 
     scene = new THREE.Scene();
-    scene.add(Sim.buildGradientSky());
+    skyMesh = Sim.buildGradientSky();
+    scene.add(skyMesh);
     scene.add(buildGround());
     scene.add(buildWorldObjects());
     scene.add(buildMountainRange());
@@ -3597,6 +3721,9 @@ function updateInput(dt) {
     // gp er null/undefined i tastatur-grenen, akkurat som det eksplisitte null-kallet det erstatter -
     // updateGamepadAxesReadout faller selv tilbake på getActiveGamepad() da.
     updateGamepadAxesReadout(gp);
+    // Live "output"-prikk i Rates-panelet (se buildRatesPanel/Sim.buildRateAxisBox) - leser samme
+    // inputState.stick som fysikken selv bruker, rett FØR et ev. killswitch-override under.
+    updateRatesPanelLive();
     // Kontrolltap (ex11, crowd/traffic): overstyrer stick-verdiene satt over med en falsk kommando mot
     // faresonen HVIS en slik rømning faktisk pågår akkurat nå - se applyKillswitchInputOverride. Må stå
     // sist i updateInput (etter ekte tastatur/gamepad-lesing over) for faktisk å nå frem til fysikken.
@@ -3636,6 +3763,21 @@ function mixMotors(baseCmd, rollCmd, pitchCmd, yawCmd, airmodeOn) {
         if (minVal < AIRMODE_MIN_IDLE) {
             const offset = AIRMODE_MIN_IDLE - minVal;
             for (let i = 0; i < raw.length; i++) raw[i] += offset;
+        }
+        // BUG (rapportert av brukeren: "helt forskjellig respons i acro med samme rates" - viste seg i
+        // flightloggen som harde, ukontrollerte kast akkurat mens pinneT sto i 100%) - Airmode sitt eget
+        // panel-hint lover UTTRYKKELIG "beholder kontroll uansett gassnivå ... nær 0%/100% gass", men
+        // koden løftet hele settet OPP mot gulvet (over) og glemte det HELT symmetriske tilfellet: nær
+        // 100% gass er det den samme "positive" motoren (fremre-høyre/bakre-venstre) som klipper mot
+        // TAKET på 1.0 i stedet for gulvet, og differensialen forsvinner akkurat like mye der - bare i
+        // motsatt retning. Uten denne andre halvparten var Airmode reelt sett VIRKNINGSLØS nær full gass
+        // (samme klipping som HELT UTEN Airmode), som er nøyaktig scenarioet harde acro-manøvre
+        // (punch-outs, flips) skjer i. Speiler løftet over: senk hele settet samlet så høyeste motor
+        // akkurat treffer taket, IKKE klipp hver for seg.
+        const maxVal = Math.max(raw[0], raw[1], raw[2], raw[3]);
+        if (maxVal > 1) {
+            const offset = maxVal - 1;
+            for (let i = 0; i < raw.length; i++) raw[i] -= offset;
         }
         return raw.map(v => clamp(v, AIRMODE_MIN_IDLE, 1));
     }
@@ -3899,6 +4041,21 @@ function stepPhysics(dt) {
             controlAuthority = 1 - worstT * (1 - GROUNDED_TIPPED_AUTHORITY);
         }
 
+        // Yaw-spesifikk bakkefriksjon (se GROUND_YAW_UNLOCK_THRUST_FRAC_*-kommentaren): så lenge vekten
+        // hviler på beina er friksjonen der langt sterkere enn yaw-reaksjonsmomentet, uansett hvor hardt
+        // yaw-pinnen holdes inne. baseCmd (pilotens ØNSKEDE gass, FØR mikseren fordeler den ujevnt på
+        // motorene) avgjør hvor mye av vekten som faktisk er lettet av beina - IKKE motorValues/den
+        // oppnådde thrustForce under, som en aggressiv yaw-kommando alene kan blåse opp uten at piloten
+        // har bedt om noe løft (se mixMotors: to av fire motorer kan nå 50% fra yaw alene ved 0% gass).
+        let groundYawAuthority = 1;
+        if (groundContactBlend > 0) {
+            const desiredThrustFrac = (baseCmd * spec.maxThrust) / (spec.mass * GRAVITY);
+            const unlockT = clamp(
+                (desiredThrustFrac - GROUND_YAW_UNLOCK_THRUST_FRAC_START) /
+                (GROUND_YAW_UNLOCK_THRUST_FRAC_FULL - GROUND_YAW_UNLOCK_THRUST_FRAC_START), 0, 1);
+            groundYawAuthority = 1 - groundContactBlend * (1 - unlockT);
+        }
+
         // Vinkelakselerasjon = moment / treghet: tyngre/større droner (høyere treghet) responderer
         // tregere per akse, og yaw har alltid høyere treghet enn roll/pitch (som på en ekte quad).
         const pitchAccel = extractMixedAxis(motorValues, "pitch") * pitchNorm / spec.inertiaRollPitch;
@@ -3906,7 +4063,7 @@ function stepPhysics(dt) {
         const yawAccel = extractMixedAxis(motorValues, "yaw") * yawNorm / spec.inertiaYaw;
         droneState.angularVelocity.pitch += pitchAccel * controlAuthority * dt;
         droneState.angularVelocity.roll += rollAccel * controlAuthority * dt;
-        droneState.angularVelocity.yaw += yawAccel * controlAuthority * dt;
+        droneState.angularVelocity.yaw += yawAccel * controlAuthority * groundYawAuthority * dt;
 
         // Vortex ring state: rask nedstigning med lav horisontalfart lar propellene synke ned i sin
         // egen nedvask og miste effektiv trekkraft - se VRS-konstantene lenger oppe.
@@ -4604,11 +4761,18 @@ function buildModePopover() {
 }
 
 /* ---------- Rates-panel (rate-kurver + gass-expo, se Sim.buildRateAxisBox/buildThrottleExpoBox) ---------- */
+// Boks-referansene beholdes (i stedet for kun å hive dem inn i grid og glemme dem) slik at
+// updateRatesPanelLive under kan mate faktisk pinneposisjon inn i DENNE frame'ns .setLiveStick()
+// hver eneste tick - se Sim.buildRateAxisBox-kommentaren for selve den grønne "live output"-prikken.
+let rateAxisBoxes = {};
 function buildRatesPanel() {
     const grid = document.getElementById("ratesGrid");
     grid.innerHTML = "";
+    rateAxisBoxes = {};
     ["roll", "pitch", "yaw"].forEach(function (axis) {
-        grid.appendChild(Sim.buildRateAxisBox(rates[axis], AXIS_LABELS[axis], saveRates));
+        const box = Sim.buildRateAxisBox(rates[axis], AXIS_LABELS[axis], saveRates);
+        rateAxisBoxes[axis] = box;
+        grid.appendChild(box);
     });
     grid.appendChild(Sim.buildThrottleExpoBox(
         rates.throttle,
@@ -4616,6 +4780,16 @@ function buildRatesPanel() {
         "0 = lineær gass. Høyere verdi gir finere kontroll nær midten (rundt hover), mer kraftfull respons ved fullt utslag.",
         saveRates
     ));
+}
+
+// Kalt fra updateInput() hvert bilde (se der) - kun mens Rates-panelet faktisk er synlig, akkurat som
+// updateGamepadAxesReadout sitt mainVisible-gate, for ikke å tegne på kanvaser ingen ser på.
+function updateRatesPanelLive() {
+    const panel = document.getElementById("ratesPanel");
+    if (!panel || panel.style.display === "none") return;
+    ["roll", "pitch", "yaw"].forEach(function (axis) {
+        if (rateAxisBoxes[axis]) rateAxisBoxes[axis].setLiveStick(inputState.stick[axis]);
+    });
 }
 
 function populateInputSourceSelect() {
@@ -4647,6 +4821,10 @@ function buildGamepadButtonsPanel() {
 
 const gamepadPanelEl = document.getElementById("gamepadPanel");
 const gamepadAxesReadoutEl = document.getElementById("gamepadAxesReadout");
+// Egen "Knapper"-avlesning ADSKILT fra kanal-avlesningen over (se HTML-kommentaren ved
+// gamepadButtonsReadout) - lar kalibreringsknappene stå MELLOM de to, i stedet for at hele
+// knappelisten henger som en hale nederst i gamepadAxesReadoutEl under knappene.
+const gamepadButtonsReadoutEl = document.getElementById("gamepadButtonsReadout");
 // Fjernkontroll-oppsett-veiviser (se Sim.buildGamepadCalibrationWizard i simulator-common.js) - dukker
 // opp AUTOMATISK første gang en gamepad oppdages på siden (maybeAutoOpen, kalt fra
 // "gamepadconnected"/oppstartssjekket lenger ned) - i tillegg til, ikke i stedet for, gamepadPanelEl over.
@@ -4657,6 +4835,7 @@ const gamepadWizard = Sim.buildGamepadCalibrationWizard({
     readoutEl: document.getElementById("gamepadWizardReadout"),
     buttonsReadoutEl: document.getElementById("gamepadWizardButtonsReadout"),
     calibrateBtnEl: document.getElementById("gamepadWizardCalibrateBtn"),
+    resetBtnEl: document.getElementById("gamepadWizardResetCalibrationBtn"),
     calibrateStatusEl: document.getElementById("gamepadWizardCalibrateStatus"),
     saveBtnEl: document.getElementById("gamepadWizardSaveBtn"),
     cancelBtnEl: document.getElementById("gamepadWizardCancelBtn"),
@@ -4691,7 +4870,12 @@ function updateGamepadAxesReadout(gp) {
         outputByAxis[gamepadMap.yaw.axis] = { label: "Yaw", value: readStickAxis(activeGp, gamepadMap.yaw) };
     }
     if (mainVisible) {
-        Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS, outputByAxis);
+        // includeButtons=false: "Knapper"-listen rendres i sitt eget element (gamepadButtonsReadoutEl)
+        // rett under kalibreringsknappene i stedet for som en hale her - se HTML-kommentaren ved
+        // gamepadButtonsReadout (brukeren: "vi skal flytte knappen opp, så de er rett under kanalene og
+        // rett over 'Knapper'"). Samme mønster som fjernkontroll-veiviseren allerede brukte.
+        Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS, outputByAxis, false);
+        Sim.updateGamepadButtonsReadout(gamepadButtonsReadoutEl, activeGp);
         if (gamepadKillGridHandle) gamepadKillGridHandle.updateLiveStatus(activeGp);
     }
     gamepadWizard.updateReadout(activeGp, outputByAxis);
@@ -6589,6 +6773,8 @@ function animate(now) {
         stepPhysics(FIXED_DT);
         accumulator -= FIXED_DT;
     }
+    // Etter fysikk-løkken - trenger droneState.position slik DENNE frame'n faktisk endte, ikke forrige.
+    updateInCloudFog();
     updateExercise(frameDt, now);
     updateKillswitchVisuals(now, frameDt);
 
@@ -6648,6 +6834,15 @@ document.addEventListener("DOMContentLoaded", function () {
                 clearInterval(tick);
             }
         }, 150);
+    });
+    // Nullstiller KUN skaleringen (se axisCalibrationManager.resetScale-kommentaren i simulator-
+    // common.js) - IKKE et fullt fabrikk-reset av kanal-/reverstilordning/knappemapping, se
+    // resetGamepadMapBtn rett under for det. Egen knapp rett ved siden av selve kalibrerings-knappen
+    // (brukeren: "kaliberingsknappen med reset må være under kanalliste og over knappene i menyen") -
+    // den enkle veien ut av en mislykket kalibrering (spakene ikke ført helt til ytterpunktene).
+    document.getElementById("resetAxisCalibrationBtn").addEventListener("click", function () {
+        axisCalibrationManager.resetScale();
+        calibrateAxesStatusEl.textContent = "Kalibrering nullstilt.";
     });
     document.getElementById("resetGamepadMapBtn").addEventListener("click", function () {
         ["throttle", "roll", "pitch", "yaw"].forEach(function (ch) { gamepadMap[ch] = Object.assign({}, DEFAULT_GAMEPAD_MAP[ch]); });
