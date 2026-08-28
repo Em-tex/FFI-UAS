@@ -240,17 +240,17 @@ const VTOL_PATTERN_WAYPOINTS = [
 // PÅ rotasjonsaksen, så world-XZ for hvert gjennomflygingspunkt er ganske enkelt selve gruppens egen
 // posisjon, uavhengig av dens rotation.y. Kun world-Y (høyden) må regnes ut separat per objekt:
 // - Port: groundGap + size/2 = 3 + 9/2 = 7.5 m (se buildGate/GATE_SIZE/GATE_GROUND_GAP)
-// - Låve (barn1/barn2): sillY + windowH/2 = 1.6 + 6/2 = 4.6 m (se buildBuildingArea sitt barn1/barn2-kall)
-// - Hus (house1): sillY + windowH/2 = 1.3 + 5.5/2 = 4.05 m (se buildBuildingArea sitt house1-kall)
+// - Garasje 1/3: sillY + windowH/2 = 1.6 + 6/2 = 4.6 m (se buildBuildingArea sitt garage1/garage3-kall)
+// - Garasje 2: sillY + windowH/2 = 1.3 + 5.5/2 = 4.05 m (se buildBuildingArea sitt garage2-kall)
 // "Banen for å fly gjennom portene kan settes opp motsatt veg" (brukeren) - GATE_LINE (simulator-vtol.js,
 // selve de fysiske portobjektene) er UENDRET, kun REKKEFØLGEN eleven flyr dem i her er snudd (.reverse()) -
 // gir en mer naturlig fortsettelse fra klatre-/transisjonspunktet inn i banen, i stedet for original-
 // rekkefølgen (nærmeste port først).
 const VTOL_TOUR_GATE_WAYPOINTS = GATE_LINE.slice().reverse().map(function (g) { return new THREE.Vector3(g.x, 7.5, g.z); });
 const VTOL_TOUR_BUILDING_WAYPOINTS = [
-    new THREE.Vector3(BUILDING_AREA_X, 4.6, RUNWAY_NEAR_Z - 40),       // barn1
-    new THREE.Vector3(BUILDING_AREA_X + 8, 4.05, RUNWAY_NEAR_Z - 120), // house1
-    new THREE.Vector3(BUILDING_AREA_X - 4, 4.6, RUNWAY_NEAR_Z - 200)   // barn2
+    new THREE.Vector3(BUILDING_AREA_X, 4.6, RUNWAY_NEAR_Z - 40),       // garage1
+    new THREE.Vector3(BUILDING_AREA_X + 8, 4.05, RUNWAY_NEAR_Z - 120), // garage2
+    new THREE.Vector3(BUILDING_AREA_X - 4, 4.6, RUNWAY_NEAR_Z - 200)   // garage3
 ];
 // Klokketårnet/rådhuset og fabrikken er landemerker å fly FORBI, ikke gjennom (ingen åpning å sikte på) -
 // derfor en langt mer sjenerøs radius (VTOL_LANDMARK_WAYPOINT_RADIUS under) enn selve port-/vindus-
@@ -562,7 +562,7 @@ const VTOL_EXERCISES = {
             },
             { type: "await-mode", label: "Bytt til MANUAL", mode: "manual", hint: "Tast 5 på tastaturet, eller bryteren på senderen." },
             {
-                type: "waypoints", label: "Fly gjennom låvene og huset", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
+                type: "waypoints", label: "Fly gjennom garasjene", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
                 radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true
             },
             {

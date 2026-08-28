@@ -1556,9 +1556,10 @@ function buildGate(size, groundGap) {
     return group;
 }
 
-// Låve/hus med én vindusåpning på hver av to motstående vegger - flyr inn den ene, gjennom, og ut den
-// andre, akkurat som låven i quad-simulatorens bane. Sideveggene er hele; front-/bakvegg bygges av
-// fire paneler rundt et hull (ingen geometri i selve åpningen).
+// Garasje med én vindusåpning på hver av to motstående vegger - flyr inn den ene, gjennom, og ut den
+// andre, akkurat som låven i quad-simulatorens bane ("Ikke kall det låver og hus. kall det garasjer",
+// brukeren - se buildBuildingArea). Sideveggene er hele; front-/bakvegg bygges av fire paneler rundt et
+// hull (ingen geometri i selve åpningen).
 function buildOpenBuilding(width, height, depth, windowW, windowH, sillY, wallColor, roofColor) {
     const group = new THREE.Group();
     const wallMat = new THREE.MeshStandardMaterial({ color: wallColor });
@@ -1637,12 +1638,14 @@ function buildGateArea() {
     return group;
 }
 
-// Hus- og låve-området: øst for rullebanen, med vindusåpninger store nok til at selv Stor-flyet
-// (vingespenn 3.4 m) skal ha reell klaring gjennom hver bygning.
+// Garasjeområdet: øst for rullebanen, med vindusåpninger store nok til at selv Stor-flyet
+// (vingespenn 3.5 m) skal ha reell klaring gjennom hver garasje. "Ikke kall det låver og hus. kall det
+// garasjer" (brukeren) - het tidligere "Hus- og låve-området" med barn1/house1/barn2 (se
+// buildOpenBuilding).
 const BUILDING_AREA_X = RUNWAY_WIDTH / 2 + 60;
 
-// Pusher byggets kollisjonsgeometri inn i buildingCollisionData (se dens egen kommentar) - kalt for hvert
-// bygg RETT ETTER group.position/rotation.y er satt, slik at kollisjonsdataen aldri kan drifte fra den
+// Pusher garasjens kollisjonsgeometri inn i buildingCollisionData (se dens egen kommentar) - kalt for hver
+// garasje RETT ETTER group.position/rotation.y er satt, slik at kollisjonsdataen aldri kan drifte fra den
 // faktiske, synlige plasseringen (samme prinsipp som treeCollisionPoints).
 function registerBuildingCollision(buildingGroup, width, height, depth, windowW, windowH, sillY) {
     buildingCollisionData.push({
@@ -1652,23 +1655,23 @@ function registerBuildingCollision(buildingGroup, width, height, depth, windowW,
 }
 function buildBuildingArea() {
     const group = new THREE.Group();
-    const barn1 = buildOpenBuilding(9, 8, 12, 6, 6, 1.6, 0xa1352b, 0x3a3a3a);
-    barn1.position.set(BUILDING_AREA_X, 0, RUNWAY_NEAR_Z - 40);
-    barn1.rotation.y = THREE.MathUtils.degToRad(15);
-    group.add(barn1);
-    registerBuildingCollision(barn1, 9, 8, 12, 6, 6, 1.6);
+    const garage1 = buildOpenBuilding(9, 8, 12, 6, 6, 1.6, 0xa1352b, 0x3a3a3a);
+    garage1.position.set(BUILDING_AREA_X, 0, RUNWAY_NEAR_Z - 40);
+    garage1.rotation.y = THREE.MathUtils.degToRad(15);
+    group.add(garage1);
+    registerBuildingCollision(garage1, 9, 8, 12, 6, 6, 1.6);
 
-    const house1 = buildOpenBuilding(8, 6.5, 9, 5.5, 5.5, 1.3, 0xd8c9a0, 0x5a3a2a);
-    house1.position.set(BUILDING_AREA_X + 8, 0, RUNWAY_NEAR_Z - 120);
-    house1.rotation.y = THREE.MathUtils.degToRad(-12);
-    group.add(house1);
-    registerBuildingCollision(house1, 8, 6.5, 9, 5.5, 5.5, 1.3);
+    const garage2 = buildOpenBuilding(8, 6.5, 9, 5.5, 5.5, 1.3, 0xd8c9a0, 0x5a3a2a);
+    garage2.position.set(BUILDING_AREA_X + 8, 0, RUNWAY_NEAR_Z - 120);
+    garage2.rotation.y = THREE.MathUtils.degToRad(-12);
+    group.add(garage2);
+    registerBuildingCollision(garage2, 8, 6.5, 9, 5.5, 5.5, 1.3);
 
-    const barn2 = buildOpenBuilding(9, 8, 12, 6, 6, 1.6, 0xa1352b, 0x3a3a3a);
-    barn2.position.set(BUILDING_AREA_X - 4, 0, RUNWAY_NEAR_Z - 200);
-    barn2.rotation.y = THREE.MathUtils.degToRad(8);
-    group.add(barn2);
-    registerBuildingCollision(barn2, 9, 8, 12, 6, 6, 1.6);
+    const garage3 = buildOpenBuilding(9, 8, 12, 6, 6, 1.6, 0xa1352b, 0x3a3a3a);
+    garage3.position.set(BUILDING_AREA_X - 4, 0, RUNWAY_NEAR_Z - 200);
+    garage3.rotation.y = THREE.MathUtils.degToRad(8);
+    group.add(garage3);
+    registerBuildingCollision(garage3, 9, 8, 12, 6, 6, 1.6);
 
     return group;
 }
@@ -2072,7 +2075,7 @@ function buildFactory() {
     return group;
 }
 
-// Liten by et godt stykke øst for hus-/låve-området (utenfor rekkevidde for gjennomflyging) - gir
+// Liten by et godt stykke øst for garasjeområdet (utenfor rekkevidde for gjennomflyging) - gir
 // simulatoren mye mer å se på i overflyging/navigasjonstrening, ikke bare rullebanen og noen få trær.
 //
 // Nabolaget er lagt opp som en ringvei med husene langs utsiden - ikke tilfeldig spredte punkt bundet
@@ -6170,10 +6173,23 @@ const WINDSOCK_COLLISION_HEIGHT_M = 7.3; // vindpølsestolpens høyde (se Sim.bu
 // "Legg inn registrering av kollisjon på de store bygningene/låvene som kan flys gjennom" (brukeren) - se
 // buildingCollisionData-kommentaren for hvorfor byggene trenger sin egen, mer detaljerte sjekk enn
 // tre-/vindpølse-sløyfene over (solid vegg vs. gjennomflygingsåpning, ikke bare "innenfor radius").
-// Margin rundt selve veggflaten et treff registreres innenfor - flyets egen vingespenn/kropps-utstrekning
-// fanges ikke opp av det rene posisjonspunktet (samme forenkling som treet/vindpølse-sjekkene over), så en
-// nulltykkelse-sjekk ville latt vingetuppene glitche gjennom mens senterpunktet så vidt klarer seg.
-const BUILDING_WALL_HIT_MARGIN_M = 0.9;
+// Margin rundt selve veggflaten (og krymping av selve vindusåpningen, se throughWindow under) et treff
+// registreres innenfor - flyets egen vingespenn fanges ikke opp av det rene posisjonspunktet (samme
+// forenkling som treet/vindpølse-sjekkene over), så en nulltykkelse-sjekk ville latt vingetuppene glitche
+// gjennom mens senterpunktet så vidt klarer seg.
+// BUG (brukeren: "fløy gjenom åpningene, litt nærme men var ikke borti. og det ble registrert kollisjon")
+// - var tidligere ÉN FAST konstant (0.9 m) uansett hvilken flyklasse som faktisk fløy. Heewing (VTOL_CLASSES
+// sitt wingSpan 1.2 m) har et HALVT vingespenn på kun 0,6 m - langt under den faste 0,9 m-marginen - så en
+// reell, trygg passering nær vinduskanten (vingetuppen fortsatt over en halv meter fra karmen) ble
+// feilaktig behandlet som et treff, fordi marginen krympet den EFFEKTIVE åpningen langt mer enn Heewings
+// EGNE, faktiske vingetupper noensinne krever. Byttet fra én felles konstant til en funksjon av DEN
+// AKTUELLE flyklassens halve vingespenn (currentPlaneSpec(), se checkVtolBuildingCollision) - fortsatt
+// samme bruk tre steder (vegg-nærhet + vindus-krymping), men nå proporsjonalt med flyet som faktisk flys i
+// stedet for én upresis, for stor konstant for de minste flyene (og potensielt for LITEN for det største,
+// Stor-klassens 3,5 m vingespenn/1,75 m halvt vingespenn).
+function buildingWallHitMargin() {
+    return currentPlaneSpec().wingSpan / 2;
+}
 // "pass på kollisjon i bygningene... det registreres krasj, men heewingen glitcher fortsatt rett gjennom
 // veggene" (brukeren) - triggerCrash() (kalt under ved et veggtreff) setter riktignok crashed=true
 // (derav "registreres"), MEN gjør ALDRI noe med selve POSISJONEN, og reduserer farten kun med den
@@ -6191,11 +6207,12 @@ const BUILDING_WALL_HIT_MARGIN_M = 0.9;
 // hardt farten kuttes ETTERPÅ.
 const BUILDING_HIT_VELOCITY_KEEP_FRAC = 0.04;
 function checkVtolBuildingCollision(px, py, pz) {
+    const margin = buildingWallHitMargin();
     for (let i = 0; i < buildingCollisionData.length; i++) {
         const b = buildingCollisionData[i];
         const dx = px - b.x, dz = pz - b.z;
         // Bred fase - for langt unna til å overlappe bygget i det hele tatt.
-        if (Math.hypot(dx, dz) > Math.hypot(b.width, b.depth) / 2 + BUILDING_WALL_HIT_MARGIN_M + 1) continue;
+        if (Math.hypot(dx, dz) > Math.hypot(b.width, b.depth) / 2 + margin + 1) continue;
         // Roter verdens-XZ inn i byggets eget lokale rom (rotY = group.rotation.y, se
         // registerBuildingCollision) - samme "child peker langs egen akse, verden roteres om Y"-prinsipp
         // resten av filen bruker (se f.eks. relativeBearingText i js/simulator-vtol-exercises.js).
@@ -6209,7 +6226,7 @@ function checkVtolBuildingCollision(px, py, pz) {
         }
         // Sideveggene (lokal x=±width/2) er HELE - ingen åpning, i motsetning til front-/bakveggen.
         if (Math.abs(lz) <= b.depth / 2 &&
-            (Math.abs(Math.abs(lx) - b.width / 2) <= BUILDING_WALL_HIT_MARGIN_M)) {
+            (Math.abs(Math.abs(lx) - b.width / 2) <= margin)) {
             triggerCrash();
             stopVtolAtBuildingWall(b, cos, sin, Math.sign(lx || 1) * b.width / 2, lz);
             return;
@@ -6218,9 +6235,9 @@ function checkVtolBuildingCollision(px, py, pz) {
         // (se buildOpenBuilding sin windowWall) - kun et treff hvis punktet er nær veggflaten OG UTENFOR
         // åpningen.
         if (Math.abs(lx) <= b.width / 2 &&
-            Math.abs(Math.abs(lz) - b.depth / 2) <= BUILDING_WALL_HIT_MARGIN_M) {
-            const throughWindow = Math.abs(lx) <= b.windowW / 2 - BUILDING_WALL_HIT_MARGIN_M &&
-                py >= b.sillY + BUILDING_WALL_HIT_MARGIN_M && py <= b.sillY + b.windowH - BUILDING_WALL_HIT_MARGIN_M;
+            Math.abs(Math.abs(lz) - b.depth / 2) <= margin) {
+            const throughWindow = Math.abs(lx) <= b.windowW / 2 - margin &&
+                py >= b.sillY + margin && py <= b.sillY + b.windowH - margin;
             if (!throughWindow) {
                 triggerCrash();
                 stopVtolAtBuildingWall(b, cos, sin, lx, Math.sign(lz || 1) * b.depth / 2);
@@ -6280,8 +6297,22 @@ function checkVtolGateCollision(px, py, pz) {
     }
 }
 function checkVtolObstacleCollision() {
-    if (planeState.crashed) return;
     const px = planeState.position.x, pz = planeState.position.z, py = planeState.position.y;
+    // BUG (brukeren: "etter krasj i veggen i garasjen glitcher flyet inn i veggen. skal ikke tillate
+    // glitching gjennom objekter") - checkVtolBuildingCollision (og dermed stopVtolAtBuildingWall, som
+    // aktivt klemmer POSISJONEN tilbake til akkurat utenfor veggflaten) ble tidligere hoppet HELT over så
+    // snart planeState.crashed var satt (det gamle "if (planeState.crashed) return" tidligst i denne
+    // funksjonen dekket ALT under, bygninger inkludert). Restfarten (kun 4% igjen, se
+    // BUILDING_HIT_VELOCITY_KEEP_FRAC, men ALDRI ytterligere dempet i selve krasj-fysikk-grenen i
+    // stepPhysics utenom bakkefriksjon - se der) fikk dermed lov til å fortsette å integrere posisjonen
+    // videre INN i/gjennom veggen tick etter tick, helt uhindret, akkurat som bakken ville gjort UTEN
+    // resolveGroundContact sin egen kontinuerlige, krasj-uavhengige tilbakedytting. Bygnings-sjekken kjøres
+    // derfor nå ALLTID (også etter krasj) - triggerCrash() selv er idempotent (se dens egen tidlige
+    // "if (planeState.crashed) return"), så det er trygt å kalle den på nytt her uansett tilstand; det er
+    // repeterte kall til stopVtolAtBuildingWall (posisjons-/fartsklemmingen) som faktisk holder flyet ute
+    // av veggen kontinuerlig, samme prinsipp som resolveGroundContact allerede bruker mot bakken.
+    checkVtolBuildingCollision(px, py, pz);
+    if (planeState.crashed) return;
     for (let i = 0; i < treeCollisionPoints.length; i++) {
         const t = treeCollisionPoints[i];
         if (py > t.h) continue;
@@ -6292,7 +6323,6 @@ function checkVtolObstacleCollision() {
         if (py > WINDSOCK_COLLISION_HEIGHT_M) continue;
         if (Math.hypot(px - pos.x, pz - pos.z) <= WINDSOCK_COLLISION_RADIUS_M) { triggerCrash(); return; }
     }
-    checkVtolBuildingCollision(px, py, pz);
     checkVtolGateCollision(px, py, pz);
 }
 
