@@ -237,6 +237,28 @@ const MC_WAKE_TURB_PITCH_MAX_RAD_S2 = 0.9;
 const MC_WAKE_TURB_YAW_MAX_RAD_S2 = 0.6;       // svakest - reaksjonsmoment, ikke direkte løfteasymmetri
 const _wakeTurbulence = new THREE.Vector3();
 const _wakeTurbulenceTarget = new THREE.Vector3();
+// "luftturbulens i vind... men ikke ta for mye i heller" (brukeren) - generell luft-"kult" i marsjflyging,
+// HELT UAVHENGIG av bakkenærhet/nedvask-aktivitet (groundTurbulence/wakeTurbulence over er begge kun
+// aktive nær bakken/ved raskt synk) - i motsetning til de to er denne proporsjonal med selve AMBIENT
+// VINDSTYRKEN (currentWindVector), samme "target + lerp"-rotasjonelle jitter-mønster. Reflekterer at en
+// jevn luftstrøm ALDRI er helt jevn i praksis, selv langt fra bakken/hindringer - Sim.computeWind sin egen
+// gust-modellering dekker allerede den lavfrekvente, retningsbestemte vind-VARIASJONEN; dette legger bare
+// til den høyfrekvente "ujevnheten" oppå, som en egen, uavhengig forstyrrelse. Bevisst svak øvre grense og
+// KUN rotasjonell jitter (ingen egen translasjonell kraft) for å holde det beskjedent, som bedt om.
+const AMBIENT_TURB_REF_WIND_MS = 12; // vindstyrke (m/s) der ambient turbulens når full styrke
+const AMBIENT_TURB_MAX_RAD_S2 = 0.35;
+const _ambientTurbulence = new THREE.Vector3();
+const _ambientTurbulenceTarget = new THREE.Vector3();
+// Le-turbulens bak garasjene (buildingCollisionData, se registerBuildingCollision) - et jevnt vindkast som
+// treffer en stor, blokkformet bygning skaper virvlende, urolig luft rett bak den (le-siden), samme
+// erfaring ekte piloter har flyging nær hus/tregrupper i vind ("kan det være realisme i forhold til
+// turbulens på lesider av objekter?", brukeren). Se buildingWakeTurbulenceStrength (rett før
+// checkVtolBuildingCollision) for selve geometrien - bevisst begrenset til KUN garasjene, se dens egen
+// kommentar for avgrensningen (trærne/landemerkene, og hvorfor oppvind på lo-siden av fjell er UTENFOR
+// hva denne simulatoren kan modellere).
+const BUILDING_WAKE_TURB_MAX_RAD_S2 = 0.6;
+const _buildingWakeTurbulence = new THREE.Vector3();
+const _buildingWakeTurbulenceTarget = new THREE.Vector3();
 // "Den vil også lage mer turbulens der i hover og flyte litt mer rundt" (brukeren) - nedvasken som
 // rekylerer av bakken gir en urolig, roterende luftstrøm rundt farkosten selv, IKKE bare mer effektivt
 // løft. Enkel, lavpass-filtrert ("mean-reverting") random walk - IKKE ekte turbulens-fysikk, se
@@ -1113,6 +1135,10 @@ function resetVtolState() {
     _appliedCollectiveThrust = 0;
     _wakeTurbulence.set(0, 0, 0);
     _wakeTurbulenceTarget.set(0, 0, 0);
+    _ambientTurbulence.set(0, 0, 0);
+    _ambientTurbulenceTarget.set(0, 0, 0);
+    _buildingWakeTurbulence.set(0, 0, 0);
+    _buildingWakeTurbulenceTarget.set(0, 0, 0);
 }
 function isQMode(mode) { return mode === "qstabilize" || mode === "qhover" || mode === "qloiter" || mode === "qacro"; }
 // "pass på at det ikke er mulig å styre simulatoren i bakgrunnen mens quizen er åpen"/"når diplomet er
@@ -5325,6 +5351,42 @@ function stepPhysics(dt) {
     planeState.angularVelocity.pitch += _wakeTurbulence.y * dt;
     planeState.angularVelocity.yaw += _wakeTurbulence.z * dt;
 
+    // Ambient luft-"kult" i vind (se AMBIENT_TURB_MAX_RAD_S2-kommentaren) - samme "onGround"-unntak som
+    // groundTurbulence/wakeTurbulence over: en farkost med vekten på beina/hjulene skal ikke ristes av
+    // luftvirvler i det hele tatt (kontaktkreftene i resolveGroundContact dominerer, se BUG-kommentaren ved
+    // groundTurbulenceStrength for samme resonnement/tidligere feil).
+    const ambientWindSpeed = currentWindVector.length();
+    const ambientTurbStrength = planeState.onGround ? 0 : clamp(ambientWindSpeed / AMBIENT_TURB_REF_WIND_MS, 0, 1);
+    _ambientTurbulenceTarget.set(
+        (Math.random() * 2 - 1) * AMBIENT_TURB_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * AMBIENT_TURB_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * AMBIENT_TURB_MAX_RAD_S2
+    ).multiplyScalar(ambientTurbStrength);
+    // Tregere/mykere lerp (dt*2) enn nedvask-turbulensen (dt*5) - jevnt "kult" i marsjfart svinger langsommere
+    // enn rotorvirvler.
+    _ambientTurbulence.lerp(_ambientTurbulenceTarget, Math.min(1, dt * 2));
+    planeState.angularVelocity.roll += _ambientTurbulence.x * dt;
+    planeState.angularVelocity.pitch += _ambientTurbulence.y * dt;
+    planeState.angularVelocity.yaw += _ambientTurbulence.z * dt * 0.5; // svakere på gir, samme begrunnelse som groundTurbulence
+
+    // Le-turbulens bak garasjene (se buildingWakeTurbulenceStrength/BUILDING_WAKE_TURB_MAX_RAD_S2) - krever
+    // reell vind (ellers er windDirX/-Z meningsløse) OG at flyet faktisk henger i luften.
+    let buildingWakeStrength = 0;
+    if (!planeState.onGround && ambientWindSpeed > 0.5) {
+        const windDirX = currentWindVector.x / ambientWindSpeed, windDirZ = currentWindVector.z / ambientWindSpeed;
+        buildingWakeStrength = buildingWakeTurbulenceStrength(planeState.position.x, planeState.position.y, planeState.position.z, windDirX, windDirZ)
+            * clamp(ambientWindSpeed / AMBIENT_TURB_REF_WIND_MS, 0, 1);
+    }
+    _buildingWakeTurbulenceTarget.set(
+        (Math.random() * 2 - 1) * BUILDING_WAKE_TURB_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * BUILDING_WAKE_TURB_MAX_RAD_S2,
+        (Math.random() * 2 - 1) * BUILDING_WAKE_TURB_MAX_RAD_S2
+    ).multiplyScalar(buildingWakeStrength);
+    _buildingWakeTurbulence.lerp(_buildingWakeTurbulenceTarget, Math.min(1, dt * 4)); // mer kastevind-aktig enn ambient chop
+    planeState.angularVelocity.roll += _buildingWakeTurbulence.x * dt;
+    planeState.angularVelocity.pitch += _buildingWakeTurbulence.y * dt;
+    planeState.angularVelocity.yaw += _buildingWakeTurbulence.z * dt * 0.5;
+
     const accel = new THREE.Vector3().add(thrustVec).add(liftVec).add(dragVec).add(gravityVec).add(liftMotorThrustVec).multiplyScalar(1 / spec.mass);
 
     // Bakkeeffekt-turbulens (se MC_GROUND_TURB_ACCEL_MAX-kommentaren) - kun merkbar når det faktisk ER
@@ -6189,6 +6251,36 @@ const WINDSOCK_COLLISION_HEIGHT_M = 7.3; // vindpølsestolpens høyde (se Sim.bu
 // Stor-klassens 3,5 m vingespenn/1,75 m halvt vingespenn).
 function buildingWallHitMargin() {
     return currentPlaneSpec().wingSpan / 2;
+}
+// Le-turbulens bak garasjene (se BUILDING_WAKE_TURB_MAX_RAD_S2-kommentaren for bakgrunnen/avgrensningen) -
+// enkel, lineær "vifte" nedvinds for hver garasje i stedet for en presis virveldynamikk-simulering ("men
+// ikke ta for mye i heller", brukeren): sterkest rett bak selve bygget, avtar mot slutten av vaiken og mot
+// kantene av den. windDirX/windDirZ MÅ være enhetsvektoren PEKENDE MED vinden (samme retning luften faktisk
+// beveger seg, ikke "vinden kommer fra") - kalleren (stepPhysics) har allerede denne fra currentWindVector.
+// Returnerer 0..1 (høyeste styrke over alle garasjer flyet er i vaiken til, ikke summen - å stå i vaien av
+// to garasjer samtidig skal ikke gi DOBBELT så mye turbulens som én).
+function buildingWakeTurbulenceStrength(px, py, pz, windDirX, windDirZ) {
+    let strength = 0;
+    for (let i = 0; i < buildingCollisionData.length; i++) {
+        const b = buildingCollisionData[i];
+        const dx = px - b.x, dz = pz - b.z;
+        // Downwind-avstand (langs vindretningen, fra byggets senter) og sideveis avvik fra vaiens
+        // senterlinje (90° på vindretningen).
+        const downwind = dx * windDirX + dz * windDirZ;
+        const crosswind = -dx * windDirZ + dz * windDirX;
+        const halfSize = Math.max(b.width, b.depth) / 2;
+        const wakeStart = halfSize * 0.3; // like bak selve veggflaten, ikke midt INNI bygget
+        const wakeEnd = halfSize * 6;     // hvor langt le-turbulensen strekker seg nedvinds
+        if (downwind < wakeStart || downwind > wakeEnd) continue;
+        if (py > b.height * 1.3) continue; // over selve virvelsonen (litt høyere enn mønet, ikke helt flat)
+        // Vaiken utvider seg gradvis nedover vindretningen - enkel lineær vifte.
+        const wakeHalfWidth = halfSize * (0.6 + 0.5 * (downwind - wakeStart) / (wakeEnd - wakeStart));
+        if (Math.abs(crosswind) > wakeHalfWidth) continue;
+        const along = 1 - (downwind - wakeStart) / (wakeEnd - wakeStart);
+        const lateral = 1 - Math.abs(crosswind) / wakeHalfWidth;
+        strength = Math.max(strength, along * lateral);
+    }
+    return strength;
 }
 // "pass på kollisjon i bygningene... det registreres krasj, men heewingen glitcher fortsatt rett gjennom
 // veggene" (brukeren) - triggerCrash() (kalt under ved et veggtreff) setter riktignok crashed=true
