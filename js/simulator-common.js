@@ -552,7 +552,7 @@
     }
 
     // Bygger kanal-mapping-rader (akse-valg + reverser) for et sett kanaler, f.eks.
-    // { throttle:"Gass", roll:"Roll", pitch:"Pitch", yaw:"Yaw" } eller aileron/elevator/rudder-varianten.
+    // { throttle:"Throttle", roll:"Roll", pitch:"Pitch", yaw:"Yaw" } eller aileron/elevator/rudder-varianten.
     function buildGamepadChannelsGrid(gridEl, channelMap, channelLabels, axisCount, onChange) {
         gridEl.innerHTML = "";
         Object.keys(channelLabels).forEach(function (channel) {
@@ -811,7 +811,13 @@
     // TIL SPILLET (etter reverse/skalering, se readStickAxis/readThrottleAxis) for kanaler som er mappet
     // til roll/pitch/yaw/gass - uten denne kunne man se rå kanalverdien endre seg, men ikke om/hvordan
     // f.eks. "Kalibrer fullt utslag" faktisk endret det programmet mottar.
-    function updateGamepadAxesReadout(readoutEl, gp, minChannels, outputByAxis) {
+    // includeButtons (default true): slå av for å legge knappe-status-linjene et HELT ANNET sted i DOM-en
+    // i stedet for som en hale på kanal-avlesningen her - se appendGamepadButtonsReadout/
+    // updateGamepadButtonsReadout under (brukt av fjernkontroll-oppsett-veiviseren, som plasserer
+    // "Kalibrer fullt utslag"-knappen MELLOM kanal-avlesningen og knappe-listen, brukeren: "kalibrer fullt
+    // utslag knappen bør være under kanal listen og over knappelisten").
+    function updateGamepadAxesReadout(readoutEl, gp, minChannels, outputByAxis, includeButtons) {
+        if (includeButtons === undefined) includeButtons = true;
         if (!gp) {
             readoutEl.textContent = "Ingen fjernkontroll/gamepad tilkoblet.";
             return;
@@ -839,20 +845,147 @@
             }
             readoutEl.appendChild(line);
         }
-        if (gp.buttons.length > 0) {
-            const heading = document.createElement("div");
-            heading.style.cssText = "margin-top:6px; font-weight:700;";
-            heading.textContent = "Knapper";
-            readoutEl.appendChild(heading);
-            for (let i = 0; i < gp.buttons.length; i++) {
-                const btn = gp.buttons[i];
-                const active = btn.pressed || btn.value > 0.05;
-                const line = document.createElement("div");
-                if (active) line.style.color = "#ffd76b";
-                line.textContent = "Knapp " + i + ": " + btn.value.toFixed(2) + (active ? " (aktiv)" : "");
-                readoutEl.appendChild(line);
-            }
+        if (includeButtons) appendGamepadButtonsReadout(readoutEl, gp);
+    }
+
+    // Rendrer knappe-status-linjene ("Knapper"-overskrift + én linje per knapp) INN I et allerede
+    // eksisterende avlesnings-element, UTEN å tømme det først - gjenbrukt som halen av
+    // updateGamepadAxesReadout sin kombinerte visning over (Settings sitt faste gamepadPanel) OG av
+    // updateGamepadButtonsReadout under (en HELT EGEN, frittstående knappe-liste et annet sted i DOM-en).
+    function appendGamepadButtonsReadout(readoutEl, gp) {
+        if (gp.buttons.length === 0) return;
+        const heading = document.createElement("div");
+        heading.style.cssText = "margin-top:6px; font-weight:700;";
+        heading.textContent = "Knapper";
+        readoutEl.appendChild(heading);
+        for (let i = 0; i < gp.buttons.length; i++) {
+            const btn = gp.buttons[i];
+            const active = btn.pressed || btn.value > 0.05;
+            const line = document.createElement("div");
+            if (active) line.style.color = "#ffd76b";
+            line.textContent = "Knapp " + i + ": " + btn.value.toFixed(2) + (active ? " (aktiv)" : "");
+            readoutEl.appendChild(line);
         }
+    }
+
+    // Frittstående knappe-status-liste i et EGET element (se appendGamepadButtonsReadout over) - brukt av
+    // fjernkontroll-oppsett-veiviseren for å plassere den lenger ned enn kanal-avlesningen/kalibrerings-
+    // knappen, i stedet for som en hale på samme avlesningselement. gp === null/undefined: tømmer bare
+    // (ingen "Ingen tilkoblet"-tekst her - kanal-avlesningen ved siden av viser allerede den meldingen).
+    function updateGamepadButtonsReadout(readoutEl, gp) {
+        readoutEl.innerHTML = "";
+        if (gp) appendGamepadButtonsReadout(readoutEl, gp);
+    }
+
+    // Fjernkontroll-oppsett-veiviser: dukker opp AUTOMATISK første gang en gamepad oppdages på siden (se
+    // maybeAutoOpen under - kalt fra "gamepadconnected" og fra det tilkoblet-ved-sideoppstart-sjekket,
+    // begge i hver simulators DOMContentLoaded-blokk) - i TILLEGG til, ikke i stedet for, det faste
+    // gamepadPanel-et i Settings (som fortsatt kan brukes til å justere oppsettet senere når som helst).
+    // Egen, frittstående DOM (eget grid/readout, IKKE de samme elementene som Settings sitt gamepadPanel)
+    // - "Avbryt" må kunne rulle tilbake ENDRINGER GJORT I VEIVISEREN spesifikt uten å bry seg om et
+    // samtidig åpent Settings-panel. Dekker kun selve kanal-mappingen (akse/reverser/skalering) - IKKE
+    // knappemapping (kill/moduser), som fortsatt kun settes opp i det faste gamepadPanel-et (VTOL har i
+    // tillegg sin egen tekst-veiviser for modus-/kill-binding, "øvelse 0" i simulator-vtol-exercises.js).
+    // opts: { storageKey, backdropEl, gridEl, readoutEl, buttonsReadoutEl (valgfri), calibrateBtnEl,
+    //         calibrateStatusEl, saveBtnEl, cancelBtnEl, gamepadMap, channelLabels, calibrationChannels,
+    //         axisCalibrationManager, getActiveGamepad, saveGamepadMap, minChannels, onClose(reason) }
+    // readoutEl/buttonsReadoutEl er to ADSKILTE elementer (ikke ett kombinert, som Settings sitt faste
+    // gamepadPanel bruker) - kanal-avlesningen og knappe-status-listen skal kunne plasseres HVER SIN
+    // side av kalibrerings-knappen i markup-en (brukeren: "kalibrer fullt utslag knappen bør være under
+    // kanal listen og over knappelisten"), se updateReadout under.
+    // axisCalibrationManager: SAMME instans simulatoren allerede poller hvert bilde (se
+    // createAxisCalibrationManager over) - veiviseren trigger bare start()/leser status på den, ikke en
+    // egen konkurrerende kopi.
+    function buildGamepadCalibrationWizard(opts) {
+        function hasBeenSeen() {
+            try { return localStorage.getItem(opts.storageKey) === "1"; } catch (e) { return false; }
+        }
+        function markSeen() {
+            try { localStorage.setItem(opts.storageKey, "1"); } catch (e) {}
+        }
+
+        let snapshot = null;
+        let calibrateTick = null;
+        let opened = false;
+
+        function refreshGrid() {
+            const gp = opts.getActiveGamepad();
+            const axisCount = Math.max((gp && gp.axes.length) || 0, opts.minChannels);
+            buildGamepadChannelsGrid(opts.gridEl, opts.gamepadMap, opts.channelLabels, axisCount, opts.saveGamepadMap);
+        }
+
+        function stopCalibrateTick() {
+            if (calibrateTick) { clearInterval(calibrateTick); calibrateTick = null; }
+        }
+
+        function close() {
+            opened = false;
+            stopCalibrateTick();
+            opts.backdropEl.style.display = "none";
+        }
+
+        function open() {
+            if (opened) return;
+            opened = true;
+            // Fanget FØR brukeren rekker å endre noe - gjenopprettes hvis "Avbryt" trykkes (se under).
+            snapshot = {};
+            opts.calibrationChannels.forEach(function (ch) { snapshot[ch] = Object.assign({}, opts.gamepadMap[ch]); });
+            refreshGrid();
+            opts.calibrateStatusEl.textContent = "";
+            opts.calibrateBtnEl.disabled = false;
+            opts.backdropEl.style.display = "flex";
+        }
+
+        opts.calibrateBtnEl.addEventListener("click", function () {
+            const gp = opts.getActiveGamepad();
+            if (!gp) { opts.calibrateStatusEl.textContent = "Ingen fjernkontroll tilkoblet."; return; }
+            opts.calibrateBtnEl.disabled = true;
+            opts.axisCalibrationManager.start();
+            stopCalibrateTick();
+            calibrateTick = setInterval(function () {
+                if (opts.axisCalibrationManager.isActive()) {
+                    opts.calibrateStatusEl.textContent =
+                        "Beveg alle spakene helt ut til ytterpunktene... " + Math.ceil(opts.axisCalibrationManager.remainingMs() / 1000) + " s";
+                } else {
+                    opts.calibrateStatusEl.textContent = "Kalibrert!";
+                    opts.calibrateBtnEl.disabled = false;
+                    stopCalibrateTick();
+                }
+            }, 150);
+        });
+
+        opts.saveBtnEl.addEventListener("click", function () {
+            markSeen();
+            close();
+            if (opts.onClose) opts.onClose("save");
+        });
+        opts.cancelBtnEl.addEventListener("click", function () {
+            // Ruller kun tilbake akse/reverser/skalering fanget ved open() - IKKE et fullt reset til
+            // fabrikkoppsett (se resetGamepadMapBtn-knappen i selve Settings-panelet for det).
+            opts.calibrationChannels.forEach(function (ch) { Object.assign(opts.gamepadMap[ch], snapshot[ch]); });
+            opts.saveGamepadMap();
+            markSeen();
+            close();
+            if (opts.onClose) opts.onClose("cancel");
+        });
+
+        return {
+            // gp: gamepaden som nettopp koblet til (eller ble funnet ved sideoppstart) - null/undefined
+            // gjør ingenting. Åpner ALDRI på nytt i samme side-økt etter Lagre/Avbryt (hasBeenSeen), og
+            // aldri to ganger samtidig (opened) - f.eks. hvis to enheter kobles til rett etter hverandre.
+            maybeAutoOpen: function (gp) {
+                if (!gp || opened || hasBeenSeen()) return;
+                open();
+            },
+            updateReadout: function (gp, outputByAxis) {
+                if (!opened) return;
+                // includeButtons=false: knappe-statusen vises i sitt eget element LENGER NED (etter
+                // kalibrerings-knappen, se opts.buttonsReadoutEl) i stedet for som en hale her.
+                updateGamepadAxesReadout(opts.readoutEl, gp, opts.minChannels, outputByAxis, false);
+                if (opts.buttonsReadoutEl) updateGamepadButtonsReadout(opts.buttonsReadoutEl, gp);
+            },
+            isOpen: function () { return opened; }
+        };
     }
 
     /* ---------- Vind (stabil + kast) ---------- */
@@ -1378,7 +1511,13 @@
             if (m !== exceptEl) m.classList.remove("open");
         });
         document.querySelectorAll(".sim-panel").forEach(function (p) {
-            if (p !== exceptEl && p.style.display !== "none") p.style.display = "none";
+            // .sim-panel-modal-backdrop-paneler (fjernkontroll-oppsett-veiviseren, se
+            // buildGamepadCalibrationWizard) styrer sin egen åpen/lukket-tilstand selv via Lagre/Avbryt -
+            // uten dette unntaket ville et klikk ETT ANNET sted i UI-et (eller et klikk på selve den mørke
+            // bakgrunnen bak veiviseren - se document-click-lytteren nederst i filen, som også går via
+            // denne funksjonen) skjult PANELET mens den mørke bakgrunnen ble stående synlig og fast igjen,
+            // helt tom og uten noen måte å komme seg ut av den på.
+            if (p !== exceptEl && !p.closest(".sim-panel-modal-backdrop") && p.style.display !== "none") p.style.display = "none";
         });
     }
     function togglePanel(panel) {
@@ -1475,6 +1614,8 @@
         buildGamepadButtonsGrid: buildGamepadButtonsGrid,
         buildGamepadKillGrid: buildGamepadKillGrid,
         updateGamepadAxesReadout: updateGamepadAxesReadout,
+        updateGamepadButtonsReadout: updateGamepadButtonsReadout,
+        buildGamepadCalibrationWizard: buildGamepadCalibrationWizard,
         computeWind: computeWind,
         buildGradientSky: buildGradientSky,
         buildGroundTexture: buildGroundTexture,

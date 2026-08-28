@@ -280,10 +280,15 @@ const MODE_DESCRIPTIONS = {
     loiter: "Som Alt Hold + posisjonsholding (GPS) - slipp stikkene for å bremse opp og holde posisjonen, korrigerer selv for vind opp til ca. " + LOITER_MAX_WIND_SPEED + " m/s (varsel ved mer)."
 };
 const AXIS_LABELS = { roll: "Roll", pitch: "Pitch", yaw: "Yaw" };
-const CHANNEL_LABELS = { roll: "Roll", pitch: "Pitch", yaw: "Yaw", throttle: "Gass" };
+const CHANNEL_LABELS = { roll: "Roll", pitch: "Pitch", yaw: "Yaw", throttle: "Throttle" };
 
 const RATE_STORAGE_KEY = "ffi-uas:simulator-rates";
 const GAMEPAD_STORAGE_KEY = "ffi-uas:simulator-gamepad-map";
+// Har brukeren allerede fått (og lukket, med Lagre ELLER Avbryt) fjernkontroll-oppsett-veiviseren én gang
+// på denne siden - se Sim.buildGamepadCalibrationWizard/maybeAutoOpen. Egen nøkkel PER simulator (ikke
+// delt) - kanal-semantikken (roll/pitch/yaw her, aileron/elevator/rudder på fixed-wing/VTOL) er ulik nok
+// til at "sett opp" på én side ikke bør undertrykke veiviseren på en annen.
+const GAMEPAD_WIZARD_STORAGE_KEY = GAMEPAD_STORAGE_KEY + ":wizard-seen";
 const SETTINGS_STORAGE_KEY = "ffi-uas:simulator-settings";
 
 const DEFAULT_RATES = {
@@ -4607,7 +4612,7 @@ function buildRatesPanel() {
     });
     grid.appendChild(Sim.buildThrottleExpoBox(
         rates.throttle,
-        "Gass",
+        "Throttle",
         "0 = lineær gass. Høyere verdi gir finere kontroll nær midten (rundt hover), mer kraftfull respons ved fullt utslag.",
         saveRates
     ));
@@ -4642,8 +4647,37 @@ function buildGamepadButtonsPanel() {
 
 const gamepadPanelEl = document.getElementById("gamepadPanel");
 const gamepadAxesReadoutEl = document.getElementById("gamepadAxesReadout");
+// Fjernkontroll-oppsett-veiviser (se Sim.buildGamepadCalibrationWizard i simulator-common.js) - dukker
+// opp AUTOMATISK første gang en gamepad oppdages på siden (maybeAutoOpen, kalt fra
+// "gamepadconnected"/oppstartssjekket lenger ned) - i tillegg til, ikke i stedet for, gamepadPanelEl over.
+const gamepadWizard = Sim.buildGamepadCalibrationWizard({
+    storageKey: GAMEPAD_WIZARD_STORAGE_KEY,
+    backdropEl: document.getElementById("gamepadWizardOverlay"),
+    gridEl: document.getElementById("gamepadWizardGrid"),
+    readoutEl: document.getElementById("gamepadWizardReadout"),
+    buttonsReadoutEl: document.getElementById("gamepadWizardButtonsReadout"),
+    calibrateBtnEl: document.getElementById("gamepadWizardCalibrateBtn"),
+    calibrateStatusEl: document.getElementById("gamepadWizardCalibrateStatus"),
+    saveBtnEl: document.getElementById("gamepadWizardSaveBtn"),
+    cancelBtnEl: document.getElementById("gamepadWizardCancelBtn"),
+    gamepadMap: gamepadMap,
+    channelLabels: CHANNEL_LABELS,
+    calibrationChannels: ["throttle", "roll", "pitch", "yaw"],
+    axisCalibrationManager: axisCalibrationManager,
+    getActiveGamepad: getActiveGamepad,
+    saveGamepadMap: saveGamepadMap,
+    minChannels: Sim.MIN_GAMEPAD_CHANNELS,
+    // Får Settings sitt eget gamepadPanel til å reflektere ev. "Avbryt"-tilbakerulling (eller bare en
+    // fersk kalibrering) med det samme, i tilfelle brukeren åpner det rett etter veiviseren.
+    onClose: function () {
+        const pad = getActiveGamepad() || rawFirstGamepad();
+        if (pad) buildGamepadPanel(pad);
+    }
+});
 function updateGamepadAxesReadout(gp) {
-    if (gamepadPanelEl.style.display === "none") return;
+    const mainVisible = gamepadPanelEl.style.display !== "none";
+    const wizardVisible = gamepadWizard.isOpen();
+    if (!mainVisible && !wizardVisible) return;
     const activeGp = gp || getActiveGamepad();
     let outputByAxis = null;
     if (activeGp) {
@@ -4651,13 +4685,16 @@ function updateGamepadAxesReadout(gp) {
         // faktisk gir spillet AKKURAT NÅ (etter reverse/skalering) - se kommentaren ved
         // Sim.updateGamepadAxesReadout.
         outputByAxis = {};
-        outputByAxis[gamepadMap.throttle.axis] = { label: "Gass", value: readThrottleAxis(activeGp, gamepadMap.throttle) };
+        outputByAxis[gamepadMap.throttle.axis] = { label: "Throttle", value: readThrottleAxis(activeGp, gamepadMap.throttle) };
         outputByAxis[gamepadMap.roll.axis] = { label: "Roll", value: readStickAxis(activeGp, gamepadMap.roll) };
         outputByAxis[gamepadMap.pitch.axis] = { label: "Pitch", value: readStickAxis(activeGp, gamepadMap.pitch) };
         outputByAxis[gamepadMap.yaw.axis] = { label: "Yaw", value: readStickAxis(activeGp, gamepadMap.yaw) };
     }
-    Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS, outputByAxis);
-    if (gamepadKillGridHandle) gamepadKillGridHandle.updateLiveStatus(activeGp);
+    if (mainVisible) {
+        Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS, outputByAxis);
+        if (gamepadKillGridHandle) gamepadKillGridHandle.updateLiveStatus(activeGp);
+    }
+    gamepadWizard.updateReadout(activeGp, outputByAxis);
 }
 
 function setGamepadButtonVisible(visible) {
@@ -6604,7 +6641,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const tick = setInterval(function () {
             if (axisCalibrationManager.isActive()) {
                 calibrateAxesStatusEl.textContent =
-                    "Beveg alle spaker til ytterpunktene... " + Math.ceil(axisCalibrationManager.remainingMs() / 1000) + " s";
+                    "Beveg alle spakene helt ut til ytterpunktene... " + Math.ceil(axisCalibrationManager.remainingMs() / 1000) + " s";
             } else {
                 calibrateAxesStatusEl.textContent = "Kalibrert!";
                 btn.disabled = false;
@@ -6808,6 +6845,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("gamepadconnected", function (e) {
         setGamepadButtonVisible(true);
         buildGamepadPanel(e.gamepad);
+        gamepadWizard.maybeAutoOpen(e.gamepad);
     });
     window.addEventListener("gamepaddisconnected", function () {
         if (!rawFirstGamepad()) setGamepadButtonVisible(false);
@@ -6817,6 +6855,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (existingGamepad) {
         setGamepadButtonVisible(true);
         buildGamepadPanel(existingGamepad);
+        gamepadWizard.maybeAutoOpen(existingGamepad);
     }
 
     window.addEventListener("keydown", function (e) {

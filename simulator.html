@@ -14,7 +14,7 @@
          se samme forklaring over. En vanlig omlasting henter samme HTML (som selv aldri caches, se over),
          men uten en ny query-streng her kunne nettleseren likevel gjenbrukt en cachet KOPI av selve
          css/js-filene fra forrige gang de ble lastet med SAMME URL. -->
-    <link rel="stylesheet" href="css/style.css?v=20260821000013">
+    <link rel="stylesheet" href="css/style.css?v=20260828000003">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
@@ -245,6 +245,37 @@
             </div>
         </div>
 
+        <!-- Fjernkontroll-oppsett-veiviser: vises AUTOMATISK første gang en gamepad kobles til på denne
+             siden (per side, se GAMEPAD_STORAGE_KEY + ":wizard-seen" i js/simulator.js) - egen modal i
+             tillegg til det faste "gamepadPanel" over i Settings (som fortsatt kan brukes til å justere
+             oppsettet senere). Se Sim.buildGamepadCalibrationWizard i simulator-common.js. -->
+        <div class="sim-panel-modal-backdrop" id="gamepadWizardOverlay" style="display:none;">
+            <div class="sim-panel" id="gamepadWizardPanel">
+                <div class="sim-panel-header">
+                    <h3><i class="fa-solid fa-gamepad"></i> Fjernkontroll-kalibrering</h3>
+                </div>
+                <div class="sim-panel-modal-body">
+                    <p class="sim-panel-hint" style="margin-top:0;">Vi oppdaget en tilkoblet fjernkontroll. Sjekk at kanalene under styrer riktig stikke i simulatoren, og kalibrer fullt utslag før du flyr.</p>
+                    <div class="sim-rate-grid" id="gamepadWizardGrid"></div>
+                    <p class="sim-panel-hint">Beveg en spak for å se hvilken kanal som endrer seg i tabellen under.</p>
+                    <div id="gamepadWizardReadout" class="sim-axes-readout"></div>
+                    <p class="sim-panel-hint">Ved fullt utslag på stikkene skal verdiene over kunne bevege seg til ytterpunktene -1.00 og 1.00. Hvis de ikke gjør det, må du kalibrere fullt utslag ved å trykke på knappen under.</p>
+                    <div class="sim-rate-row" style="margin-top:10px;">
+                        <button type="button" class="sim-btn sim-btn-primary" id="gamepadWizardCalibrateBtn"
+                            title="For sendere som ikke når helt ut til ±1.0 selv ved fysisk fullt utslag. Trykk, før så ALLE spaker (inkl. gass) helt til alle ytterpunkter noen ganger i løpet av de neste sekundene.">
+                            Kalibrer fullt utslag
+                        </button>
+                        <span class="sim-rate-value" id="gamepadWizardCalibrateStatus" style="flex:1; text-align:left;"></span>
+                    </div>
+                    <div id="gamepadWizardButtonsReadout" class="sim-axes-readout"></div>
+                </div>
+                <div class="sim-panel-actions">
+                    <button type="button" class="sim-btn" id="gamepadWizardCancelBtn">Avbryt</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="gamepadWizardSaveBtn">Lagre oppsett</button>
+                </div>
+            </div>
+        </div>
+
         <div class="sim-panel" id="flightLogPanel" style="display:none; width:min(90vw, 620px);">
             <div class="sim-panel-header">
                 <button type="button" class="sim-panel-back" title="Tilbake"><i class="fa-solid fa-arrow-left"></i></button>
@@ -406,8 +437,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="js/simulator-common.js?v=20260821000013"></script>
-<script src="js/simulator.js?v=20260821000013"></script>
+<script src="js/simulator-common.js?v=20260828000003"></script>
+<script src="js/simulator.js?v=20260828000003"></script>
 <script src="js/simulator-flightlog.js?v=20260821000013"></script>
 </body>
 </html>

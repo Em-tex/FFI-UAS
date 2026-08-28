@@ -155,9 +155,47 @@
             <div class="sim-rate-grid" id="gamepadGrid"></div>
             <p class="sim-panel-hint">Beveg en spak for å se hvilken kanal som endrer seg i tabellen under.</p>
             <div id="gamepadAxesReadout" class="sim-axes-readout"></div>
+            <div class="sim-rate-row">
+                <button type="button" class="sim-btn sim-btn-primary" id="calibrateAxesBtn"
+                    title="For sendere som ikke når helt ut til ±1.0 selv ved fysisk fullt utslag. Trykk, før så ALLE spaker (inkl. gass) helt til alle ytterpunkter noen ganger i løpet av de neste sekundene.">
+                    Kalibrer fullt utslag
+                </button>
+                <span class="sim-rate-value" id="calibrateAxesStatus" style="flex:1; text-align:left;"></span>
+            </div>
             <h3 style="margin-top:16px;">Knappemapping (brytere)</h3>
             <div class="sim-rate-grid" id="gamepadButtonsGrid"></div>
             <p class="sim-panel-hint">Trykk "Sett" og bruk deretter bryteren på senderen - fungerer enten bryteren kommer som en knapp eller som en kanal.</p>
+        </div>
+
+        <!-- Fjernkontroll-oppsett-veiviser: vises AUTOMATISK første gang en gamepad kobles til på denne
+             siden (per side, se GAMEPAD_STORAGE_KEY + ":wizard-seen" i js/simulator-fixedwing.js) - egen
+             modal i tillegg til det faste "gamepadPanel" over i Settings (som fortsatt kan brukes til å
+             justere oppsettet senere). Se Sim.buildGamepadCalibrationWizard i simulator-common.js. -->
+        <div class="sim-panel-modal-backdrop" id="gamepadWizardOverlay" style="display:none;">
+            <div class="sim-panel" id="gamepadWizardPanel">
+                <div class="sim-panel-header">
+                    <h3><i class="fa-solid fa-gamepad"></i> Fjernkontroll-kalibrering</h3>
+                </div>
+                <div class="sim-panel-modal-body">
+                    <p class="sim-panel-hint" style="margin-top:0;">Vi oppdaget en tilkoblet fjernkontroll. Sjekk at kanalene under styrer riktig stikke i simulatoren, og kalibrer fullt utslag før du flyr.</p>
+                    <div class="sim-rate-grid" id="gamepadWizardGrid"></div>
+                    <p class="sim-panel-hint">Beveg en spak for å se hvilken kanal som endrer seg i tabellen under.</p>
+                    <div id="gamepadWizardReadout" class="sim-axes-readout"></div>
+                    <p class="sim-panel-hint">Ved fullt utslag på stikkene skal verdiene over kunne bevege seg til ytterpunktene -1.00 og 1.00. Hvis de ikke gjør det, må du kalibrere fullt utslag ved å trykke på knappen under.</p>
+                    <div class="sim-rate-row" style="margin-top:10px;">
+                        <button type="button" class="sim-btn sim-btn-primary" id="gamepadWizardCalibrateBtn"
+                            title="For sendere som ikke når helt ut til ±1.0 selv ved fysisk fullt utslag. Trykk, før så ALLE spaker (inkl. gass) helt til alle ytterpunkter noen ganger i løpet av de neste sekundene.">
+                            Kalibrer fullt utslag
+                        </button>
+                        <span class="sim-rate-value" id="gamepadWizardCalibrateStatus" style="flex:1; text-align:left;"></span>
+                    </div>
+                    <div id="gamepadWizardButtonsReadout" class="sim-axes-readout"></div>
+                </div>
+                <div class="sim-panel-actions">
+                    <button type="button" class="sim-btn" id="gamepadWizardCancelBtn">Avbryt</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="gamepadWizardSaveBtn">Lagre oppsett</button>
+                </div>
+            </div>
         </div>
 
         <div class="sim-panel" id="helpPanel" style="display:none;">

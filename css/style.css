@@ -1119,6 +1119,63 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 .sim-panel-close:hover {
     background: rgba(3, 71, 127, 0.08);
 }
+/* Fjernkontroll-oppsett-veiviser (Sim.buildGamepadCalibrationWizard, js/simulator-common.js): dukker opp
+   AUTOMATISK første gang en gamepad oppdages på siden - egen, fullskjerms backdrop (samme mønster som
+   .sim-diploma-overlay/.sim-wizard-overlay) i stedet for .sim-panel sin vanlige faste
+   topp-høyre-plassering, slik at et FØRSTEGANGS-oppsett er umulig å overse i stedet for gjemt bak et
+   verktøylinje-panel brukeren ennå ikke vet finnes. Selve innholdet gjenbruker likevel .sim-panel og de
+   vanlige panel-klassene uendret ("i samme stil som menyene", brukeren) - kun plassering/størrelse
+   overstyres under. z-index over diplom-/veiviser-overleggene (10) - kalibrering skal alltid vises øverst
+   om flere skulle stables (bør normalt aldri skje samtidig i praksis).
+   Panelet lukkes KUN via egne Lagre-/Avbryt-knapper (se buildGamepadCalibrationWizard) - IKKE av den
+   generelle closeAllMenus (se unntaket der) eller ved klikk på selve bakgrunnen, som brukeren derfor
+   opplever som et bevisst, "modalt" valg fremfor et vanlig, klikk-utenfor-lukkbart panel. */
+.sim-panel-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none; /* satt til "flex" av JS når veiviseren faktisk åpnes, se buildGamepadCalibrationWizard */
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 11;
+    padding: 16px;
+}
+/* "Kan avbryt og lagre oppsett knappene alltid være synlig på en rad nederst i vinduet så man ikke må
+   scrolle så langt ned?" (brukeren) - .sim-panel sin vanlige oppførsel lar HELE innholdet (header +
+   alt) scrolle som ett - i stedet gjøres selve panelet her om til en fast-høyde flex-kolonne der KUN
+   .sim-panel-modal-body (innholdet mellom header og knapperad) scroller, mens header og knapperad
+   forblir synlige uansett hvor langt ned man har scrollet i innholdet. min-height:0 på body-en er
+   nødvendig for at overflow-y:auto faktisk skal virke inni en flex-kolonne (samme fallgruve som
+   .sim-gamepad-kill-chips over er dokumentert med) - uten den nekter flex-item-et å krympe under sitt
+   eget innholds høyde, og body-en ville i stedet bare presset panelet (og dermed knapperaden) nedover
+   forbi max-height. */
+.sim-panel-modal-backdrop .sim-panel {
+    position: static;
+    width: min(400px, 100%);
+    max-height: min(640px, 90vh);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* kun .sim-panel-modal-body under skal faktisk scrolle, ikke panelet som helhet */
+}
+.sim-panel-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+.sim-panel-modal-backdrop .sim-panel-actions {
+    flex: 0 0 auto;
+    margin-top: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+.sim-panel-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
 .sim-rate-grid {
     display: flex;
     flex-direction: column;

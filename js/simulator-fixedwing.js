@@ -235,10 +235,13 @@ const DEFAULT_PLANE_CLASS = "small";
 
 const MODE_LABELS = { stabilized: "Stabilized", manual: "Manual" };
 const AXIS_LABELS = { aileron: "Aileron", elevator: "Elevator", rudder: "Rudder" };
-const CHANNEL_LABELS = { aileron: "Aileron", elevator: "Elevator", rudder: "Rudder", throttle: "Gass" };
+const CHANNEL_LABELS = { aileron: "Aileron", elevator: "Elevator", rudder: "Rudder", throttle: "Throttle" };
 
 const RATE_STORAGE_KEY = "ffi-uas:fixedwing-rates";
 const GAMEPAD_STORAGE_KEY = "ffi-uas:fixedwing-gamepad-map";
+// Har brukeren allerede fått (og lukket, med Lagre ELLER Avbryt) fjernkontroll-oppsett-veiviseren én gang
+// på denne siden - se Sim.buildGamepadCalibrationWizard/maybeAutoOpen.
+const GAMEPAD_WIZARD_STORAGE_KEY = GAMEPAD_STORAGE_KEY + ":wizard-seen";
 const SETTINGS_STORAGE_KEY = "ffi-uas:fixedwing-settings";
 
 const DEFAULT_RATES = {
@@ -2130,6 +2133,10 @@ const BUTTON_ACTIONS = {
     modeManual: function () { planeState.flightMode = "manual"; }
 };
 const buttonManager = Sim.createButtonBindingManager(gamepadMap.buttons, BUTTON_ACTIONS, saveGamepadMap);
+// Se Sim.createAxisCalibrationManager - fanger opp maks utslag per kanal over et kort tidsvindu
+// ("Kalibrer fullt utslag" i fjernkontroll-panelet, se buildGamepadPanel) for sendere som ikke
+// rapporterer ±1.0 ved fysisk fullt utslag.
+const axisCalibrationManager = Sim.createAxisCalibrationManager(gamepadMap, ["throttle", "aileron", "elevator", "rudder"], saveGamepadMap);
 
 function adjustTrim(dt, gp) {
     let trim = planeState.elevatorTrimDeg;
@@ -2147,6 +2154,7 @@ function updateInput(dt) {
     const gp = getActiveGamepad();
     adjustTrim(dt, gp);
     if (gp) buttonManager.poll(gp);
+    if (gp) axisCalibrationManager.poll(gp);
 
     if (gp) {
         inputState.source = "gamepad";
@@ -2868,7 +2876,7 @@ function buildRatesPanel() {
     });
     grid.appendChild(Sim.buildThrottleExpoBox(
         rates.throttle,
-        "Gass",
+        "Throttle",
         "0 = lineær gass. Høyere verdi gir finere kontroll nær midten, mer kraftfull respons ved fullt utslag.",
         saveRates
     ));
@@ -2896,10 +2904,40 @@ function buildGamepadButtonsPanel() {
 
 const gamepadPanelEl = document.getElementById("gamepadPanel");
 const gamepadAxesReadoutEl = document.getElementById("gamepadAxesReadout");
+// Fjernkontroll-oppsett-veiviser (se Sim.buildGamepadCalibrationWizard i simulator-common.js) - dukker
+// opp AUTOMATISK første gang en gamepad oppdages på siden (maybeAutoOpen, kalt fra
+// "gamepadconnected"/oppstartssjekket lenger ned) - i tillegg til, ikke i stedet for, gamepadPanelEl over.
+const gamepadWizard = Sim.buildGamepadCalibrationWizard({
+    storageKey: GAMEPAD_WIZARD_STORAGE_KEY,
+    backdropEl: document.getElementById("gamepadWizardOverlay"),
+    gridEl: document.getElementById("gamepadWizardGrid"),
+    readoutEl: document.getElementById("gamepadWizardReadout"),
+    buttonsReadoutEl: document.getElementById("gamepadWizardButtonsReadout"),
+    calibrateBtnEl: document.getElementById("gamepadWizardCalibrateBtn"),
+    calibrateStatusEl: document.getElementById("gamepadWizardCalibrateStatus"),
+    saveBtnEl: document.getElementById("gamepadWizardSaveBtn"),
+    cancelBtnEl: document.getElementById("gamepadWizardCancelBtn"),
+    gamepadMap: gamepadMap,
+    channelLabels: CHANNEL_LABELS,
+    calibrationChannels: ["throttle", "aileron", "elevator", "rudder"],
+    axisCalibrationManager: axisCalibrationManager,
+    getActiveGamepad: getActiveGamepad,
+    saveGamepadMap: saveGamepadMap,
+    minChannels: Sim.MIN_GAMEPAD_CHANNELS,
+    // Får Settings sitt eget gamepadPanel til å reflektere ev. "Avbryt"-tilbakerulling (eller bare en
+    // fersk kalibrering) med det samme, i tilfelle brukeren åpner det rett etter veiviseren.
+    onClose: function () {
+        const pad = getActiveGamepad() || rawFirstGamepad();
+        if (pad) buildGamepadPanel(pad);
+    }
+});
 function updateGamepadAxesReadout(gp) {
-    if (gamepadPanelEl.style.display === "none") return;
+    const mainVisible = gamepadPanelEl.style.display !== "none";
+    const wizardVisible = gamepadWizard.isOpen();
+    if (!mainVisible && !wizardVisible) return;
     const activeGp = gp || getActiveGamepad();
-    Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
+    if (mainVisible) Sim.updateGamepadAxesReadout(gamepadAxesReadoutEl, activeGp, Sim.MIN_GAMEPAD_CHANNELS);
+    gamepadWizard.updateReadout(activeGp);
 }
 
 function setGamepadButtonVisible(visible) {
@@ -3011,6 +3049,25 @@ document.addEventListener("DOMContentLoaded", function () {
         '<i class="fa-solid fa-crosshairs"></i> OSD: ' + FPV_HUD_MODE_LABELS[settings.fpvHudMode] + " (O)";
     buildRatesPanel();
 
+    const calibrateAxesStatusEl = document.getElementById("calibrateAxesStatus");
+    document.getElementById("calibrateAxesBtn").addEventListener("click", function () {
+        const gp = getActiveGamepad();
+        if (!gp) { calibrateAxesStatusEl.textContent = "Ingen fjernkontroll tilkoblet."; return; }
+        const btn = document.getElementById("calibrateAxesBtn");
+        btn.disabled = true;
+        axisCalibrationManager.start();
+        const tick = setInterval(function () {
+            if (axisCalibrationManager.isActive()) {
+                calibrateAxesStatusEl.textContent =
+                    "Beveg alle spakene helt ut til ytterpunktene... " + Math.ceil(axisCalibrationManager.remainingMs() / 1000) + " s";
+            } else {
+                calibrateAxesStatusEl.textContent = "Kalibrert!";
+                btn.disabled = false;
+                clearInterval(tick);
+            }
+        }, 150);
+    });
+
     document.getElementById("resetBtn").addEventListener("click", resetPlane);
     document.getElementById("armToggleBtn").addEventListener("click", toggleEngine);
 
@@ -3110,6 +3167,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("gamepadconnected", function (e) {
         setGamepadButtonVisible(true);
         buildGamepadPanel(e.gamepad);
+        gamepadWizard.maybeAutoOpen(e.gamepad);
     });
     window.addEventListener("gamepaddisconnected", function () {
         if (!rawFirstGamepad()) setGamepadButtonVisible(false);
@@ -3119,6 +3177,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (existingGamepad) {
         setGamepadButtonVisible(true);
         buildGamepadPanel(existingGamepad);
+        gamepadWizard.maybeAutoOpen(existingGamepad);
     }
 
     window.addEventListener("keydown", function (e) {
