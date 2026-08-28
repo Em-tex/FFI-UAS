@@ -691,6 +691,10 @@ const RUNWAY_LENGTH = 360;
 const RUNWAY_WIDTH = 14;
 const RUNWAY_NEAR_Z = 20;   // verdens-Z for nærmeste terskel (nærmest spawn)
 const RUNWAY_SPAWN_Z = 8;   // spawn litt bak terskelen, klar for avgang nedover -Z
+// "pass på at flyet får spawne inn uten å bli påvirket av vinden med en gang det har spawnet. må få et par
+// sekunder å sette seg på bakken" (brukeren) - se planeState.spawnSettleTimerSec-bruken i stepPhysics
+// (nullstilt til denne verdien i resetPlane) for selve rampen.
+const SPAWN_WIND_SETTLE_SEC = 2;
 // "piloten kan stå littegrann nærmere, men fortsatt på gresset" (brukeren) - ned fra +4 til +2 (fortsatt
 // > RUNWAY_WIDTH/2=7, altså trygt utenfor selve rullebane-asfalten/gresskanten, se buildRunway - selve
 // asfaltplanet er NØYAKTIG RUNWAY_WIDTH bredt, sentrert på X=0, ingen egen skulder-sone). ÉN felles
@@ -1001,6 +1005,13 @@ const planeState = {
     crashStuckTimerSec: 0,
     onGround: true,
     hasBeenAirborne: false,
+    // Se SPAWN_WIND_SETTLE_SEC-kommentaren - teller ned mot 0 i stepPhysics (vind-effekten skrus gradvis
+    // PÅ etter hvert som denne synker, se windEffectFrac der), nullstilt til SPAWN_WIND_SETTLE_SEC igjen
+    // ved hver resetPlane(). Starter på SPAWN_WIND_SETTLE_SEC her i selve literalet også (ikke 0) - den
+    // aller FØRSTE sideinnlastingen (som aldri kaller resetPlane() selv, kun captureHome() direkte, se
+    // DOMContentLoaded-blokken) er like mye et "spawn" som et vanlig reset, og skal ha samme innsettings-
+    // margin før vinden slår inn for fullt.
+    spawnSettleTimerSec: SPAWN_WIND_SETTLE_SEC,
     flightMode: "qhover",
     planeClass: VTOL_CLASSES[settings.planeClass] ? settings.planeClass : DEFAULT_PLANE_CLASS,
     elevatorTrimDeg: 0,
@@ -4340,6 +4351,20 @@ function wingLocalAirspeedAoa(localAirVelCG, rotContribLocal) {
 function stepPhysics(dt) {
     const spec = currentPlaneSpec();
 
+    // "pass på at flyet får spawne inn uten å bli påvirket av vinden med en gang det har spawnet. må få et
+    // par sekunder å sette seg på bakken" (brukeren) - et fly som spawner rett inn i et allerede fullt
+    // utviklet vindkast (før understellet/friksjonen i resolveGroundContact har rukket å "sette seg" i en
+    // stabil hvilekontakt) kunne få et umiddelbart, urealistisk dytt/velt fra et helt kunstig "null til
+    // fullt vindkast momentant"-sprang - noe en allerede landet/parkert farkost aldri opplever i
+    // virkeligheten. Rampes derfor LINEÆRT fra 0 til 1 over de første SPAWN_WIND_SETTLE_SEC sekundene
+    // (i stedet for en brå av/på-vakt, som bare hadde flyttet det samme spranget til fristens utløp).
+    // effectiveWindVector brukes BÅDE til selve den aerodynamiske vind-kraften (airVelWorld under) og den
+    // ambient-/le-turbulensen (se windEffectFrac-bruken lenger ned) - IKKE den kosmetiske vind-
+    // visualiseringen (vindpølse/løv/trær, currentWindVector direkte), som ikke påvirker selve flyet.
+    planeState.spawnSettleTimerSec = Math.max(0, planeState.spawnSettleTimerSec - dt);
+    const windEffectFrac = 1 - planeState.spawnSettleTimerSec / SPAWN_WIND_SETTLE_SEC;
+    const effectiveWindVector = currentWindVector.clone().multiplyScalar(windEffectFrac);
+
     // Sikkerhetsnett mot uforklarlig dreining i stillstand: tvinger orienteringen til identitet (rett ned
     // rullebanen, nivå), men KUN før flyet noensinne har vært i luften (hasBeenAirborne) - ellers ville
     // dette teleportert et fly som lander og bremser ned under 0.4 m/s tilbake til spawn-retningen, uansett
@@ -4505,7 +4530,7 @@ function stepPhysics(dt) {
 
     const q = planeState.quaternion;
     const invQ = q.clone().invert();
-    const airVelWorld = planeState.velocity.clone().sub(currentWindVector);
+    const airVelWorld = planeState.velocity.clone().sub(effectiveWindVector);
     const localAirVel = airVelWorld.clone().applyQuaternion(invQ);
     const airspeed = airVelWorld.length();
     lastAirspeed = airspeed;
@@ -5355,7 +5380,7 @@ function stepPhysics(dt) {
     // groundTurbulence/wakeTurbulence over: en farkost med vekten på beina/hjulene skal ikke ristes av
     // luftvirvler i det hele tatt (kontaktkreftene i resolveGroundContact dominerer, se BUG-kommentaren ved
     // groundTurbulenceStrength for samme resonnement/tidligere feil).
-    const ambientWindSpeed = currentWindVector.length();
+    const ambientWindSpeed = effectiveWindVector.length();
     const ambientTurbStrength = planeState.onGround ? 0 : clamp(ambientWindSpeed / AMBIENT_TURB_REF_WIND_MS, 0, 1);
     _ambientTurbulenceTarget.set(
         (Math.random() * 2 - 1) * AMBIENT_TURB_MAX_RAD_S2,
@@ -5373,7 +5398,7 @@ function stepPhysics(dt) {
     // reell vind (ellers er windDirX/-Z meningsløse) OG at flyet faktisk henger i luften.
     let buildingWakeStrength = 0;
     if (!planeState.onGround && ambientWindSpeed > 0.5) {
-        const windDirX = currentWindVector.x / ambientWindSpeed, windDirZ = currentWindVector.z / ambientWindSpeed;
+        const windDirX = effectiveWindVector.x / ambientWindSpeed, windDirZ = effectiveWindVector.z / ambientWindSpeed;
         buildingWakeStrength = buildingWakeTurbulenceStrength(planeState.position.x, planeState.position.y, planeState.position.z, windDirX, windDirZ)
             * clamp(ambientWindSpeed / AMBIENT_TURB_REF_WIND_MS, 0, 1);
     }
@@ -6449,6 +6474,9 @@ function resetPlane(yawRad) {
     planeState.brokenPusherProp = false;
     planeState.onGround = true;
     planeState.hasBeenAirborne = false;
+    // Se SPAWN_WIND_SETTLE_SEC-kommentaren - gir flyet et par sekunder til å sette seg på bakken før vinden
+    // (aerodynamisk kraft OG ambient-/le-turbulens, se windEffectFrac i stepPhysics) rekker full styrke.
+    planeState.spawnSettleTimerSec = SPAWN_WIND_SETTLE_SEC;
     planeState.elevatorTrimDeg = 0;
     // Sentrert (0.5), ikke i bunn - se inputState-kommentaren over for begrunnelsen (gjelder likt her,
     // siden R-tasten kan resette midt i en flytur der flightMode fortsatt er en Q-modus). Kun midlertidig -
