@@ -1097,10 +1097,12 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 /* Acro-diplomet (openAcroDiploma): utstyrsspesifikasjon (droneklasse/propeller/wheelbase/vekt/TWR) -
    brukerens krav: "få med hva slags drone som er brukt? vekt og thrust to weight ratio? så
    dokumentasjonen blir skikkelig", senere: "kan du sette opp spesifikasjonene linje for linje? er det
-   ryddigere?" - EN egen linje per felt (.sim-diploma-spec-line) i stedet for én kommaseparert setning,
-   samme blå/halvfete stil som .sim-diploma-flighttime over hadde på den gamle enkeltlinja. */
-.sim-diploma-spec { margin: 0 0 10px; font-size: 0.85rem; }
-.sim-diploma-spec-line { display: block; color: var(--ffi-blue); font-weight: 600; line-height: 1.5; }
+   ryddigere?" - EN egen linje per felt (.sim-diploma-spec-line) i stedet for én kommaseparert setning.
+   Til slutt: "Venstrejsutere det? og kanskje ikke bold blått?... svart vanlig" - venstrejustert (samme
+   max-width/margin-mønster som .sim-diploma-times over, i stedet for diplomets vanlige sentrerte tekst)
+   og vanlig svart skrift i stedet for den blå/halvfete stilen .sim-diploma-flighttime bruker. */
+.sim-diploma-spec { margin: 0 auto 16px; max-width: 380px; text-align: left; font-size: 0.82rem; }
+.sim-diploma-spec-line { display: block; color: #1a1a1a; font-weight: 400; line-height: 1.5; }
 .sim-diploma-date { font-size: 0.85rem; color: #555; margin: 0; }
 /* Delt mellom BEGGE simulatorene (css/style.css lastes av både simulator.html og simulator-vtol.html) -
    quad-diplomet (simulator.html) har KUN de to knappene som direkte barn her, ingen notis-avsnitt. Selve
