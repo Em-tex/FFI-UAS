@@ -9406,7 +9406,11 @@ function openAcroDiploma() {
     const wheelbaseMm = Math.round(2 * DRONE_ARM_LENGTH * racingSpec.visualScale * Math.SQRT2 * 1000);
     const propDiameterIn = bladeLengthForClass("racing") * racingSpec.visualScale / 0.0254;
     const specLines = [
-        "Drone: Racing-quadkopter",
+        // "Racing" fjernet fra selve betegnelsen ("fjerne 'Racing' siden det ikke er helt det med så lav
+        // twr da?" - brukeren, med rette: TWR 3,7:1 er ikke reelt "racing"-nivå, se svaret i
+        // samtalehistorikken) - IKKE en endring av selve DRONE_CLASSES-nøkkelen ("racing", fortsatt brukt
+        // som er internt klasse-ID for spawning/fysikk over) - kun diplomets synlige tekst.
+        "Drone: Quadkopter",
         "Propeller: " + propDiameterIn.toFixed(1) + "\"",
         "Wheelbase: " + wheelbaseMm + " mm",
         "Vekt: " + racingSpec.mass.toFixed(1) + " kg",
