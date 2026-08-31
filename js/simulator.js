@@ -9165,6 +9165,16 @@ function renderExerciseList(category) {
                 "</span>";
             acroDiplomaRow.addEventListener("click", openAcroDiploma);
             container.appendChild(acroDiplomaRow);
+        } else {
+            // Hint ØVERST før bekreftelsen faktisk er innen rekkevidde - brukerens krav: "Før man får en
+            // bekreftelse kan det stå øverst. Fullfør alle øvelsene med minimum bronsegradering for å få
+            // bekreftelse på simulatorutsjekk for acro." Samme diskré .sim-panel-hint-stil som resten av
+            // panelet bruker for korte hint (se f.eks. exerciseDetailProgress), IKKE en klikkbar rad -
+            // ingenting å trykke på her ennå.
+            const hint = document.createElement("p");
+            hint.className = "sim-panel-hint sim-exercise-list-hint";
+            hint.textContent = "Fullfør alle øvelsene med minimum bronsegradering for å få bekreftelse på simulatorutsjekk for acro.";
+            container.appendChild(hint);
         }
         ACRO_EXERCISE_ORDER.forEach(function (id) {
             const exercise = EXERCISES[id];

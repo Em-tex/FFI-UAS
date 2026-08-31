@@ -1459,6 +1459,9 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-style: italic;
     margin: 10px 0;
 }
+/* Acro-øvelseslistens "fullfør alt for bekreftelse"-hint (renderExerciseList) - litt luft rundt siden den
+   nå står øverst i en liste av klikkbare rader, ikke alene i et panel som resten av .sim-panel-hint-bruken. */
+.sim-exercise-list-hint { margin: 4px 4px 12px; }
 /* Overstyrer .sim-panel-hint sin diskré grå/kursiv stil - denne varselteksten (f.eks. "Uforutsette
    hendelser" uten bundet fysisk kill-bryter, se showExerciseDetail) må stikke seg tydelig ut, ikke
    se ut som et vanlig hint man kan lese fort over. */
