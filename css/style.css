@@ -630,6 +630,11 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     pointer-events: none;
 }
 .sim-warning-banner.show { display: flex; }
+/* Heewing (VTOL-siden): brukeren ba om at popupene under øvelser kan sitte litt lenger ned - egen,
+   scoped override (.vtol-page, se simulator-vtol.html) i stedet for å endre selve top:62% over, som er
+   delt med quad-simulatoren og allerede tunet for DENS synsfelt (se kommentaren der). Senket i to omganger
+   (62%->72%->80%, brukeren: "kan være enda litt mer ned på skjermen"). */
+.vtol-page .sim-warning-banner { top: 80%; }
 .sim-warning-banner .sim-crash-title {
     font-size: 1.15rem;
     font-weight: 700;
@@ -638,6 +643,42 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 /* Grønn variant av varselbanneret - positiv kvittering (deløvelse fullført / øvelse bestått). */
 .sim-warning-banner.sim-banner-success {
     background: rgba(35, 140, 70, 0.92);
+}
+
+/* Livslager-ikoner ("Krasj i bevegelige mål", js/simulator.js: updateTargetLivesHud) - brukerens krav:
+   "ikke noe 'x droner igjen' i popupene. ha heller noen ikoner nede i venstre hjørne med antall droner/
+   liv". Plassert høyere enn sim-mini-hint (bottom 16px, se under) for å ikke kollidere med arme-hintet i
+   samme hjørne tidlig i øvelsen, før man har tatt av. Kun synlig mens targetStrike-øvelsen er aktiv. */
+.sim-target-lives {
+    position: absolute;
+    left: 16px;
+    bottom: 100px;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(20, 22, 28, 0.6);
+    padding: 8px 10px;
+    border-radius: 8px;
+    pointer-events: none;
+}
+.sim-target-lives.show { display: flex; }
+.sim-target-lives-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #ddd;
+    font-weight: 600;
+}
+.sim-target-lives-icons { display: flex; flex-wrap: wrap; max-width: 170px; gap: 4px; }
+.sim-target-lives-icons i {
+    font-size: 0.95rem;
+    color: #4fd1ff;
+}
+/* Brukt opp (se exerciseState.targetCrashesUsed) - dimmet i stedet for fjernet, slik at TOTALANTALLET
+   (9 droner) fortsatt er synlig gjennom hele forsøket, ikke bare de gjenværende. */
+.sim-target-lives-icons i.sim-target-life-used {
+    color: #666;
+    opacity: 0.45;
 }
 
 /* Liten, diskré popup nederst til venstre - "en liten diskre popup nede på skjermen med beskjed om
@@ -1452,6 +1493,30 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     font-weight: 600;
     color: #2e8b57;
     white-space: nowrap;
+}
+/* Medaljefarger for Acro-utsjekken (bronse/sølv/gull/platinum) - se acroMedalProgress/acroMedalForTime i
+   js/simulator.js. Brukt på BÅDE øvelseslistens .sim-exercise-check-badge (renderExerciseList("acro")) OG
+   Acro-diplomets .sim-diploma-medal-ikon (openAcroDiploma) - samme fire fargeklasser begge steder. */
+.sim-medal-bronze { color: #cd7f32; }
+.sim-medal-silver { color: #9aa0a6; }
+.sim-medal-gold { color: #d4af37; }
+.sim-medal-platinum { color: #6fc3d6; }
+/* Medalje-/tidsgrense-LISTEN på øvelsesdetaljsiden for gradert tidsaktiviteter (race1/race3/raceTunnel/
+   targetStrike, se medalThresholdRowHtml/showExerciseDetail i js/simulator.js) - "de medaljene må stå på
+   liste" (brukeren): én rad per medalje i stedet for den tidligere sammenhengende flex-raden. Gjenbruker
+   samme .sim-medal-*-fargeklasser som resten av Acro-graderingen over. */
+.sim-medal-threshold-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: -4px 0 12px;
+    font-size: 0.85rem;
+    color: #333;
+}
+.sim-medal-threshold-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 .sim-exercise-back-btn {
     display: inline-flex;

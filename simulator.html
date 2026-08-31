@@ -14,7 +14,7 @@
          se samme forklaring over. En vanlig omlasting henter samme HTML (som selv aldri caches, se over),
          men uten en ny query-streng her kunne nettleseren likevel gjenbrukt en cachet KOPI av selve
          css/js-filene fra forrige gang de ble lastet med SAMME URL. -->
-    <link rel="stylesheet" href="css/style.css?v=20260828000003">
+    <link rel="stylesheet" href="css/style.css?v=20260831000001">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
@@ -47,6 +47,13 @@
         <div class="sim-warning-banner" id="loiterWindBanner">
             <span class="sim-crash-title">STERK VIND</span>
             <span class="sim-crash-hint" id="loiterWindBannerText">Loiter kan miste posisjonen</span>
+        </div>
+        <!-- Livslager-ikoner ("Krasj i bevegelige mål") - nede i venstre hjørne, se updateTargetLivesHud
+             (js/simulator.js). Ikonene selv bygges der (TARGET_STRIKE_DRONE_LIVES stk, fa-helicopter) -
+             denne boksen er tom til øvelsen faktisk starter. -->
+        <div class="sim-target-lives" id="targetLivesHud">
+            <span class="sim-target-lives-label">Droner</span>
+            <div class="sim-target-lives-icons" id="targetLivesIcons"></div>
         </div>
         <div class="sim-status-bar">
             <div class="sim-status-item sim-dropdown">
@@ -353,7 +360,7 @@
                     <span class="sim-exercise-row-icon"><i class="fa-solid fa-flag-checkered"></i></span>
                     <span class="sim-exercise-row-main">
                         <span class="sim-exercise-row-title">Acro</span>
-                        <span class="sim-exercise-row-desc">Racingbanen - full manuell kontroll, FPV-kamera og en ledertavle med bestetider.</span>
+                        <span class="sim-exercise-row-desc">Fire tidsaktiviteter - full manuell kontroll, FPV-kamera, ledertavler og medaljer på veien mot en egen Acro-bekreftelse.</span>
                     </span>
                 </button>
                 <button type="button" class="sim-exercise-row" id="categoryFreeFlightBtn">
@@ -376,6 +383,8 @@
                 </button>
                 <h4 id="exerciseDetailTitle" class="sim-exercise-detail-title"></h4>
                 <p class="sim-exercise-desc" id="exerciseDetailDescription"></p>
+                <div class="sim-medal-threshold-row" id="exerciseDetailMedalRow" style="display:none;"></div>
+                <p class="sim-exercise-desc" id="exerciseDetailMedalNote" style="display:none;"></p>
                 <div class="sim-rate-row" id="exerciseDetailCalibrationRow" style="display:none;">
                     <button type="button" class="sim-btn" id="exerciseDetailCalibrationBtn">
                         <i class="fa-solid fa-gamepad"></i> Åpne fjernkontroll-kalibrering
@@ -448,12 +457,56 @@
                 </div>
             </div>
         </div>
+
+        <!-- Acro-bekreftelsen - helt separat fra diplomaOverlay over (den stabiliserte, bestått/ikke-
+             bestått-baserte bekreftelsen for EXERCISE_ORDER) - se openAcroDiploma i js/simulator.js.
+             Medaljer i stedet for et bestått-kryss, og en fast rekord-notis (samme mailto-mønster som
+             simulator-vtol.html sin diplomaOverlay bruker for "send diplomet til rpas@ffi.no"). -->
+        <div class="sim-diploma-overlay" id="acroDiplomaOverlay" style="display:none;">
+            <div class="sim-diploma">
+                <div class="sim-diploma-actions sim-diploma-actions-with-note no-print">
+                    <p class="sim-diploma-note">Slår du en av dine egne rekorder (enkeltrunde-/tre runder-banen)
+                        blir det markert som platinum her, og det kan vanke en liten premie - ta i så fall et
+                        skjermbilde av denne bekreftelsen og send det til
+                        <a href="mailto:rpas@ffi.no"><strong>rpas@ffi.no</strong></a> for dokumentasjon.
+                        Denne siden er statisk og lagrer informasjon kun lokalt i din egen nettleser - ingen informasjon sendes noe sted.</p>
+                    <div class="sim-diploma-action-buttons">
+                        <button type="button" class="sim-btn sim-btn-primary" id="acroDiplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
+                        <button type="button" class="sim-btn sim-btn-primary" id="acroDiplomaCloseBtn">Lukk</button>
+                    </div>
+                </div>
+                <div class="sim-diploma-border">
+                    <div class="sim-diploma-icons">
+                        <svg class="sim-diploma-quad" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" aria-hidden="true">
+                            <line x1="32" y1="32" x2="13" y2="13"></line>
+                            <line x1="32" y1="32" x2="51" y2="13"></line>
+                            <line x1="32" y1="32" x2="13" y2="51"></line>
+                            <line x1="32" y1="32" x2="51" y2="51"></line>
+                            <circle cx="13" cy="13" r="8"></circle>
+                            <circle cx="51" cy="13" r="8"></circle>
+                            <circle cx="13" cy="51" r="8"></circle>
+                            <circle cx="51" cy="51" r="8"></circle>
+                            <rect x="25" y="25" width="14" height="14" rx="2" fill="currentColor" stroke="none"></rect>
+                        </svg>
+                        <i class="fa-solid fa-award sim-diploma-medal" id="acroDiplomaOverallMedalIcon"></i>
+                    </div>
+                    <h2>ACRO-BEKREFTELSE</h2>
+                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter Acro-utsjekk</p>
+                    <p class="sim-diploma-line">Dette bekrefter at</p>
+                    <input type="text" id="acroDiplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
+                    <p class="sim-diploma-text">har fullført de fire Acro-tidsaktivitetene i quadkopter-simulatoren,
+                        med en samlet gradering på <strong id="acroDiplomaOverallGradeText"></strong>.</p>
+                    <div class="sim-diploma-times" id="acroDiplomaTimes"></div>
+                    <p class="sim-diploma-date" id="acroDiplomaDate"></p>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="js/simulator-common.js?v=20260828000003"></script>
-<script src="js/simulator.js?v=20260828000003"></script>
+<script src="js/simulator-common.js?v=20260831000002"></script>
+<script src="js/simulator.js?v=20260831000019"></script>
 <script src="js/simulator-flightlog.js?v=20260821000013"></script>
 </body>
 </html>

@@ -406,7 +406,17 @@ const FBWB_THROTTLE_TRIM = 0.6;
 // marsjflyging). targetBankDeg/-PitchDeg i stepPhysics blander lineært mellom denne og fastvinge-
 // vinklene etter mcAuthority (se computeMcAuthority), slik at selve MÅLVINKELEN glir naturlig fra
 // "hover-aktig" til "fly-aktig" akkurat som selve kontrollmyndigheten gjør.
-const MC_MAX_LEAN_ANGLE = 30;
+// Opp fra 30 - brukertilbakemelding: "ikke nok autoritet i QLOITER da vinden var som sterkest, driftet
+// vekk fra landingsområdet uten å kunne returnere" (øvelse 5, siste/kraftigste vindrunde). Ved fullt
+// pinneutslag/vedvarende fartsavvik saturerer den kommanderte lenevinkelen (se targetPitchDeg/-BankDeg og
+// QLOITER_VEL_INT_GAIN-integralleddet i stepPhysics) nettopp ved denne grensen - CAP-en er derfor den
+// FAKTISKE flaskehalsen for hvor mye motkraft QLOITER kan utvikle mot vedvarende vind, ikke selve
+// pådraget/forsterkningen (som allerede når taket lenge før 5 m/s fartsfeil). 35° er fortsatt innenfor det
+// ArduPilot sin egen Q_LOIT_ANG_MAX-parameter tillater å stille inn til (operatøren kan sette denne selv,
+// 30° er kun fabrikkstandarden) - en reell, om enn beskjeden, økning i autoritet, ikke en urealistisk
+// omgåelse av selve fysikkmodellen. Gjelder ALLE Q-moduser (delt konstant, se kommentaren over) - en
+// generelt litt kvikkere/sterkere svevekontroll overalt, ikke bare i QLOITER/øvelse 5 spesifikt.
+const MC_MAX_LEAN_ANGLE = 35;
 // Gulv for girets EGEN aerodynamiske autoritet i Q-modus (se yawAeroAuthority-kommentaren i stepPhysics) -
 // lar finnen/halepartiet fortsatt værhane merkbart inn mot en kryssvind selv med løftemotorene i full
 // rull-/stigningskontroll, i motsetning til rull/stigning som fortsatt kuttes helt (aeroAuthority).
@@ -4111,8 +4121,40 @@ function resizeRenderer() {
 // oppdateres fra animate().
 let chaseCameraController;
 
+// "er det mulig å ha litt automatisk zoom med vlos kameraet i synsfeltet når dronen kommer 150 meter unna
+// og så mer og mer opp til 300 m? ikke for mye, skal fortsatt være realistisk, men vi må kompensere for at
+// dette bare er piksler" (brukeren) - flyet blir i praksis noen få piksler stort på 300 m med et vanlig
+// 50°-vidvinkelfelt (nettopp problemet: "nærmest umulig å se dronen"). Kompenserer med en LITEN, gradvis
+// FOV-innsnevring (ikke et hardt kutt) fra VLOS_ZOOM_START_DIST og oppover, maks VLOS_ZOOM_MAX_DEG smalere
+// ved VLOS_ZOOM_FULL_DIST (som treffer nøyaktig øvelse 5 sin egen VTOL_MANUAL_RETURN_MIN_DIST_M, se
+// js/simulator-vtol-exercises.js) - fortsatt et vidt, realistisk VLOS-synsfelt (~21° ved maks, ikke en
+// kikkert), kun nok til at flyet forblir synlig som noe mer enn 1-2 piksler på lang avstand.
+// RELATIV zoom (brukeren: "slik at det zoomes mer ved stor prosentvis avstandsendring? men naturlig") -
+// IKKE lenger en LINEÆR FOV-rampe mot en fast makshastighet (forrige versjon, etter flere runder med
+// "enda litt mer zoom" på selve konstantene). Flyets synlige STØRRELSE på skjermen er proporsjonal med
+// 1/(avstand*tan(halveFOV)) - ved å la tan(halveFOV) skalere med (VLOS_ZOOM_START_DIST/avstand)^0.5
+// (kvadratrot-dempet, IKKE full eksponent 1 - det ville holdt størrelsen HELT konstant og gitt et
+// teleskop-aktig ~9° synsfelt ved 300 m, vurdert og avvist til fordel for denne mer moderate kurven)
+// kompenserer kameraet PROSENTVIS for hvor mye lenger unna flyet har blitt, i stedet for et fast gradtall
+// per meter - akkurat som en ekte kameraoperatør ville zoomet. Kurvens form gir dessuten raskere zoom rett
+// etter VLOS_ZOOM_START_DIST (brukeren: "altså raskere zoom i starten") - avtagende utslag jo lenger unna
+// flyet allerede er, i motsetning til den forrige rette linjen sin konstante rate hele veien.
+const VLOS_ZOOM_START_DIST = 50;
+const VLOS_ZOOM_FULL_DIST = 300;
+const VLOS_ZOOM_EXPONENT = 0.5; // kvadratrot - se resonnementet over
+const VLOS_BASE_FOV = 50; // samme grunnverdi vlosCamera faktisk ble konstruert med (se initScene)
 function updateVlosCamera() {
     vlosCamera.lookAt(planeState.position);
+    const dist = vlosCamera.position.distanceTo(planeState.position);
+    const clampedDist = clamp(dist, VLOS_ZOOM_START_DIST, VLOS_ZOOM_FULL_DIST);
+    const distRatio = Math.pow(VLOS_ZOOM_START_DIST / clampedDist, VLOS_ZOOM_EXPONENT); // 1 ved start, minkende med avstand
+    const baseHalfFovRad = THREE.MathUtils.degToRad(VLOS_BASE_FOV) / 2;
+    const targetHalfFovRad = Math.atan(Math.tan(baseHalfFovRad) * distRatio);
+    const targetFov = THREE.MathUtils.radToDeg(targetHalfFovRad) * 2;
+    if (Math.abs(vlosCamera.fov - targetFov) > 0.01) {
+        vlosCamera.fov = targetFov;
+        vlosCamera.updateProjectionMatrix();
+    }
 }
 
 /* ---------- Input ---------- */

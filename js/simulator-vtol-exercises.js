@@ -422,11 +422,19 @@ const VTOL_EXERCISES = {
         // mindre automatikk enn QHOVER - verken posisjons- eller høydeholding) + SAMME faste vindstyrke som
         // runde 3 (ikke windVariable lenger) - vanskelighetsgraden øker fortsatt, nå via selve modusen i
         // stedet for vindtypen. "jevn"/"skiftende" fjernet fra begge vind-labelene, kun "vind" igjen.
+        // "Gi litt mer autoritet i QLOITER?... Kan kanskje gi et lite tips om det på starten av øvelsen." ->
+        // "nei det var HOVER øvelsene der vind kunne være et problem med autoritet" -> "ikke tips i øvelse
+        // 5, men i 1-2 da" (brukeren) - tipset sitter derfor her, på FØRSTE vind-runde (ikke gjentatt på
+        // runde 4 - samme "ikke dobbel informasjon"-prinsipp resten av stegene under følger).
         stages: [
             { type: "await-arm", label: "Arm motorene" },
             { type: "hover", label: "Hover i QLOITER", requireMode: "qloiter", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT },
             { type: "hover", label: "Hover i QHOVER (uten posisjonshold)", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT },
-            { type: "hover", label: "Hover i QHOVER med vind", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT, wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
+            {
+                type: "hover", label: "Hover i QHOVER med vind", requireMode: "qhover", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT,
+                wind: { speed: 4, directionDeg: 0, gust: 0.25 },
+                hint: "Tips: sett nesa inn mot vinden - flyet trenger da mindre krengevinkel for å holde posisjonen."
+            },
             { type: "hover", label: "Hover i QSTABILIZE med vind", requireMode: "qstabilize", holdSec: VTOL_HOVER_HOLD_SEC, targetAlt: VTOL_HOVER_ALT, wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
             { type: "land-manual", label: "Landing" }
         ]
@@ -440,10 +448,15 @@ const VTOL_EXERCISES = {
         // "endre siste gjennomføringen til stabilize i vind. fjerne 'jevn' og 'skiftende' fra tekst"
         // (brukeren) - samme endring som ex1 (se dens egen kommentar): runde 4 QSTABILIZE + samme faste
         // vindstyrke som runde 3 i stedet for QHOVER + skiftende vind.
+        // Samme vind-tips som ex1 (se dens kommentar for bakgrunnen) - på FØRSTE vind-runde her også.
         stages: [
             { type: "waypoints", label: "Firkant i QLOITER", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qloiter" },
             { type: "waypoints", label: "Firkant i QHOVER", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover" },
-            { type: "waypoints", label: "Firkant i QHOVER med vind", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover", wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
+            {
+                type: "waypoints", label: "Firkant i QHOVER med vind", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qhover",
+                wind: { speed: 4, directionDeg: 0, gust: 0.25 },
+                hint: "Tips: sett nesa inn mot vinden - flyet trenger da mindre krengevinkel for å holde posisjonen."
+            },
             { type: "waypoints", label: "Firkant i QSTABILIZE med vind", waypoints: VTOL_HOVER_SQUARE_WAYPOINTS, radius: VTOL_WAYPOINT_RADIUS_HOVER, requireMode: "qstabilize", wind: { speed: 4, directionDeg: 0, gust: 0.25 } },
             { type: "land-manual", label: "Landing" }
         ]
@@ -520,14 +533,15 @@ const VTOL_EXERCISES = {
         id: "ex4", icon: "fa-route", label: "4. Rundflyging - bli kjent med flyet",
         allowFreeCamera: true,
         spawnYawRad: 0, // "nese med rullebaneretningen" (brukeren) - se spawnYawRad-kommentaren i startVtolExercise
-        shortDescription: "Rundflyging med chase-kamera - portene i FBWA, bygningene/landemerkene i MANUAL - land selv i en Q-modus.",
+        shortDescription: "Rundflyging med chase-kamera - portene i MANUAL, resten i valgfri modus - land selv i en Q-modus.",
         fullDescription: "Ta av i QLOITER, klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m og transiter til " +
-            "FBWA. Fly deretter én sammenhengende rundflyging for å bli kjent med hvordan flyet oppfører " +
-            "seg i fastvinget flyging - med chase-kamera i stedet for VLOS denne gangen:\n\n" +
-            "• Gjennom de fire portene vest for rullebanen, fortsatt i FBWA\n" +
-            "• Bytt til MANUAL, og gjennom vindusåpningene i bygningene øst for rullebanen\n" +
-            "• Forbi klokketårnet og fabrikken lenger unna\n\n" +
-            "Litt vind underveis. Transiter til slutt tilbake til en Q-modus og land selv.",
+            "fastvinget modus. Fly deretter én sammenhengende rundflyging for å bli kjent med hvordan " +
+            "flyet oppfører seg i fastvinget flyging - med chase-kamera i stedet for VLOS denne gangen:\n\n" +
+            "• Gjennom de fire portene vest for rullebanen i MANUAL (obligatorisk - hele denne delen må " +
+            "flys manuelt)\n" +
+            "• Gjennom garasjene og forbi klokketårnet/fabrikken øst for rullebanen, i valgfri modus\n\n" +
+            "Vindstille gjennom hele rundflygingen - litt vind kommer først når du returnerer hjem og skal " +
+            "lande. Transiter til slutt tilbake til en Q-modus og land selv.",
         // "man blir bedt om overgang til manuel modus etter 20 m på øvelse 4. men man kan jo ikke gå direkte
         // til manual. først fbwa for å få fart" (brukeren) - transition-out (steg 2) godtar generelt enhver
         // fastvinget modus (isFixedWingMode, se updateTransitionOutStage) - lot seg dermed "juksefullføre"
@@ -553,24 +567,40 @@ const VTOL_EXERCISES = {
         // Q-modus" instruerte reelt et umiddelbart modusbytte midt ved fabrikken, langt fra rullebanen -
         // misvisende siden selve landingen skjer ved avgangsplassen. Endret til en enkel "Returner og
         // land"-instruks i stedet (selve transition-back-steget/logikken er UENDRET, kun teksten).
+        // "Uten annen trening for manuell flyving var målet om å fly gjennom trange vinduer i sterk vind en
+        // ganske krevende utfordring... Jeg synes fortsatt manuell bør øves. Kanskje ta første del i
+        // manuell modus gjennom de portene og resten i valgfri modus? sjekk at det ikke er lov å jukse med
+        // å fjerne manuell på første delen." (brukeren) - snudd fra "porter i FBWA, garasjer+landemerker i
+        // obligatorisk MANUAL" til "porter i obligatorisk MANUAL, garasjer+landemerker i valgfri modus"
+        // (INGEN requireMode på de to siste waypoints-stegene lenger, se stageModeOk - godtar dermed enhver
+        // modus): portene (VTOL_GATE_WAYPOINT_RADIUS, den ROMSLIGSTE åpningen av de tre) er nå stedet
+        // manuell flyging faktisk øves, mens de trange vindusåpningene (VTOL_BUILDING_WAYPOINT_RADIUS,
+        // trangest av alle) ikke lenger TVINGER ren manuell kontroll i vind - eleven kan velge FBWA der om
+        // ønskelig. stage.requireModeThroughout (se updateWaypointsStage) er selve anti-juks-sjekken:
+        // MANUAL må holdes UNAVBRUTT gjennom HELE port-steget, ikke bare i det ene øyeblikket flyet er
+        // innenfor fangstradiusen til hvert enkelt punkt - et avvik nullstiller fremgangen i steget.
         stages: [
             { type: "climb", label: "Klatre til minst " + VTOL_TRANSITION_MIN_ALT + " m", minAlt: VTOL_TRANSITION_MIN_ALT },
-            { type: "transition-out", label: "Overgang til FBWA" },
-            {
-                type: "waypoints", label: "Fly gjennom portene", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
-                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "fbwa", wind: VTOL_TOUR_WIND, showBearing: true
-            },
+            { type: "transition-out", label: "Overgang til fastvinget modus" },
             { type: "await-mode", label: "Bytt til MANUAL", mode: "manual", hint: "Tast 5 på tastaturet, eller bryteren på senderen." },
             {
+                type: "waypoints", label: "Fly gjennom portene", waypoints: VTOL_TOUR_GATE_WAYPOINTS, closeLoop: false,
+                radius: VTOL_GATE_WAYPOINT_RADIUS, requireMode: "manual", requireModeThroughout: true
+            },
+            {
                 type: "waypoints", label: "Fly gjennom garasjene", waypoints: VTOL_TOUR_BUILDING_WAYPOINTS, closeLoop: false,
-                radius: VTOL_BUILDING_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true
+                radius: VTOL_BUILDING_WAYPOINT_RADIUS
             },
             {
                 type: "waypoints", label: "Fly forbi klokketårnet og fabrikken", waypoints: VTOL_TOUR_LANDMARK_WAYPOINTS, closeLoop: false,
-                radius: VTOL_LANDMARK_WAYPOINT_RADIUS, requireMode: "manual", wind: VTOL_TOUR_WIND, showBearing: true,
+                radius: VTOL_LANDMARK_WAYPOINT_RADIUS,
                 markerRadius: VTOL_LANDMARK_MARKER_RADIUS
             },
-            { type: "transition-back", label: "Returner og land" },
+            // "ingen vind før man skal returnere hjem for å lande. landing med vind" (brukeren) - de tre
+            // waypoints-stegene over har IKKE lenger noe wind-felt (vindstille rundflyging), vinden skrus
+            // på her i stedet (se enterStageVisuals - "transition-back" kaller nå applyStageWind) og blir
+            // værende gjennom resten av returen og selve landingen (land-manual under rører den ikke).
+            { type: "transition-back", label: "Returner og land", wind: VTOL_TOUR_WIND },
             // "Øvelse 4 landingen MÅ ikke være i QHOVER. kan være fri Q-modus for landing" (brukeren) -
             // reverserer den tidligere "må ikke godkjenne QLOITER"-innsnevringen (se den nå utdaterte
             // kommentaren ved updateLandManualStage/stageModeOk). requireQMode (allerede støttet av
@@ -595,8 +625,17 @@ const VTOL_EXERCISES = {
         // og depart-distance-labelen skriver nå ut hele den faktiske handlingen (ta av + transiter til FBWA
         // + fly ut til avstanden), ikke bare selve avstandsmålet - dette er nå ordrett det FØRSTE eleven ser
         // (se startVtolExercise, viser steg 0 sin egen label direkte).
+        // "Gi litt mer autoritet i QLOITER? ... Kan kanskje gi et lite tips om det på starten av øvelsen."
+        // (brukeren) -> "nei det var HOVER øvelsene der vind kunne være et problem med autoritet" ->
+        // "ikke tips i øvelse 5, men i 1-2 da" (brukeren, oppfølging/korrigering) - selve
+        // nese-inn-mot-vinden-tipset FLYTTET til VTOL_EXERCISES.ex1/ex2 sine egne "med vind"-runder i
+        // stedet (se deres egne kommentarer) - IKKE her. Selve autoritets-økningen (MC_MAX_LEAN_ANGLE,
+        // js/simulator-vtol.js) er uendret og gjelder uansett alle Q-moduser overalt, ex5 inkludert.
         stages: [
-            { type: "depart-distance", label: "Ta av, transiter til FBWA og fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (lett vind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 3, directionDeg: 45, gust: 0.2 } },
+            {
+                type: "depart-distance", label: "Ta av, transiter til FBWA og fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (lett vind)",
+                minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 3, directionDeg: 45, gust: 0.2 }
+            },
             { type: "return-manual", label: "Returner og land manuelt", wind: { speed: 3, directionDeg: 45, gust: 0.2 } },
             { type: "depart-distance", label: "Ta av, transiter til FBWA og fly ut ≥" + VTOL_MANUAL_RETURN_MIN_DIST_M + " m (frisk vind)", minDist: VTOL_MANUAL_RETURN_MIN_DIST_M, wind: { speed: 6, directionDeg: 160, gust: 0.3 } },
             { type: "return-manual", label: "Returner og land manuelt", wind: { speed: 6, directionDeg: 160, gust: 0.3 } },
@@ -733,6 +772,7 @@ const exerciseState = {
     hoverHoldSec: 0,
     groundedHoldSec: 0, // se LANDING_SETTLE_SEC - hvor lenge flyet har stått urørt på bakken i inneværende landingssteg
     pitchWarnUntil: 0,
+    modeStrayWarnUntil: 0, // se stage.requireModeThroughout i updateWaypointsStage - advarsel-throttle
     armHintUntil: 0, // se updateAwaitArmStage/updateAwaitDisarmStage - repeterende gest-påminnelse
     scenario: null, // per-scenario arbeidsdata, satt av scenarioets egen setup()
     originalWind: null, // elevens egne Vind-panel-innstillinger, tatt vare på mens et vind-steg låner dem
@@ -993,7 +1033,13 @@ function enterStageVisuals() {
     // "to runder på øvelse [motorfeil]. andre runde med litt vind" (brukeren) - "scenario" lagt til her
     // (var ikke med fra før - ex6 sine to scenarioer bruker ikke vind) slik at ex6b sin runde 2 kan bære
     // et stage.wind på samme måte som resten av programmet allerede gjør.
-    if (stage.type === "hover" || stage.type === "waypoints" || stage.type === "depart-distance" || stage.type === "return-manual" || stage.type === "scenario") applyStageWind(stage);
+    // "ingen vind før man skal returnere hjem for å lande. landing med vind" (brukeren, ex4) -
+    // "transition-back" lagt til her slik at ex4 kan holde selve rundflygingen (portene/garasjene/
+    // landemerkene, alle type "waypoints") vindstille og heller legge vinden på FØRST når returen hjem
+    // starter (se VTOL_EXERCISES.ex4 sitt transition-back-steg) - i stedet for at "waypoints" alltid var
+    // stedet vinden skrudde på, som ga vind gjennom hele rundflygingen og (siden "transition-back"/
+    // "land-manual" aldri rørte den) ufortjent ULIK vind videre inn i selve landingen.
+    if (stage.type === "hover" || stage.type === "waypoints" || stage.type === "depart-distance" || stage.type === "return-manual" || stage.type === "scenario" || stage.type === "transition-back") applyStageWind(stage);
     exerciseState.hoverHoldSec = 0;
     exerciseState.wpIndex = 0;
     // wasAirborne MÅ nullstilles her (ikke bare i startVtolExercise) - ellers vil R midt i et
@@ -1189,6 +1235,27 @@ function updateReturnManualStage(dt) {
 function updateWaypointsStage(stage, dt) {
     const target = stage.waypoints[exerciseState.wpIndex];
     if (!target) { advanceStage(); return; }
+    // stage.requireModeThroughout (se VTOL_EXERCISES.ex4 sin egen kommentar for bakgrunnen) - krever
+    // UNAVBRUTT modus gjennom HELE steget, ikke bare i det ene øyeblikket flyet er innenfor
+    // fangstradiusen til hvert punkt (ellers kunne eleven bytte til en enklere modus MELLOM punktene og
+    // bare hoppe tilbake til den krevde modusen rett før hver fangst - "sjekk at det ikke er lov å jukse
+    // med å fjerne manuell på første delen", brukerens egen bekymring). Et avvik nullstiller fremgangen i
+    // steget og tegner markørene på nytt (alle uunnagjorte hjørner igjen) - har eleven ikke kommet forbi
+    // første punkt ennå (wpIndex 0), er det ingenting å nullstille, kun selve advarselen.
+    if (stage.requireModeThroughout && !planeState.onGround && planeState.flightMode !== stage.requireMode) {
+        if (performance.now() > exerciseState.modeStrayWarnUntil) {
+            if (exerciseState.wpIndex > 0) {
+                setWarning("Byttet ut av " + (MODE_LABELS[stage.requireMode] || stage.requireMode) +
+                    " midt i sekvensen - denne delen må flys på nytt fra start.", false, 3500);
+                exerciseState.wpIndex = 0;
+                addWaypointMarkers(stage.waypoints, stage.closeLoop, stage.markerRadius);
+            } else {
+                setWarning(stageModeWarning(stage), false, 2500);
+            }
+            exerciseState.modeStrayWarnUntil = performance.now() + 3500;
+        }
+        return;
+    }
     // "en indikator å følge firkanten. som på quad simmen" (brukeren) - se nextWaypointMarker-kommentaren
     // ved deklarasjonen. Oppdatert hver tick uansett resten av steget under, slik at markøren følger
     // wpIndex live selv om eleven aldri kommer innenfor radius.
@@ -1587,11 +1654,13 @@ function updateExerciseHud() {
         else if (stage.type === "waypoints") {
             const target = stage.waypoints[exerciseState.wpIndex];
             // "trenger ikke måle antall grader på nesa eller den avstanden. er bare distraherende med
-            // tallene i HUD-en" (brukeren, ex2-firkanten) - relativeBearingText ble opprinnelig lagt til
-            // for ex4 (chase-kamera, veipunktene langt unna/ute av syne, se relativeBearingText sin egen
-            // kommentar), men samme tekst havnet også på ex2 sin firkant der eleven allerede SER
-            // kule-/strek-markørene rett foran seg fra VLOS - der er avstand/gradtall bare støy. Vises nå
-            // kun når stage selv ber om det (stage.showBearing, satt på ex4 sine steg under).
+            // tallene i HUD-en" (brukeren, først om ex2-firkanten, senere samme rapport om ex4: "trenger
+            // ikke den avstanden og vinkelen der. veldig distraherende og unødvendig info") -
+            // relativeBearingText ble opprinnelig lagt til for ex4 (chase-kamera, veipunktene langt
+            // unna/ute av syne, se relativeBearingText sin egen kommentar), men viste seg unødvendig/
+            // distraherende der også. Ingen steg setter lenger stage.showBearing (se ex4 sine steg over) -
+            // funksjonen/feltet er beholdt urørt (billig, ufarlig dødt alternativ) i tilfelle en fremtidig
+            // øvelse faktisk trenger det, men vises altså ikke noe sted akkurat nå.
             statusText = exerciseState.wpIndex + " / " + stage.waypoints.length +
                 (stage.showBearing && target ? " · " + relativeBearingText(target) : "");
         }

@@ -1079,8 +1079,15 @@
     }
 
     /* ---------- Scene-elementer ---------- */
-    function buildGradientSky() {
-        const skyGeo = new THREE.SphereGeometry(800, 32, 15);
+    // radius (valgfri, default 800 - uendret oppførsel for fixedwing/vtol, som begge har egne kommentarer
+    // et annet sted i sin fil om at DERES verdensgrenser holder "trygg margin til himmelkulen (radius 800)"
+    // - IKKE endret her). Quad-simulatoren (se simulator.js) sender nå inn en større radius: brukeren
+    // rapporterte "svarte hull... på himmelen på avstand" ved fjellene der - MOUNTAIN_DEFS' fjerneste topper
+    // når nesten helt ut til gamle 800 (dist 620 + radius 185 ~= 805, se MOUNTAIN_DEFS), så et kamera i
+    // nærheten av dem kunne komme UTENFOR selve himmelkulen (BackSide-geometri er usynlig sett utenfra) -
+    // synlig som hull av tomt (svart) rom der himmelen skulle vært.
+    function buildGradientSky(radius) {
+        const skyGeo = new THREE.SphereGeometry(radius || 800, 32, 15);
         const skyMat = new THREE.ShaderMaterial({
             uniforms: {
                 topColor: { value: new THREE.Color(0x4a90d9) },
@@ -1394,10 +1401,24 @@
         }
         return group;
     }
-    // Tilfeldig bjørk eller furu, med litt tilfeldig høyde-/skala-variasjon for et mindre ensartet utseende.
-    function buildRandomTree(height) {
-        const h = height * (0.9 + Math.random() * 0.2);
-        return Math.random() < 0.5 ? buildBirch(h) : buildPine(h);
+    // Bjørk eller furu, med litt høyde-/skala-variasjon for et mindre ensartet utseende - DETERMINISTISK
+    // (IKKE Math.random(), som denne brukte før), samme "sin(seed*konstant)"-pseudotilfeldighet resten av
+    // verdensbyggingen bruker (se f.eks. mountainProfileRadiusFrac-jitteret/skyklyngene). Brukerens krav:
+    // "pass på at hvert tre alltid er av samme type ved innlasting. hvis det varierer kan det bli
+    // urettferdige rekorder om man er heldig med tretyper som ikke blokkerer banen sin, mens det
+    // blokkerer for andre" - selve KOLLISJONEN var riktignok allerede deterministisk (treeToColliders i
+    // simulator.js bruker kun den FASTE, oppgitte høyden fra FOREST_TREES/DECORATIVE_TREES, med en
+    // konservativ sikkerhetsmargin uavhengig av hvilken type som faktisk rendres - se kommentaren der), men
+    // selve TREET SÅ ULIKT ut (bjørk vs. furu, ulik synlig kroneform) mellom hver sideinnlasting, uten noen
+    // fornuftig grunn til at det skulle variere i det hele tatt - samme "verden skal se lik ut mellom
+    // sideinnlastinger"-prinsipp som resten av filen (ingen andre Math.random()-kall ved selve
+    // verdensbyggingen). seed (valgfri): kallerne sender nå inn treets egen (faste) x/z-posisjon, som
+    // gjør valget stabilt per tre-plassering i stedet for globalt tilfeldig - default (seed utelatt) faller
+    // tilbake til den gamle, ekte tilfeldige oppførselen for eventuelle fremtidige kall uten en naturlig seed.
+    function buildRandomTree(height, seed) {
+        const s = seed === undefined ? Math.random() * 1000 : seed;
+        const h = height * (0.9 + (0.5 + Math.sin(s * 12.9) * 0.5) * 0.2);
+        return Math.sin(s * 7.31) < 0 ? buildBirch(h) : buildPine(h);
     }
 
     // Trær som vaier i vinden - hvert tre lagres med sin egen tilfeldige fase/frekvens slik at de ikke

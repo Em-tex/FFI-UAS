@@ -775,23 +775,37 @@ const EXERCISES = {
             { id: "ks-pedestrians", label: "Fotgjengere nærmer seg", type: "killswitch", variant: "pedestrians" }
         ]
     },
+    // "1."/"2." lagt til (matcher nummereringen på det stabiliserte programmet, ex1..ex11) idet disse fire
+    // ble en gradert "utsjekk" for Acro (se ACRO_EXERCISE_ORDER/acroMedalProgress) - en klar rekkefølge/
+    // helhet i stedet for fire løsrevne tidsforsøk.
     race1: {
         id: "race1",
         icon: "fa-flag-checkered",
-        label: "Racingbane - enkeltrunde",
+        label: "1. Racingbane - enkeltrunde",
         droneClass: "racing",
         forceCameraMode: "fpv",
         forceFlightMode: "acro",
         freeCameraToggle: true, // C (kamerabytte) er IKKE låst til VLOS her, se toggleCamera
         shortDescription: "Fly gjennom alle portene på racingbanen så fort du kan - klokken starter når du krysser start/mål.",
         startHint: "Fly gjennom porten for å starte tiden.",
-        fullDescription: "En lengre racingbane et stykke unna avgangsplassen, med porter, en låve du flyr " +
-            "gjennom, og en egen gate på taket av rådhuset.\n\nKlokken starter automatisk idet du krysser " +
-            "start/mål-porten (svart/hvitt rutemønster med en gul pil som viser flyretningen), og stopper " +
-            "når du har fløyet gjennom alle de andre portene i rekkefølge og kommer tilbake til samme " +
-            "port. Du kan fly så mange runder du vil - hver fullførte runde havner i ledertavlen (lagres " +
-            "lokalt i nettleseren), med beste tid øverst. Endre navnet ditt øverst i ledertavlen for å " +
-            "merke dine egne tider.\n\nSpawner i Racing-klasse, Acro-modus og FPV-kamera.",
+        // "Racingbane enkeltrunde beskrivelse må kortes ned" (brukeren) - videre kortet ned i flere
+        // oppfølgingsrunder: (1) selve strekliste-graderingen erstattet av en egen ikon-LISTE
+        // (#exerciseDetailMedalRow, se medalThresholdRowHtml/showExerciseDetail - "Legg til ikoner med
+        // gull, sølv og bronsje medalje/pokaler", "de medaljene må stå på liste") i stedet for tekst. (2)
+        // åpningssetningen om banelayouten kuttet helt. (3) platinum-teksten flyttet til exercise.medalNote
+        // (EGEN felt, IKKE en del av selve fullDescription) - vises av showExerciseDetail rett UNDER
+        // ikon-listen (brukeren: "over teksten '...' - må stå OVER medaljesetningen, ikke i samme
+        // avsnitt lenger, se den nye #exerciseDetailMedalNote-plasseringen i simulator.html). (4)
+        // "Spawner i Racing-klasse, Acro-modus og FPV-kamera." kuttet helt (brukeren) - fra ALLE fire
+        // Acro-tidsaktivitetenes fullDescription (race1/race3/raceTunnel/targetStrike), ikke bare denne.
+        fullDescription: "Klokken starter automatisk idet du krysser start/mål-porten (svart/hvitt " +
+            "rutemønster med en gul pil som viser flyretningen), og stopper når du har fløyet gjennom " +
+            "alle de andre portene i rekkefølge og kommer tilbake til samme port. Du kan fly så mange " +
+            "runder du vil - hver fullførte runde havner i ledertavlen (lagres lokalt i nettleseren), " +
+            "med beste tid øverst.",
+        medalNote: "Sammen med de tre andre tidsaktivitetene avgjør den dårligste medaljen din samlede " +
+            "Acro-bekreftelse. Slår du 0:26.12 får du i tillegg platinum - ny rekord, ta skjermbilde og " +
+            "send det til rpas@ffi.no.",
         // Ikke noTiming (ex11 sin variant) - racing har en helt egen, løpende klokke (se
         // updateExerciseHud/raceStartTime), bare vist annerledes enn de vanlige øvelsenes tidtaking.
         stages: [{ id: "race-lap", label: "Racingbane", type: "racing", lapsRequired: 1 }]
@@ -799,13 +813,13 @@ const EXERCISES = {
     // Samme bane/spawn/porter som race1, men totaltiden for 3 SAMMENHENGENDE runder telles i stedet for
     // én runde av gangen - se lapsRequired i updateRacingStage. Egen ledertavle (racingLeaderboard.entries3,
     // ikke sammenlignbar med enkeltrunde-tidene) der hver oppføring også lagrer de tre enkeltrundetidene
-    // (se addRacingLapResult/renderRacingLeaderboard - klikk på tiden for å se dem). Dronen resettes
+    // (se finishTimedAcroRun/renderRacingLeaderboard - klikk på tiden for å se dem). Dronen resettes
     // automatisk til start/mål idet tredje runde fullføres (se updateRacingStage), i stedet for å fortsette
     // en løpende runde-etter-runde-klokke slik race1 gjør.
     race3: {
         id: "race3",
         icon: "fa-flag-checkered",
-        label: "Racingbane - 3 runder",
+        label: "2. Racingbane - 3 runder",
         droneClass: "racing",
         forceCameraMode: "fpv",
         forceFlightMode: "acro",
@@ -813,19 +827,74 @@ const EXERCISES = {
         shortDescription: "Fullfør 3 sammenhengende runder så fort du kan - totaltiden (og hver rundetid) telles.",
         startHint: "Fly gjennom porten for å starte tiden. 3 runder på rad.",
         fullDescription: "Samme racingbane som enkeltrunde-øvelsen, men her teller totaltiden for TRE " +
-            "sammenhengende runder i stedet for én - klokken starter idet du krysser start/mål første " +
-            "gang, og fortsetter gjennom alle tre rundene uten stopp.\n\nEtter tredje runde stopper " +
-            "klokken automatisk og dronen resettes til start. Totaltiden havner i en egen ledertavle " +
-            "(ikke sammenlignbar med enkeltrunde-tidene) - klikk på en tid i ledertavlen for å se de tre " +
-            "enkeltrundetidene den består av.\n\nSpawner i Racing-klasse, Acro-modus og FPV-kamera.",
+            "sammenhengende runder i stedet for én.\n\nBeste tid graderes til en medalje, samme system som " +
+            "enkeltrunde-banen.",
         stages: [{ id: "race-3lap", label: "Racingbane - 3 runder", type: "racing", lapsRequired: 3 }]
+    },
+    // Punkt-til-punkt (A-til-B), IKKE en lukket løkke som de to over - se GATE_WAYPOINTS_TUNNEL/
+    // buildSummitMountain for selve banen/fjellet/tunnelene, og stage.pointToPoint i updateRacingStage for
+    // mål-logikken (siste port i lista, ikke tilbake til gate 0). Bygget inn i en håndbygd erstatning for
+    // bakgrunnsfjellet på samme sted (IKKE et eget fjell et annet sted - se buildSummitMountain) - rett
+    // gjennom foten, en spiral av porter opp den ekte fjellsiden (ekte kollisjon hele veien, ikke løse
+    // porter i tomrommet), en ny liten tunnel nær toppen, og mål på selve fjelltoppen.
+    raceTunnel: {
+        id: "raceTunnel",
+        icon: "fa-mountain",
+        label: "3. Til topps",
+        droneClass: "racing",
+        forceCameraMode: "fpv",
+        forceFlightMode: "acro",
+        freeCameraToggle: true,
+        shortDescription: "Banen starter nede og går til toppen av fjellet.",
+        startHint: "Fly gjennom porten for å starte tiden.",
+        fullDescription: "Banen starter nede og går til toppen av fjellet.\n\nKlokken starter idet du " +
+            "krysser startporten og stopper idet du når målporten på toppen. Beste tid havner i en egen " +
+            "ledertavle og graderes til en medalje - én av de fire tidsaktivitetene den samlede " +
+            "Acro-bekreftelsen bygger på.",
+        stages: [{ id: "race-tunnel", label: "Til topps", type: "racing", pointToPoint: true, assetsKey: "raceTunnel" }]
+    },
+    // Én sammenhengende, tidtatt økt - IKKE tre separate ledertavler (brukerens eget valg, se
+    // spørsmålet/svaret bak denne funksjonen) - tre stages ("type + variant"-mønster fra ex11 sine
+    // killswitch-stages) flydd på rad, alle mot samme løpende klokke. Se
+    // "Øvelser: mål-i-bevegelse (targetStrike)"-seksjonen for selve bevegelses-/treff-logikken.
+    targetStrike: {
+        id: "targetStrike",
+        icon: "fa-bullseye",
+        label: "4. Krasj i bevegelige mål",
+        droneClass: "racing",
+        forceCameraMode: "fpv",
+        forceFlightMode: "acro",
+        freeCameraToggle: true,
+        shortDescription: "Kollider med tre bevegelige mål - en drone, en bil og en løpende person i skogen - så fort du kan.",
+        startHint: "Klokken går allerede - finn og kollider med dronen som flyr.",
+        fullDescription: "Tre bevegelige mål skal treffes på rad, mot klokken: en drone i lufta, en bil på " +
+            "bakken, og en løpende person i skogen. Hvert mål patruljerer fram og tilbake til du treffer det " +
+            "- det resetter seg ikke av seg selv. Du må kollidere med hvert mål TO ganger før du går videre " +
+            "til det neste.\n\nDu har 9 droner totalt. Hver gang du krasjer i et mål mister du én, og " +
+            "flyr videre fra avgangsplassen med den neste. Går du tom for droner starter hele forsøket på " +
+            "nytt fra mål 1, og klokken nullstilles.\n\nTotaltiden fra start til siste mål er truffet havner " +
+            "i en egen ledertavle og graderes til en medalje, samme system som racingbanene.",
+        // timedLoop (IKKE skipLanding - se advanceExerciseStage): fullført idet siste mål treffes, løkker
+        // rett tilbake til steg 0 for et nytt forsøk (finishTimedLoopRun) - ingen landing på H, og ingen
+        // vei innom det ENGANGS bestått/ikke-bestått-systemet (completeExercise/EXERCISE_ORDER) i det hele
+        // tatt, samme prinsipp som racingbanenes egen selv-resettende løkke.
+        timedLoop: true,
+        stages: [
+            { id: "hit-drone", label: "Treff dronen", type: "targetHit", variant: "drone" },
+            { id: "hit-car", label: "Treff bilen", type: "targetHit", variant: "car" },
+            { id: "hit-person", label: "Treff personen i skogen", type: "targetHit", variant: "person" }
+        ]
     }
 };
 const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "exHoverWind", "ex10", "ex11"];
-// Kategorisering for øvelsesmenyens undermenyer (Stabilized/Acro) - se showExerciseCategoryView. Racing
-// (race1) er bevisst IKKE i EXERCISE_ORDER (som styrer bekreftelsen/diplomet) - det er et åpent
-// tidsforsøk med egen ledertavle, ikke en engangs bestått/ikke-bestått-øvelse.
-const ACRO_EXERCISE_ORDER = ["race1", "race3"];
+// Kategorisering for øvelsesmenyens undermenyer (Stabilized/Acro) - se showExerciseCategoryView. Disse
+// fire er bevisst IKKE i EXERCISE_ORDER (som styrer den STABILISERTE bekreftelsen/diplomet) - de er åpne
+// tidsforsøk med egne ledertavler, ikke engangs bestått/ikke-bestått-øvelser. I stedet får de sin egen,
+// parallelle gradering (medalje per aktivitet, se ACRO_MEDAL_THRESHOLDS/acroMedalProgress lenger ned) og
+// sitt eget Acro-diplom (openAcroDiploma) - "utsjekk" for Acro-kategorien, bygget rundt disse fire
+// tidsaktivitetene i stedet for nye hover/firkant-drills (brukeren: "'øvelsene' er de racingbanene vi har
+// fra før + den nye + den øvelsen med å treffe bevegelige mål").
+const ACRO_EXERCISE_ORDER = ["race1", "race3", "raceTunnel", "targetStrike"];
 
 // Kun sluttresultat (bestått + beste tid) lagres - all fremdrift underveis (steg/runde/tid/varsler)
 // lever kun i minnet og forsvinner ved sideinnlasting, se exerciseState lenger ned.
@@ -968,7 +1037,7 @@ function settleDroneOnGround() {
     const pts = getContactLocalPoints(droneState.droneClass);
     let minY = Infinity;
     for (let i = 0; i < 4; i++) minY = Math.min(minY, pts[i].y); // underside-punktene (0-3)
-    const surfaceY = solidSurfaceHeightAt(droneState.position.x, droneState.position.z);
+    const surfaceY = solidSurfaceHeightAt(droneState.position.x, droneState.position.z, droneState.position.y);
     droneState.position.y = surfaceY - minY * spec.visualScale;
     droneState.velocity.set(0, 0, 0);
 }
@@ -1009,10 +1078,17 @@ const GAME_KEY_CODES = new Set([
 ]);
 
 let renderer, scene, chaseCamera, fpvCamera, vlosCamera, activeCamera;
+// Gjenbrukt vektor for skyMesh-rekentrering (se animate) - unngår en ny THREE.Vector3-allokering hvert bilde.
+const skyRecenterPos = new THREE.Vector3();
 let skyMesh; // se updateInCloudFog - skjules mens droneen er inni en sky, ellers ville den blå himmelen skint gjennom eventuelle hull i den (nå dobbeltsidige) sky-meshen
 let viewportWatcher; // se Sim.createViewportWatcher - fanger opp DPI-/vindusstørrelse-endringer ved skjermbytte som en enkelt resize-event ikke er pålitelig for
 let droneGroup, dronePropellers;
 let heliHandle, airplaneHandle, pedestrianHandle; // se buildHelicopter/buildAirplane/buildPedestrianGroup - kun brukt av ex11
+// Egne, NYE håndtak for targetStrike (drone/bil/person) - IKKE heliHandle/pedestrianHandle over, bevisst:
+// se begrunnelsen ved "Øvelser: mål-i-bevegelse"-seksjonen lenger ned (updateBystanderCollision sjekker
+// eksplisitt pedestrianHandle og disarmer/skader dronen ved nærkontakt - stikk i strid med denne
+// øvelsens mål, som er å faktisk kollidere).
+let targetDroneHandle, targetCarHandle, targetRunnerHandle;
 const CAMERA_MODES = ["chase", "fpv", "vlos"];
 const CAMERA_MODE_LABELS = { chase: "Chase", fpv: "FPV", vlos: "VLOS" };
 let cameraModeIndex = 0;
@@ -1056,14 +1132,19 @@ function buildGround() {
 
 /* ---------- Fjern bakgrunn: fjellkjede, skogsområde, skyer ----------
    Rent visuelt "varierende bakgrunn mot droneen" - ingen kollisjon, ligger godt innenfor himmel-kulen
-   (radius 800, se Sim.buildGradientSky) og godt innenfor kameraenes far-plane (2000). Faste, hånd-
-   plasserte/deterministiske posisjoner (ingen Math.random() ved verdensbygging) - verden skal se lik
-   ut mellom sideinnlastinger, akkurat som trærne/portene ellers i filen.
+   (radius 1400, se Sim.buildGradientSky-kallet i initScene) og godt innenfor kameraenes far-plane (2000).
+   Faste, hånd-plasserte/deterministiske posisjoner (ingen Math.random() ved verdensbygging) - verden skal
+   se lik ut mellom sideinnlastinger, akkurat som trærne/portene ellers i filen.
 */
 // Færre enn før (14 -> 8) og skjøvet lenger ut mot ytterkanten av kartet (dist ~540-620, opp fra
 // ~440-580) - god klaring til alt som faktisk kan flys til (racing-løypa når maks ~131 fra origo,
 // "Returner hjem" spawner maks 170 unna). radius er fortsatt ~1.6x høyden for en naturtro, slak
-// silhuett; dist+radius holder fortsatt trygg margin til himmelkulen (radius 800).
+// silhuett; dist+radius når opp mot ~730 i verste fall (se f.eks. MOUNTAIN_DEFS[0]/summit-fjellet,
+// dist620+radius110) - FOR NÆRT den opprinnelige himmelkule-radiusen (800) til komfortabel margin for et
+// kamera som faktisk flyr dit (brukerens rapport: "flimring/svarte hull... på himmelen på avstand" ved
+// nettopp fjellene - et kamera nær/utenfor selve kule-radiusen ser BackSide-geometrien fra feil side,
+// altså ingenting). Himmelkulen er derfor hevet til radius 1400 (se initScene) - god margin til alt som
+// faktisk kan nås, fortsatt trygt innenfor far-plane (2000).
 // curvePower styrer stigningsprofilen fra fot til topp (se mountainProfileRadiusFrac) - 1 er den
 // opprinnelige rette skråstreken (kjegle), >1 gir en avrundet/bred topp med brattere nedre flanker,
 // <1 gir en bred/slak fot med en brattere, spissere topp (klassisk alpin silhuett). jaggedness styrer
@@ -1108,7 +1189,7 @@ const MOUNTAIN_PEAKS = (function () {
         peaks.push({
             x: x, z: z, radius: m.radius, height: m.height, topRadiusFrac: 0.18, curvePower: curvePower,
             jaggedness: jaggedness, noiseFreqMul: noiseFreqMul,
-            angle: rad, seed: i * 1.7 + 1, snow: m.snow, isMain: true, mainIndex: i
+            angle: rad, seed: i * 1.7 + 1, snow: m.snow, isMain: true, mainIndex: i, familyIndex: i
         });
         (m.subPeaks || []).forEach(function (sub, si) {
             const subHeight = m.height * sub.f;
@@ -1116,6 +1197,7 @@ const MOUNTAIN_PEAKS = (function () {
             const subDir = rad + sub.dirOffset;
             const subDist = m.radius * sub.off;
             peaks.push({
+                familyIndex: i,
                 x: x + Math.sin(subDir) * subDist, z: z + Math.cos(subDir) * subDist,
                 radius: subRadius, height: subHeight, topRadiusFrac: 0.2, curvePower: curvePower,
                 jaggedness: jaggedness, noiseFreqMul: noiseFreqMul,
@@ -1581,6 +1663,10 @@ function buildMountainRange() {
     // en jevn fargeovergang fra selveste bakkefargen (matcher Sim.buildGroundTexture) via oliven-
     // fjellfot og gråstein til ev. snø, i stedet for et brått fargehopp ved bakken.
     MOUNTAIN_PEAKS.forEach(function (peak) {
+        // familyIndex 0 (MOUNTAIN_DEFS[0] - hovedtopp OG dens bi-topp) er nå bygget som en HELT egen,
+        // håndbygd struktur med ekte tunneler (se buildSummitMountain, kalt fra buildGateCourseTunnel) -
+        // IKKE denne generiske, jitrede kjeglemodellen. Se familyIndex-kommentaren ved MOUNTAIN_PEAKS.
+        if (peak.familyIndex === 0) return;
         const colorStops = (peak.isMain && peak.snow)
             ? [
                 { frac: 0, color: MOUNTAIN_GROUND_COLOR },
@@ -1638,13 +1724,41 @@ function buildMountainRange() {
 // høyde. localAngle må regnes FØR meshets egen Y-rotasjon (se mesh.rotation.y = peak.angle i
 // buildMountainRange) - ellers ville jitteret her og det man faktisk SER være forskjøvet i forhold til
 // hverandre og fortsatt ikke stemme overens vinkel for vinkel.
-function mountainHeightAt(x, z) {
-    let top = 0;
+// MOUNTAIN_TUNNEL_VOIDS/summitMountainHeightAt (definert lenger ned i filen, ved "Til topps"-banen) - se
+// buildSummitMountain-kommentaren for hele resonnementet: familyIndex 0 (MOUNTAIN_DEFS[0]) er IKKE lenger
+// del av denne løkken (se skip-sjekken under) - den erstattes helt av en egen, håndbygd struktur med en
+// GLATT (ujitret) kollisjonsformel som er nøyaktig, matematisk identisk med dens egen (også ujitrede)
+// synlige geometri - ingen tilnærming, ingen fare for usynlig kollisjon/hull (brukerens krav: "kollisjon
+// som samsvarer helt med sin 3D mesh"). MOUNTAIN_TUNNEL_VOIDS er de to ekte, smale korridor-rektanglene
+// boret inn i DEN strukturen - sjekket FØR alt annet, se orientedBoxLocalXZ (definert lenger ned i filen -
+// trygt å kalle herfra siden mountainHeightAt sin FUNKSJONSKROPP ikke kjører før den faktisk kalles, lenge
+// etter hele filen er lastet).
+// atY (valgfri): høyden spørringen faktisk gjelder for. Et tunnel-hulrom (MOUNTAIN_TUNNEL_VOIDS) er KUN
+// gyldig å svare "gulvhøyden der" på når man faktisk befinner seg PÅ ELLER UNDER korridorens eget tak
+// (tv.ceilY, pluss en liten margin) - default (atY utelatt => Infinity, "fritt fall fra himmelen") svarer
+// fortsatt korridorens gulv, siden et fall FRA UTENFOR/OVENFOR ville truffet det ekte fjelltaket først i
+// virkeligheten, men INGEN annen kode her stoler på det uten en ekte referanse (se de fem kallerne).
+// Uten denne sjekken ble ETHVERT punkt innenfor korridorens smale XZ-fotavtrykk lest som "gulvet der er 40
+// m", UANSETT hvor høyt spørringen faktisk gjaldt - inkludert oppe på selve toppflaten (69 m), der
+// påskeegget/steinene står (se buildSummitRocks), siden både korridoren OG toppflaten ligger nær
+// fjellsenteret. Droneen falt dermed gjennom det den skulle lande på og ned til korridorgulvet i stedet
+// (brukerens rapport: "nå glithcer dronen gjennom grunnen som personen og steinene ligger på før den
+// treffer en annen grunn like under").
+function mountainHeightAt(x, z, atY) {
+    const ref = atY === undefined ? Infinity : atY;
+    for (let v = 0; v < MOUNTAIN_TUNNEL_VOIDS.length; v++) {
+        const tv = MOUNTAIN_TUNNEL_VOIDS[v];
+        if (ref > tv.ceilY + 1) continue; // over korridorens eget tak - IKKE et gyldig "fall ned i hulrommet" her
+        const p = orientedBoxLocalXZ(x, z, tv);
+        if (Math.abs(p.lx) <= tv.halfW && Math.abs(p.lz) <= tv.halfD) return tv.floorY;
+    }
+    let top = summitMountainHeightAt(x, z);
     // Grov, billig avstands-avvisning FØR vinkel-/jitterberegningen: maks jitter-amplitude
     // (|0.18|+|0.10|=0.28) * maks jaggedness (1.4) * maks topDamp (1) ≈ 0.39 - god margin over dette.
     const MAX_JITTER_BULGE = 0.4;
     for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
         const peak = MOUNTAIN_PEAKS[i];
+        if (peak.familyIndex === 0) continue; // erstattet av summitMountainHeightAt over - se buildSummitMountain
         const dx = x - peak.x, dz = z - peak.z;
         const dist = Math.hypot(dx, dz);
         if (dist >= peak.radius * (1 + MAX_JITTER_BULGE)) continue;
@@ -1672,7 +1786,9 @@ function mountainHeightAt(x, z) {
 function buildForestArea() {
     const group = new THREE.Group();
     FOREST_TREES.forEach(function (t) {
-        const tree = Sim.buildRandomTree(t.h);
+        // Seed fra treets egen (faste) posisjon - se buildRandomTree sin egen kommentar for hvorfor typen
+        // (bjørk/furu) må være deterministisk i stedet for Math.random().
+        const tree = Sim.buildRandomTree(t.h, t.x * 7.13 + t.z * 3.71);
         tree.position.set(t.x, 0, t.z);
         group.add(treeSwayManager.addSwayingTree(tree));
     });
@@ -1879,28 +1995,42 @@ function updateInCloudFog() {
 }
 
 // Enkel bil, bygg med flatt tak og trær - prosedurale former i realistisk skala mot droneen.
-function buildCar() {
+// Lengdeaksen er lokal Z (IKKE X, som en tidligere versjon hadde) - samme "forover er lokal Z, bredde er
+// lokal X"-konvensjon som orientTowardTravel/buildHelicopter/buildAirplane forutsetter. Målets bil
+// (targetCarHandle, se targetHitHandleFor) orienteres med nettopp orientTowardTravel, som kun roterer
+// OBJEKTETS EGEN akse til å peke langs kjøreretningen - da bilens lengdeakse tidligere var X i stedet for
+// Z, ble hele bilen dermed alltid stilt 90° feil vei i forhold til selve bevegelsesretningen (brukerens
+// rapport: "nå har bilen 90 grader stilte hjul noen ganger" - "noen ganger" fordi tilfeldig retning ved
+// hver spawn, se spawnTargetHitStage, gjorde at feilen noen ganger så mer riktig ut fra kameraets vinkel
+// enn andre). Den STATISKE bilen (se buildWorldObjects) bruker aldri orientTowardTravel og påvirkes ikke
+// av denne konvensjonen i seg selv - dens egen rotation.y er justert +90° der for å bevare samme visuelle
+// vinkel som før denne ombyggingen.
+// bodyColor/cabinColor (valgfrie) - overstyrer standardfargene (rød karosseri/mørkeblå kabin) for den
+// STATISKE, dekorative bilen ved avgangsplassen. targetCarHandle (målet i "Krasj i bevegelige mål") sender
+// inn egne, grønne/kamuflasjefargede verdier i stedet (brukerens krav: "bilen som kjører rundt må være
+// grønn/kamuflasjefarget") - se buildWorldObjects for den upåvirkede, fortsatt røde standardbilen.
+function buildCar(bodyColor, cabinColor) {
     const group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xb33a3a });
-    const cabinMat = new THREE.MeshStandardMaterial({ color: 0x223344 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor !== undefined ? bodyColor : 0xb33a3a });
+    const cabinMat = new THREE.MeshStandardMaterial({ color: cabinColor !== undefined ? cabinColor : 0x223344 });
     const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
 
     const wheelRadius = 0.32;
     const bodyHeight = 0.8;
     const bodyCenterY = wheelRadius + bodyHeight / 2;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(4.3, bodyHeight, 1.8), bodyMat);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, bodyHeight, 4.3), bodyMat);
     body.position.y = bodyCenterY;
     body.castShadow = true;
     body.receiveShadow = true;
     group.add(body);
 
     const cabinHeight = 0.55;
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.2, cabinHeight, 1.6), cabinMat);
-    cabin.position.set(-0.2, bodyCenterY + bodyHeight / 2 + cabinHeight / 2, 0);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, cabinHeight, 2.2), cabinMat);
+    cabin.position.set(0, bodyCenterY + bodyHeight / 2 + cabinHeight / 2, -0.2);
     cabin.castShadow = true;
     group.add(cabin);
 
-    [[1.4, 0.95], [1.4, -0.95], [-1.4, 0.95], [-1.4, -0.95]].forEach(function (p) {
+    [[0.95, 1.4], [-0.95, 1.4], [0.95, -1.4], [-0.95, -1.4]].forEach(function (p) {
         const wheel = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 0.25, 16), wheelMat);
         wheel.rotation.z = Math.PI / 2;
         wheel.position.set(p[0], wheelRadius, p[1]);
@@ -1908,6 +2038,34 @@ function buildCar() {
         group.add(wheel);
     });
 
+    return group;
+}
+
+// Enkelt, gjenkjennelig "mål-drone" for targetStrike (Krasj i bevegelige mål) - IKKE spillerdronens egen,
+// mye mer kompliserte klasseavhengige modell (rebuildDroneMesh) - en frittstående, forenklet silhuett
+// bygget kun som scenario-rekvisitt, samme "kun brukt her, ikke en flybar enhet"-idé som buildHelicopter.
+function buildTargetDrone() {
+    const group = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
+    const armMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xdd3333, transparent: true, opacity: 0.85 });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.34), bodyMat);
+    group.add(body);
+
+    const armLen = 0.55;
+    [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (p) {
+        const dir = Math.atan2(p[1], p[0]);
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, armLen, 6), armMat);
+        arm.rotation.z = Math.PI / 2;
+        arm.rotation.y = -dir;
+        arm.position.set(p[0] * armLen / 2, 0, p[1] * armLen / 2);
+        group.add(arm);
+        const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.015, 14), bladeMat);
+        blade.position.set(p[0] * armLen, 0.06, p[1] * armLen);
+        group.add(blade);
+    });
+    group.visible = false;
     return group;
 }
 
@@ -2035,10 +2193,15 @@ function buildAirplane() {
 
 // Et par fotgjengere som går rett mot flygeområdet - scenario 4 i killswitch-øvelsen (ex11). Gjenbruker
 // Sim.buildPersonFigure (samme figur som folkemengden/VLOS-observatøren), to farger for litt variasjon.
-function buildPedestrianGroup() {
+// vestColors (valgfritt par [venstre, høyre]) - overstyrer standardfargene (blå/rød, godt synlige som
+// "publikum i fare"-farger for killswitch-øvelsen, se pedestrianHandle). targetRunnerHandle (målet i
+// "Krasj i bevegelige mål") sender inn egne, grønne/kamuflasjefargede verdier i stedet (brukerens krav:
+// "personen som løper i skogen [må også være] grønn/kamuflasjefarget") - se initScene.
+function buildPedestrianGroup(vestColors) {
     const group = new THREE.Group();
-    [-1, 1].forEach(function (side) {
-        const person = Sim.buildPersonFigure({ vestColor: side < 0 ? 0x3f6fb0 : 0xb0473f });
+    const colors = vestColors || [0x3f6fb0, 0xb0473f];
+    [-1, 1].forEach(function (side, i) {
+        const person = Sim.buildPersonFigure({ vestColor: colors[i] });
         person.position.x = side * 0.9;
         group.add(person);
     });
@@ -2084,7 +2247,12 @@ const DECORATIVE_TREES = [
 ];
 const FOREST_TREES = (function () {
     const trees = [];
-    const centerX = 140, centerZ = 90, rows = 6, cols = 6, spacing = 11;
+    // rows opp fra 6 til 10 - brukerens ønske om flere trær ("kan ha flere trær i skogen"). KUN rows, ikke
+    // cols: (r - rows/2) gir da nøyaktig SAMME opprinnelige radposisjoner (bare med to nye rader lagt til
+    // i +-Z-retning, langt fra selve banens gjennomflygingskorridor - se GATE_WAYPOINTS_TUNNEL). cols er
+    // bevisst IKKE utvidet - en ny, ytre kolonne ville havnet påfallende nær "Til topps" sin exit-port
+    // fra skogen (dx 178, dz 105), rett i selve gjennomflygingslinjen.
+    const centerX = 140, centerZ = 90, rows = 10, cols = 6, spacing = 11;
     let i = 0;
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -2174,9 +2342,24 @@ function orientedBoxWorldFromLocal(lx, lz, c) {
     return { x: c.cx + lx * cosA + lz * sinA, z: c.cz - lx * sinA + lz * cosA };
 }
 
-function solidSurfaceHeightAt(x, z) {
-    let top = mountainHeightAt(x, z); // fjellene er nå del av bakkehøyden - se mountainHeightAt
+// atY (valgfri): referansehøyden du faktisk befinner deg på/ved akkurat nå. En kollider med minY>0
+// (f.eks. et trekronedekke, se treeToColliders, eller et tunnel-tak-segment, se
+// buildMountainTunnelSegment - taket i toppunnelen henger fritt fra ~46 til ~66 m over selve
+// korridorgulvet) er KUN en gyldig "flate å lande på" om referansen allerede er PÅ ELLER OVER selve
+// underkanten (man kommer ovenfra og lander OPPÅ den) - default (atY utelatt => Infinity) beholder den
+// gamle "fritt fall fra himmelen"-oppførselen for kall som ikke har noen fornuftig referanse.
+// Uten denne sjekken leste funksjonen "bakken her" som toppen av tunneltaket langt over hodet selv når
+// man faktisk sto/fløy trygt NEDE i korridoren (under taket, ikke oppå det) - kollideren har jo ingen
+// fysisk "vegg" ned til bakken, bare den løse XZ-fotavtrykk-sjekken under, som ignorerer høyde helt.
+// To konkrete symptomer: en stor, mørk skyggedekal svevende oppe ved taket i stedet for på gulvet under
+// droneen (brukerens rapport, med skjermbilde: "stor svart sirkel på himmelen der nesa peker" -
+// updateDroneShadowDecal), og i verste fall droneen satt fast oppe i selve taket ved en (re)spawn midt i
+// korridoren (settleDroneOnGround).
+function solidSurfaceHeightAt(x, z, atY) {
+    const ref = atY === undefined ? Infinity : atY;
+    let top = mountainHeightAt(x, z, atY); // fjellene er nå del av bakkehøyden - se mountainHeightAt
     SOLID_COLLIDERS.forEach(function (c) {
+        if ((c.minY || 0) > ref + 0.5) return; // henger over referansepunktet - ikke en flate du star PÅ nå
         if (c.yaw !== undefined) {
             const p = orientedBoxLocalXZ(x, z, c);
             if (Math.abs(p.lx) <= c.halfW && Math.abs(p.lz) <= c.halfD) top = Math.max(top, c.topY);
@@ -2344,6 +2527,47 @@ function buildGateFrame(size, groundGap, matA, matB, segs) {
 
     return group;
 }
+// Samme rammeoppbygging som buildGateFrame, men med UAVHENGIG beregnet beinlengde per side (legLenLeft/
+// Right) i stedet for en fast groundGap-lengde på begge - buildGateFrame antar flatt terreng rett under
+// selve porten (elevation 0), noe som IKKE stemmer for porter på en skråning eller i klatrende luft over
+// stigende terreng (se buildGroundedGate) - brukeren: "portene i fjellisden må ha begge bena i bakken. så
+// et ben må kanskje gjøres lengre. eller begge." Ringen (topp/bunn/sidebjelker) er UENDRET - kun beina
+// strekkes ned fra ringens bunnbjelke (lokal y=groundGap) til der de faktisk skal ende.
+function buildGateFrameGrounded(size, groundGap, matA, matB, segs, legLenLeft, legLenRight) {
+    const group = new THREE.Group();
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+
+    const top = buildCheckeredBar(size, true, matA, matB, GATE_BAR_THICKNESS, segs);
+    top.position.y = groundGap + size;
+    group.add(top);
+
+    const bottom = buildCheckeredBar(size, true, matA, matB, GATE_BAR_THICKNESS, segs);
+    bottom.position.y = groundGap;
+    group.add(bottom);
+
+    const left = buildCheckeredBar(size, false, matA, matB, GATE_BAR_THICKNESS, segs);
+    left.position.set(-size / 2, groundGap + size / 2, 0);
+    group.add(left);
+
+    const right = buildCheckeredBar(size, false, matA, matB, GATE_BAR_THICKNESS, segs);
+    right.position.set(size / 2, groundGap + size / 2, 0);
+    group.add(right);
+
+    [{ x: -size / 2, len: legLenLeft }, { x: size / 2, len: legLenRight }].forEach(function (side) {
+        // Klippet til minst 0.3 m - kun en defensiv sikkerhet mot en null-/negativ lengde sylinder om
+        // terrenget der (mot formodning) skulle vise seg å ligge HØYERE enn selve ringens bunnbjelke.
+        const len = Math.max(0.3, side.len);
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, len, 8), legMat);
+        // Beinets TOPP er alltid ved ringens bunnbjelke (lokal y=groundGap, uendret fra buildGateFrame) -
+        // det er BUNNEN (groundGap-len) som varierer med hvor langt unna ekte bakke/fjellside faktisk er.
+        leg.position.set(side.x, groundGap - len / 2, 0);
+        leg.castShadow = true;
+        leg.receiveShadow = true;
+        group.add(leg);
+    });
+
+    return group;
+}
 const GATE_MAT_ORANGE = new THREE.MeshStandardMaterial({ color: 0xff6a00 });
 const GATE_MAT_WHITE = new THREE.MeshStandardMaterial({ color: 0xffffff });
 // Firkantet racing-gate med sjakkrutet ramme (oransje/hvit), montert på to bein over bakken.
@@ -2351,12 +2575,10 @@ function buildGate(size, groundGap) {
     return buildGateFrame(size, groundGap, GATE_MAT_ORANGE, GATE_MAT_WHITE, 6);
 }
 
-const GATE_MAT_BLACK = new THREE.MeshStandardMaterial({ color: 0x111111 });
-// Start/mål-gate for racingbanen - svart/hvitt rutemønster (tettere enn de vanlige oransje/hvite
-// portene, for å ligne et ekte målflagg) pluss en gul pil montert over toppbaren som peker i
-// flyretningen (lokal +Z - se yaw-formelen ved GATE_PLACEMENTS: samme akse som resten av banen flys mot).
-function buildStartFinishGate(size, groundGap) {
-    const group = buildGateFrame(size, groundGap, GATE_MAT_BLACK, GATE_MAT_WHITE, 8);
+// Pil-dekoren start/mål-gaten bruker (se buildStartFinishGate) - egen funksjon slik at
+// buildGroundedGate (under) kan gjenbruke den ordrett for SINE start/mål-porter, i stedet for å duplisere
+// koden. Lagt oppå den ferdige rammen (group) - IKKE del av selve buildGateFrame(Grounded).
+function addStartFinishArrow(group, size, groundGap) {
     const arrowMat = new THREE.MeshStandardMaterial({ color: 0xffee55 });
     const arrowY = groundGap + size + 0.55;
     const shaftLen = size * 0.5;
@@ -2370,6 +2592,46 @@ function buildStartFinishGate(size, groundGap) {
     tip.position.set(0, arrowY, shaftLen + 0.25);
     tip.castShadow = true;
     group.add(tip);
+}
+const GATE_MAT_BLACK = new THREE.MeshStandardMaterial({ color: 0x111111 });
+// Start/mål-gate for racingbanen - svart/hvitt rutemønster (tettere enn de vanlige oransje/hvite
+// portene, for å ligne et ekte målflagg) pluss en gul pil montert over toppbaren som peker i
+// flyretningen (lokal +Z - se yaw-formelen ved GATE_PLACEMENTS: samme akse som resten av banen flys mot).
+function buildStartFinishGate(size, groundGap) {
+    const group = buildGateFrame(size, groundGap, GATE_MAT_BLACK, GATE_MAT_WHITE, 8);
+    addStartFinishArrow(group, size, groundGap);
+    return group;
+}
+// Bygger en gate (evt. start/mål-type) der BEGGE ben strekkes ned til EKTE terrenghøyde under hver av de
+// to bunnpunktene (mountainHeightAt - samme funksjon resten av kollisjonen på "Til topps" bruker), i
+// stedet for buildGate/buildStartFinishGate sin faste beinlengde (som antar flatt terreng rett under selve
+// porten - riktig for course 1/2, men IKKE for en bane som klatrer i åpen luft over stigende terreng eller
+// står tett inntil en fjellside). Beina kan bli ULIKE lange på en skråning - se buildGateFrameGrounded.
+// wp/placement: samme objekter som GATE_PLACEMENTS_TUNNEL bruker (wp.size/gap, placement.x/y/z/yaw).
+function buildGroundedGate(wp, placement) {
+    const isStartFinish = wp.type === "start";
+    // "goal" (brukeren: "siste gate på fjellet må være svart og hvit stripet for å indikere mål") - samme
+    // sjakkrutede svart/hvitt-mønster som start/mål-porten på de lukkede løkkebanene bruker, gjenbrukt her
+    // for å signalisere "dette er MÅLET" på en punkt-til-punkt-bane (se GATE_WAYPOINTS_TUNNEL sitt siste
+    // element). IKKE addStartFinishArrow under - den peker i FLYRETNINGEN, som ikke gir mening for et
+    // endepunkt man allerede har nådd.
+    const isCheckered = isStartFinish || wp.type === "goal";
+    const matA = isCheckered ? GATE_MAT_BLACK : GATE_MAT_ORANGE;
+    const segs = isCheckered ? 8 : 6;
+    const c = { cx: placement.x, cz: placement.z, yaw: placement.yaw };
+    const legWorldLeft = orientedBoxWorldFromLocal(-wp.size / 2, 0, c);
+    const legWorldRight = orientedBoxWorldFromLocal(wp.size / 2, 0, c);
+    // placement.y som atY (se mountainHeightAt sin egen kommentar): denne porten er MENT å stå omtrent på
+    // DENNE høyden - relevant for om et evt. tunnel-hulrom under den faktisk skal telle som gulv her.
+    const terrainLeft = mountainHeightAt(legWorldLeft.x, legWorldLeft.z, placement.y);
+    const terrainRight = mountainHeightAt(legWorldRight.x, legWorldRight.z, placement.y);
+    // Beinlengde = gap (den opprinnelige, flate-terreng-antagelsen) + hvor mye HØYERE enn ekte terreng
+    // ringens bunnbjelke faktisk står (placement.y - terrainUnderDetteBeinet) - blir 0 på flatt terreng
+    // (placement.y===terrain), akkurat som buildGateFrame allerede antok der.
+    const legLenLeft = wp.gap + (placement.y - terrainLeft);
+    const legLenRight = wp.gap + (placement.y - terrainRight);
+    const group = buildGateFrameGrounded(wp.size, wp.gap, matA, GATE_MAT_WHITE, segs, legLenLeft, legLenRight);
+    if (isStartFinish) addStartFinishArrow(group, wp.size, wp.gap);
     return group;
 }
 
@@ -2720,16 +2982,27 @@ function buildClockFace(radius) {
     const face = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), faceMat);
     group.add(face);
 
-    const handMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28 });
+    // BUG (rapportert av brukeren: "urviserne er ikke synlig før man kommer helt inntill klokka") - SAMME
+    // grunnleggende z-fighting-problem som klokkeskiven selv hadde mot tårnveggen (se kommentaren ved
+    // faceMat/polygonOffset over), bare ett nivå dypere: viserne satt kun 0.015-0.02 m foran selve
+    // SKIVEN (som allerede fikk sin egen polygonOffset for å vinne mot VEGGEN) - et enda mindre mellomrom
+    // enn det som allerede var identifisert som for lite til å overleve på avstand i en standard
+    // (ikke-logaritmisk) dybdebuffer. Viserne tapte dermed depth-testen mot skiven fra et godt stykke
+    // unna og forsvant sporløst - polygonOffset her (dobbelt så aggressiv som skivens -4/-4, siden viserne
+    // må vinne mot BÅDE skiven og indirekte veggen bak den) løser det samme problemet på samme måte.
+    const handMat = new THREE.MeshStandardMaterial({
+        color: 0x2a2a28,
+        polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8
+    });
     const hourPivot = new THREE.Group();
     const hourHand = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.1, radius * 0.5, 0.02), handMat);
-    hourHand.position.set(0, radius * 0.25, 0.015);
+    hourHand.position.set(0, radius * 0.25, 0.03);
     hourPivot.add(hourHand);
     group.add(hourPivot);
 
     const minutePivot = new THREE.Group();
     const minuteHand = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.07, radius * 0.78, 0.02), handMat);
-    minuteHand.position.set(0, radius * 0.39, 0.02);
+    minuteHand.position.set(0, radius * 0.39, 0.05);
     minutePivot.add(minuteHand);
     group.add(minutePivot);
 
@@ -2996,7 +3269,8 @@ function buildRiver(points, widths, pondRadius) {
 // droneen ville flydd rett gjennom dem alle sammen. Samme "push rett inn i den allerede-levende
 // SOLID_COLLIDERS-arrayen"-mønster som rådhuset/husene bruker.
 function addCourse2Tree(group, x, z, height) {
-    const tree = Sim.buildRandomTree(height);
+    // Seed fra treets egen (faste) posisjon - se buildRandomTree sin egen kommentar.
+    const tree = Sim.buildRandomTree(height, x * 7.13 + z * 3.71);
     tree.position.set(x, 0, z);
     group.add(treeSwayManager.addSwayingTree(tree));
     // treeToColliders returnerer to bokser (stamme + krone, se kommentaren der) - begge må registreres.
@@ -3219,6 +3493,747 @@ function buildGateCourse2() {
     return group;
 }
 
+/* ---------- Racingbane 3 "Til topps" - punkt-til-punkt (A-til-B), IKKE en lukket løkke som bane 1/2
+   ---------- Gjennom skogen ved dammen, opp langs elva (samme innledning som brukerens opprinnelige
+   ønske), og videre til en HELT EGEN, håndbygd erstatning for bakgrunnsfjellet MOUNTAIN_PEAKS[0] (samme
+   posisjon/radius/høyde som det opprinnelige - (0,620), radius 110, height 69 - se familyIndex-skipene i
+   buildMountainRange/mountainHeightAt) med to ekte, gjennomflybare tunneler boret inn i den.
+   IKKE et fjell et annet sted (brukeren: "skal ikke ha nye fjell") og IKKE et hull skåret inn i det delte,
+   jitrede fjell-nettet (forrige forsøk - fjernet, ga glitchete geometri og usynlig kollisjon der hullet og
+   kollisjonsboksen ikke stemte nøyaktig overens). I stedet: fjell #0 fjernes fra den vanlige,
+   per-vertex-jitrede modellen (som de syv andre bruker uendret) og bygges på nytt fra bunnen som en egen,
+   GLATT (ujitret) struktur - ETT sammenhengende, håndbygd BufferGeometry (buildSummitMountainGeometry,
+   IKKE flere separate CylinderGeometry-"høydebånd" stablet oppå hverandre - et tidligere forsøk, som ga
+   synlige skjøter/sprekker der båndene møttes, se buildSummitMountainGeometry sin egen kommentar) - der
+   akkurat de to tunnelmunning-parene utelates som ekte kvad-hull i selve indeksbufferet, og kollisjonen
+   (summitMountainHeightAt) bruker NØYAKTIG samme glatte profilformel som geometrien - null jitter å holde
+   synkronisert, null tilnærming, ingen usynlig kollisjon (brukerens krav: "kollisjon som samsvarer helt
+   med sin 3D mesh"). Se buildSummitMountain.
+   Traséen etter fjellet: rett gjennom fjellfoten på bakkenivå (bakketunnelen), ut på andre siden, en
+   spiral av porter som klatrer opp den ekte fjellsiden (samme glatte summitMountainHeightAt-formel gir
+   ekte kollisjon der også - en bommet port betyr fjellside, ikke tomrom), en ny, kortere tunnel nærmere
+   toppen, og til slutt mål på selve fjelltoppen.
+   Alle vinkler/avstander for selve fjellet er regnet relativt (0,620) med samme x=dist*sin(θ),
+   z=620+dist*cos(θ)-konvensjon som selve MOUNTAIN_DEFS-plasseringen (θ=0 er nord/+Z, 90 er øst/+X, 180 er
+   sør/-Z - vendt mot resten av banen/spillområdet - 270 er vest) - og MERK: three.js sin egen
+   CylinderGeometry-thetaStart bruker (x=r·sinθ, z=r·cosθ) internt, altså NØYAKTIG samme konvensjon -
+   ingen omregning nødvendig mellom "hvor porten står" og "hvilken thetaStart-vinkel skjærer hullet der". */
+const SUMMIT_MOUNTAIN_CENTER_X = 0, SUMMIT_MOUNTAIN_CENTER_Z = 620;
+const SUMMIT_MOUNTAIN_RADIUS = 110, SUMMIT_MOUNTAIN_HEIGHT = 69, SUMMIT_MOUNTAIN_TOP_RADIUS_FRAC = 0.18;
+// Glatt (ujitret) radius ved en gitt heightFrac (0-1) - gjenbruker NØYAKTIG samme profilformel
+// (mountainProfileRadiusFrac, curvePower 1 - lineær, matcher MOUNTAIN_DEFS[0]) som de syv andre fjellene,
+// bare uten selve jitter-leddet. Brukt til å bygge hver ring i selve geometrien (buildSummitMountainGeometry)
+// - ETT sted for både geometri og (i summitMountainHeightAt under) kollisjon.
+function summitMountainRadiusAtHeightFrac(heightFrac) {
+    return mountainProfileRadiusFrac(clamp(heightFrac, 0, 1), SUMMIT_MOUNTAIN_TOP_RADIUS_FRAC, 1) * SUMMIT_MOUNTAIN_RADIUS;
+}
+// Fjellets kollisjonsflate - den glatte inversen (mountainProfileHeightFrac) av formelen over, NØYAKTIG
+// samme matematiske profil som selve den synlige geometrien (buildSummitMountainGeometry) bruker - i motsetning
+// til de syv andre fjellene (som må gjenskape en jitter-formel for å matche sin egen taggete overflate) er
+// det her INGEN jitter å synkronisere i det hele tatt, så INGEN fare for at kollisjonen avviker fra det som
+// faktisk vises (brukerens krav om nøyaktig samsvar). Selve tunnelhulrommene (MOUNTAIN_TUNNEL_VOIDS)
+// sjekkes separat, FØR denne funksjonen i det hele tatt kalles - se mountainHeightAt.
+function summitMountainHeightAt(x, z) {
+    const dx = x - SUMMIT_MOUNTAIN_CENTER_X, dz = z - SUMMIT_MOUNTAIN_CENTER_Z;
+    const dist = Math.hypot(dx, dz);
+    if (dist >= SUMMIT_MOUNTAIN_RADIUS) return 0;
+    const distFrac = dist / SUMMIT_MOUNTAIN_RADIUS;
+    return SUMMIT_MOUNTAIN_HEIGHT * mountainProfileHeightFrac(distFrac, SUMMIT_MOUNTAIN_TOP_RADIUS_FRAC, 1);
+}
+// Samme fargestopp-prinsipp (bakke->fot->stein->lys stein, ingen snø - matcher MOUNTAIN_DEFS[0].snow:false)
+// som buildMountainRange bruker for de ikke-snødekte fjellene, gjenbrukt her for et konsistent utseende.
+const SUMMIT_MOUNTAIN_COLOR_STOPS = [
+    { frac: 0, color: MOUNTAIN_GROUND_COLOR },
+    { frac: 0.18, color: MOUNTAIN_FOOTHILL_COLOR },
+    { frac: 0.5, color: MOUNTAIN_ROCK_COLOR },
+    { frac: 1, color: MOUNTAIN_ROCK_LIGHT_COLOR }
+];
+function summitMountainColorAt(heightFrac) {
+    const stops = SUMMIT_MOUNTAIN_COLOR_STOPS;
+    let c0 = stops[0], c1 = stops[stops.length - 1];
+    for (let s = 0; s < stops.length - 1; s++) {
+        if (heightFrac >= stops[s].frac && heightFrac <= stops[s + 1].frac) { c0 = stops[s]; c1 = stops[s + 1]; break; }
+    }
+    const span = Math.max(1e-6, c1.frac - c0.frac);
+    const t = clamp((heightFrac - c0.frac) / span, 0, 1);
+    return new THREE.Color().copy(c0.color).lerp(c1.color, t);
+}
+/* Erstatningsfjellets skallgeometri - ETT sammenhengende BufferGeometry (IKKE flere separate
+   CylinderGeometry-"høydebånd" stablet oppå hverandre, som forrige tilnærming brukte, se
+   buildSummitMountainBand i git-historikken). Brukeren, etter flere runder med "sprekker og glipper" som
+   ikke ble borte: "må settes opp helt på nytt". Rotårsaken til at forrige tilnærming aldri ble helt sømløs:
+   hvert bånd fikk sitt EGET, uavhengig beregnede segmentantall (skalert etter båndets thetaLength, se den
+   gamle segs-utregningen) - selv om radiene ved en delt høydegrense var matematisk IDENTISKE (samme formel,
+   samme input), hadde de to tilstøtende båndene ULIKT ANTALL hjørner langs den grensen, så polygonkantene
+   matchet aldri helt - synlige skjøter/sprekker der bånd møttes, uansett hvor nøyaktig selve radius-tallene
+   stemte. Med ETT mesh og SAMME segmentantall (SUMMIT_MESH_SEGS) i HELE høyden finnes det ingen skjøter i
+   det hele tatt å mismatche - kun de bevisste hullene ved tunnelmunningene (se SUMMIT_TUNNEL_HOLE_RANGES),
+   som nå skjæres som eksplisitt utelatte kvadranter i selve indeksbufferet i stedet for en egen geometri-
+   instans. Ringene ligger KUN ved høydene noe faktisk skjer (bakke, tunnel-gulv/-tak, topp) - curvePower=1
+   (se MOUNTAIN_DEFS[0]) gjør radius-vs-høyde-profilen eksakt LINEÆR, så en rett linje mellom to ringer ER
+   den sanne profilen der - ingen mellomliggende ringer trengs for nøyaktighet utenom der noe (et hull)
+   faktisk starter/slutter. */
+const SUMMIT_MESH_SEGS = 360; // 1° per segment - fin nok oppløsning til at tunnelhullene (se under) kan
+// skjæres presist mot korridorenes egen fysiske bredde, se de to buildMountainTunnelSegment-kallene sin
+// egen kommentar for selve gradberegningen bak SUMMIT_TUNNEL_HOLE_RANGES.
+const SUMMIT_RING_HEIGHTS = [0, 2, 12, 40, 45, 69];
+// [startDeg,endDegEksklusiv)-par per bånd (identifisert ved båndets EGEN bunnhøyde, en nøkkel i dette
+// objektet) der IKKE noe kvad bygges - selve tunnelmunningenes hull. Nord-munningen (θ0) wrapper rundt
+// 0°/360°, derfor to par for det bakketunnel-hullet.
+// Halvvidden (grader) for HVERT hull er utledet direkte fra korridorens egen fysiske halvbredde
+// (halfWidth+veggtykkelse, se buildMountainTunnelSegment - begge tunnelene bruker halfWidth 6, veggtykkelse
+// 2, altså 8 m) via korde-formelen chordHalfWidth = radius*sin(halvvinkel), avrundet NEDOVER til nærmeste
+// hele grad (1° pr. segment, se SUMMIT_MESH_SEGS) - ALDRI oppover: et hull som er en anelse SMALERE enn
+// korridoren lar tunnelkonstruksjonen dekke hele hullet med en hårfin margin inn i massivt fjell i kantene
+// (usynlig, ufarlig); et hull som er en anelse BREDERE etterlater en ekte, gjennomsiktig glipe med ingenting
+// bak (brukerens gjentatte rapport - "sprekker og glipper").
+//
+// VIKTIG: radiusen i denne formelen er RINGENS EGEN radius ved den høyden (summitMountainRadiusAtHeightFrac),
+// IKKE korridorens (ax,az)/(bx,bz)-plasseringsradius (48 for toppunnelen, 90 for bakketunnelen) - de to er
+// IKKE det samme, siden fjellprofilen (curvePower 1, se mountainProfileRadiusFrac) gjør at ringen ved
+// korridorens GULV-høyde alltid ligger LENGER UTE enn selve korridorplasseringen (korridoren er jo bevisst
+// plassert et stykke INNENFOR fjellets ekte overflate der, for å ha fjell å bore gjennom). En tidligere
+// runde brukte feilaktig 48/90 direkte i asin()-regnestykket - det ga et hull SMALERE/mindre langt ute enn
+// selve fjelloverflaten der ringen faktisk sitter, med en synlig, ukledd glipe mellom korridorboksens ende
+// og selve hullet i skallet som resultat (brukerens rapport, med skjermbilde: fjellstruktur som stakk opp
+// av bakken med gress synlig gjennom/rundt). Riktig utregning bruker den STØRSTE (verste, altså widest)
+// av de to ringradiene i båndet - ring-parets BUNN (nærmest fjellfoten, alltid videre enn toppen av
+// samme bånd i en innsnevrende profil) - både for hullbredden (avrundet ned, trygt smalere ved den andre,
+// trangere ringen også) OG for korridorboksens egen halfD (se buildMountainTunnelSegment-kallene under):
+// den må rekke minst like langt ut som denne radiusen for faktisk å dekke hullet, ikke bare til selve
+// (ax,az)/(bx,bz)-punktet.
+//   Bakketunnelen (gulvring y=2): radius = summitMountainRadiusAtHeightFrac(2/69)*110 ≈ 107.4 m. Krevd
+//   halvvinkel asin(8/107.4)≈4.27° → 4° (chordHalfWidth 107.4*sin4°≈7.49 m, trygt under 8). Korridorens
+//   overhang (25, se buildMountainTunnelSegment-kallet) gir halfD=115, komfortabel margin til 107.4.
+//   Toppunnelen (gulvring y=40): radius = summitMountainRadiusAtHeightFrac(40/69)*110 ≈ 57.7 m - MYE lenger
+//   ute enn korridorens egen 48. Krevd halvvinkel asin(8/57.7)≈7.97° → 7° (chordHalfWidth 57.7*sin7°≈7.03 m,
+//   trygt under 8). Overhang økt fra standard (3) til 13 (halfD=61) nettopp for å faktisk NÅ denne radiusen
+//   - brukerens krav: "øverste tunell må strekkes lengre og ikke ha åpninger i fjellet".
+// Toppunnelens to hull (θ200/θ20) ligger fortsatt EKSAKT 180° fra hverandre - en ekte diametrisk boring RETT
+// GJENNOM fjellets senterakse i denne høyden, IKKE en kort korde nær overflaten (brukeren, etter flere
+// runder: "rett gjennom midten av fjellet") - se buildMountainTunnelSegment-kallet for hele begrunnelsen.
+const SUMMIT_TUNNEL_HOLE_RANGES = {
+    2: [[176, 184], [356, 360], [0, 4]], // bakketunnelen (2-12 m): sørmunning θ180±4, nordmunning θ0±4
+    40: [[193, 207], [13, 27]] // toppunnelen (40-45 m): inngang θ200±7, utgang θ20±7 (nøyaktig motsatt side)
+};
+// Bygger ETT kvad-nett-lag PER ring-par (yBottom->yTop), med SAMME segmentantall (SUMMIT_MESH_SEGS) i
+// HELE geometrien - selve grunnen til at dette ikke lenger er separate CylinderGeometry-instanser (se
+// toppkommentaren): identisk segmentantall/vinkelsteg overalt betyr at det ikke finnes NOEN skjøt mellom
+// ring-par å mismatche i utgangspunktet, kun de bevisste hullene.
+function buildSummitMountainGeometry() {
+    const positions = [], colors = [], indices = [];
+    for (let r = 0; r < SUMMIT_RING_HEIGHTS.length; r++) {
+        const y = SUMMIT_RING_HEIGHTS[r];
+        const heightFrac = y / SUMMIT_MOUNTAIN_HEIGHT;
+        const radius = summitMountainRadiusAtHeightFrac(heightFrac);
+        const col = summitMountainColorAt(heightFrac);
+        for (let s = 0; s < SUMMIT_MESH_SEGS; s++) {
+            const rad = THREE.MathUtils.degToRad(s); // SUMMIT_MESH_SEGS=360 => 1 segment per grad, s selv ER graden
+            positions.push(
+                SUMMIT_MOUNTAIN_CENTER_X + Math.sin(rad) * radius, y, SUMMIT_MOUNTAIN_CENTER_Z + Math.cos(rad) * radius
+            );
+            colors.push(col.r, col.g, col.b);
+        }
+    }
+    // Vertex-indeks for (ring r, segment s) - s wrappes (modulo) slik at siste segment kobler sømløst
+    // tilbake til segment 0 uten en duplisert sømvertex.
+    function vIdx(r, s) { return r * SUMMIT_MESH_SEGS + ((s % SUMMIT_MESH_SEGS) + SUMMIT_MESH_SEGS) % SUMMIT_MESH_SEGS; }
+    function inHole(deg, ranges) {
+        for (let i = 0; i < ranges.length; i++) { if (deg >= ranges[i][0] && deg < ranges[i][1]) return true; }
+        return false;
+    }
+    for (let r = 0; r < SUMMIT_RING_HEIGHTS.length - 1; r++) {
+        const holes = SUMMIT_TUNNEL_HOLE_RANGES[SUMMIT_RING_HEIGHTS[r]] || [];
+        for (let s = 0; s < SUMMIT_MESH_SEGS; s++) {
+            if (inHole(s, holes)) continue; // tunnelmunning her - ingen kvad, ekte hull i geometrien
+            const a = vIdx(r, s), b = vIdx(r, s + 1), c = vIdx(r + 1, s), d = vIdx(r + 1, s + 1);
+            // Vindingsrekkefølge (a,b,c)/(b,d,c) - IKKE (a,c,b)/(b,c,d), en tidligere, feil rekkefølge her
+            // ga UTOVERVENDTE trekanter regnet BAKVENDT (bekreftet med håndregning: kryssproduktet pekte
+            // INN mot fjellsenteret i stedet for UT), som trolig var rotårsaken til at hele fjellet rendret
+            // nesten helt svart (feil normal-fortegn for flatShading sin skjerm-derivert normalberegning,
+            // som IKKE nødvendigvis reddes av materialets side:DoubleSide slik man skulle tro).
+            indices.push(a, b, c, b, d, c); // to trekanter per kvad
+        }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+}
+// Korridorenes "hulrom" for KOLLISJON (mountainHeightAt - se der) - fylt av buildMountainTunnelSegment
+// (kalt fra buildSummitMountain, ved scene-oppbygging) LENGE før mountainHeightAt noensinne faktisk KALLES
+// (det skjer først under selve spillingen) - ingen rekkefølge-risiko, se samme mønster ved SOLID_COLLIDERS.
+const MOUNTAIN_TUNNEL_VOIDS = [];
+// Prosedural canvas-tekstur for tunnelveggene/-taket (brukerens ønske: "ha litt mer tekstur på innsiden av
+// tunellen. kanskje noe fin streetart på innsiden?") - samme cache-mønster som buildBrickTexture/
+// buildNorwayFlagTexture over (bygget én gang, gjenbrukt av BEGGE tunnelene sin rockMat, se
+// buildMountainTunnelSegment). Grov steinstøy (mange små, tilfeldig fargede flekker i grå/brune nyanser)
+// pluss noen få enkle, flate graffiti-merker (sirkel-tag, pil, sikksakk) i lyse farger - ren dekorasjon,
+// ingen kollisjonspåvirkning.
+let tunnelWallTextureBase = null;
+function buildTunnelWallTexture() {
+    if (tunnelWallTextureBase) return tunnelWallTextureBase;
+    const w = 512, h = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    // Lysere, mer gråaktig bunnfarge (brukeren: "tunellen kan være mer gråaktig" - forrige "#57524c" var en
+    // mørk, brunlig grå som sammen med det dempede lyset inni tunnelen rendret nesten helt svart).
+    ctx.fillStyle = "#7d7f82";
+    ctx.fillRect(0, 0, w, h);
+    // Grov steinstøy - mange små, litt lysere/mørkere flekker i varierende størrelse for et ru, naturlig
+    // fjellvegg-utseende i stedet for en helt jevn flate. Shade-området løftet (var 60-115) for å matche den
+    // lysere bunnfargen over.
+    for (let i = 0; i < 900; i++) {
+        const x = Math.random() * w, y = Math.random() * h, r = 2 + Math.random() * 10;
+        const shade = 95 + Math.floor(Math.random() * 60);
+        ctx.fillStyle = "rgba(" + shade + "," + (shade - 2) + "," + (shade - 4) + "," + (0.2 + Math.random() * 0.35) + ")";
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    // Noen få mørke "sprekker" - tynne, uregelmessige linjer.
+    ctx.strokeStyle = "rgba(20,18,16,0.45)";
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 14; i++) {
+        let x = Math.random() * w, y = Math.random() * h;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        for (let s = 0; s < 5; s++) {
+            x += (Math.random() - 0.5) * 60;
+            y += (Math.random() - 0.5) * 60;
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+    // Litt "fin streetart" (brukeren) - noen få enkle, flate graffiti-merker i lyse farger. Rene
+    // canvas-former (ingen tekst/font-avhengighet) - en tagget sirkel, en pil, en sikksakk-strek.
+    function graffitiCircle(cx, cy, r, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0.4, Math.PI * 1.7);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.5;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+    function graffitiArrow(x, y, len, angle, color) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 6;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(len, 0);
+        ctx.lineTo(len - 14, -12);
+        ctx.moveTo(len, 0);
+        ctx.lineTo(len - 14, 12);
+        ctx.stroke();
+        ctx.restore();
+    }
+    function graffitiZigzag(x, y, w2, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        for (let i = 1; i <= 5; i++) ctx.lineTo(x + (w2 / 5) * i, y + (i % 2 ? -16 : 16));
+        ctx.stroke();
+    }
+    graffitiCircle(120, 150, 45, "#e0703a");
+    graffitiArrow(300, 380, 90, -0.3, "#4fb0c9");
+    graffitiZigzag(340, 120, 130, "#d9c53a");
+    graffitiCircle(400, 300, 30, "#7bc96f");
+    tunnelWallTextureBase = new THREE.CanvasTexture(canvas);
+    tunnelWallTextureBase.wrapS = THREE.RepeatWrapping;
+    tunnelWallTextureBase.wrapT = THREE.RepeatWrapping;
+    return tunnelWallTextureBase;
+}
+// Myk, varm "lyspøl"-dekal på gulvet under hver taklampe (se lyskilde-løkken i buildMountainTunnelSegment)
+// - SAMME radial-gradient-canvas-triks som droneens bakkeskygge (buildDroneShadowTexture), bare lys/varm i
+// stedet for mørk. IKKE et ekte THREE.PointLight: det finnes ingen dynamiske punktlys noe annet sted i hele
+// filen (kun sunLight+AmbientLight, se initScene) - mange små punktlys ville lagt en kontinuerlig kostnad
+// på HVER pixel av HVERT lyspåvirket objekt i HELE scenen (ikke bare inni tunnelen) i three.js sin vanlige
+// forward-rendering, mens en gjennomsiktig dekal er praktisk talt gratis og gir samme "her er det lyst"-
+// inntrykk. Bygget/cachet én gang og delt av ALLE lampene i BEGGE tunnelene (ingen per-instans repeat/
+// offset å style om, i motsetning til buildTunnelWallTexture over).
+let tunnelLightPoolTextureBase = null;
+function buildTunnelLightPoolTexture() {
+    if (tunnelLightPoolTextureBase) return tunnelLightPoolTextureBase;
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    grad.addColorStop(0, "rgba(255,240,190,0.55)");
+    grad.addColorStop(0.5, "rgba(255,235,180,0.28)");
+    grad.addColorStop(1, "rgba(255,235,180,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    tunnelLightPoolTextureBase = new THREE.CanvasTexture(canvas);
+    return tunnelLightPoolTextureBase;
+}
+// Bygger vegger/gulv/tak (synlig OG kollisjon, ALLTID nøyaktig samme boks brukt til begge deler - se
+// placeBox under - null fare for at det ene avviker fra det andre) for ETT tunnelsegment mellom to
+// munninger. ax,az/bx,bz: munningenes senterkoordinater. halfWidth: korridorens halve bredde. floorY/ceilY:
+// korridorens gulv-/takhøyde, flat (kollisjonsmodellen støtter kun yaw, ikke pitch - en reelt SKRÅ korridor
+// er ikke mulig uten å utvide selve boksmodellen).
+// Taket er IKKE én ensartet høyde hele korridoren igjennom - fjellets ekte profilhøyde varierer sterkt
+// (lavt ved munningene, opp mot 69 m nærmere sentrum) - delt i ROOF_SEGMENTS biter, hver satt til den EKTE
+// profilhøyden (summitMountainHeightAt, samme glatte formel som selve fjellet er bygget av) minus en liten
+// margin - aldri høyere enn fjellet faktisk er der, aldri lavere enn nødvendig for å dekke korridoren.
+// overhang (valgfri, default 3): hvor mye korridorens beskyttede sone (MOUNTAIN_TUNNEL_VOIDS, se der)
+// strekker seg forbi selve munningene på HVER side. Bakketunnelens sørside trenger en MYE større verdi
+// (se buildSummitMountain) - fjellets ekte, glatte profilhøyde stiger BRATT rett utenfor munningen (fra 0
+// m ved selve fjellfoten, radius 110, til 15+ m allerede ved munningen 20 m lenger inn) - tilnærmingsruta
+// dit (se GATE_WAYPOINTS_TUNNEL) flyr i åpen luft over dette stigende terrenget, og trenger nok beskyttet
+// sone til å faktisk NÅ munningen før den må dykke ned til korridorens lave gulvhøyde, ellers krasjer den
+// i den ekte (usynlige, siden intensjonen var åpen luft) fjellsiden et lite stykke FØR selve åpningen -
+// nøyaktig bugen brukeren rapporterte ("krasjer i løse lufta når jeg skal inn i tunnelen").
+// voidOverhang (valgfri): styrer SÆRSKILT hvor langt MOUNTAIN_TUNNEL_VOIDS (selve "hulrommet" i
+// høydefelt-kollisjonen, se push-kallet nederst) strekker seg - IKKE nødvendigvis det samme som overhang
+// (som styrer selve vegg-/takSTRUKTURENS lengde). Default (utelatt) = samme verdi som overhang, altså
+// UENDRET oppførsel for bakketunnelen (som fortsatt trenger en stor, delt verdi - se overhang-kommentaren
+// over). Toppunnelen sender nå inn en EGEN, mindre voidOverhang (se buildSummitMountain-kallet) - da
+// overhang ble økt fra 3 til 13 (se SUMMIT_TUNNEL_HOLE_RANGES-kommentaren om hvorfor) delte hulrommet
+// tidligere SAMME (nå mye lengre) rekkevidde som selve veggene, og strakk seg dermed langt nok til å
+// dekke store deler av selve toppflaten - der påskeegget/steinene står (se buildSummitRocks/buildSummitMountain).
+// MOUNTAIN_TUNNEL_VOIDS-sjekken i mountainHeightAt er en BLIND XZ-only override (returnerer floorY, 40 m,
+// for ALT innenfor rektangelet, uansett hvilken høyde spørringen egentlig gjelder) - for steiner/påskeegg
+// som faktisk står oppe på ekte fjellhøyde (69 m), men som TILFELDIGVIS lå innenfor det utvidede
+// hulrommets smale stripe (siden både korridoren OG toppflaten ligger nær fjellsenteret), ga dette en
+// FALSK bakkehøyde på 40 m der - droneen falt rett gjennom den synlige toppflaten og landet 29 m lenger
+// ned i stedet (brukerens rapport: "nå glithcer dronen gjennom grunnen som personen og steinene ligger på
+// før den treffer en annen grunn like under"). Ved å holde selve hulrommet ved den opprinnelige, trygge
+// standardverdien (3) mens bare vegg-/takstrukturen er den lengre (13), unngår hulrommet å nå så langt ut
+// i utgangspunktet.
+// roofCap (valgfri): høyeste tillatte y for "fyll-stein"-taket over selve korridoren (se ROOF_SEGMENTS-
+// løkken under) - default (utelatt) = ingen grense utover den vanlige realHeight-ROOF_MARGIN-beregningen.
+// KUN bakketunnelen (den nederste) trenger denne: begge tunnelene bores gjennom EKSAKT samme fjellsenter
+// (0,620) - se de to buildMountainTunnelSegment-kallene i buildSummitMountain - så bakketunnelens egen
+// "fyll opp til ekte fjellhøyde"-logikk (som nær senteret vil si helt opp mot 69 m, siden fjellet er
+// høyest akkurat der) endte med å fylle solid stein rett gjennom TOPPUNNELENS EGEN luftrom (40-45 m) på
+// midten av dens strekning, der de to korridorenes baner krysser samme (x,z)-punkt nær senteret - en
+// usynlig (kun vanlig fjellstein å se på) vegg midt inne i toppunnelen (brukerens rapport: "kan fly et
+// lite stykke inn, men så er det et skarpt hjørne og bom stopp"). Satt til rett under toppunnelens eget
+// gulv (40) ved kallet i buildSummitMountain - bakketunnelens fyll-tak stopper der i stedet for å fortsette
+// helt opp til ekte fjellhøyde, uansett hvor nær senteret man kommer.
+function buildMountainTunnelSegment(ax, az, bx, bz, halfWidth, floorY, ceilY, overhang, voidOverhang, roofCap) {
+    const group = new THREE.Group();
+    const dx = bx - ax, dz = bz - az;
+    const len = Math.hypot(dx, dz);
+    const yaw = Math.atan2(dx, dz); // samme "lokal +Z er flyretningen"-konvensjon som resten av banen
+    const cx = (ax + bx) / 2, cz = (az + bz) / 2;
+    const halfD = len / 2 + (overhang === undefined ? 3 : overhang);
+    const voidHalfD = len / 2 + (voidOverhang === undefined ? (overhang === undefined ? 3 : overhang) : voidOverhang);
+    const c = { cx: cx, cz: cz, yaw: yaw };
+    // map (se buildTunnelWallTexture) - EGEN THREE.Texture-instans per tunnel (samme delte canvas-bilde,
+    // men repeat justert etter DENNE korridorens egen lengde, avhenger av halfD/overhang over) - en delt
+    // Texture-instans ville latt de to tunnelenes ulike repeat-verdier overskrive hverandre.
+    const wallTexture = buildTunnelWallTexture().clone();
+    wallTexture.needsUpdate = true;
+    wallTexture.wrapS = THREE.RepeatWrapping;
+    wallTexture.wrapT = THREE.RepeatWrapping;
+    wallTexture.repeat.set(Math.max(1, Math.round((halfD * 2) / 8)), 2);
+    // MOUNTAIN_ROCK_LIGHT_COLOR (allerede definert, brukt av fjellenes egne topp-partier) - IKKE den mørkere
+    // MOUNTAIN_ROCK_COLOR som først ble brukt her - inni tunnelen er belysningen svakere enn ute i solen, så
+    // en farge som ser passe grå ute på fjellsiden blir nesten svart der inne (brukeren: "tunellen kan være
+    // mer gråaktig").
+    const rockMat = new THREE.MeshStandardMaterial({ color: MOUNTAIN_ROCK_LIGHT_COLOR, roughness: 0.95, flatShading: true, map: wallTexture });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x464034, roughness: 1 });
+
+    function placeBox(w, h, d, lx, ly, lz, mat) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        const wp = orientedBoxWorldFromLocal(lx, lz, c);
+        mesh.position.set(wp.x, ly, wp.z);
+        mesh.rotation.y = yaw;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+    }
+
+    const wallThick = 2, floorThick = 0.3;
+    placeBox(halfWidth * 2, floorThick, halfD * 2, 0, floorY - floorThick / 2, 0, floorMat); // synlig gulvflate
+    placeBox(wallThick, ceilY - floorY, halfD * 2, -(halfWidth + wallThick / 2), (floorY + ceilY) / 2, 0, rockMat);
+    placeBox(wallThick, ceilY - floorY, halfD * 2, halfWidth + wallThick / 2, (floorY + ceilY) / 2, 0, rockMat);
+
+    const wallW = orientedBoxWorldFromLocal(-(halfWidth + wallThick / 2), 0, c);
+    const wallE = orientedBoxWorldFromLocal(halfWidth + wallThick / 2, 0, c);
+    SOLID_COLLIDERS.push(
+        { cx: wallW.x, cz: wallW.z, halfW: wallThick / 2, halfD: halfD, yaw: yaw, minY: floorY, topY: ceilY },
+        { cx: wallE.x, cz: wallE.z, halfW: wallThick / 2, halfD: halfD, yaw: yaw, minY: floorY, topY: ceilY }
+    );
+
+    // Opp fra 8 - færre segmenter ga tydelige "trappetrinn" i takhøyden (brukeren: "rare horisontale
+    // seksjoner/linjer i fjellsiden") synlige gjennom selve munningsåpningen. Flere, tynnere segmenter gir
+    // en mye jevnere (om enn fortsatt trinnvis, se ROOF_MARGIN-kommentaren) tilnærming til den faktiske,
+    // glatte profilkurven taket følger.
+    const ROOF_SEGMENTS = 24, ROOF_MARGIN = 3;
+    for (let s = 0; s < ROOF_SEGMENTS; s++) {
+        const lz0 = -halfD + (2 * halfD) * (s / ROOF_SEGMENTS);
+        const lz1 = -halfD + (2 * halfD) * ((s + 1) / ROOF_SEGMENTS);
+        // Ekte profilhøyde i alle FIRE hjørner av dette segmentet (begge sider av korridoren, begge
+        // endene) - bruker den LAVESTE (mest konservative), slik at taket ALDRI stikker opp gjennom
+        // fjellets faktiske overflate noe sted i segmentet.
+        const corners = [
+            orientedBoxWorldFromLocal(halfWidth, lz0, c), orientedBoxWorldFromLocal(halfWidth, lz1, c),
+            orientedBoxWorldFromLocal(-halfWidth, lz0, c), orientedBoxWorldFromLocal(-halfWidth, lz1, c)
+        ];
+        let realHeight = Infinity;
+        corners.forEach(function (p) { realHeight = Math.min(realHeight, summitMountainHeightAt(p.x, p.z)); });
+        let segTop = Math.max(ceilY + 1, realHeight - ROOF_MARGIN);
+        // roofCap (se funksjonens egen kommentar) - hindrer fyll-taket i å stikke opp i EN ANNEN korridors
+        // eget luftrom nær fjellsenteret, uansett hvor høyt den ekte fjelloverflaten er akkurat der.
+        if (roofCap !== undefined) segTop = Math.min(segTop, roofCap);
+        const segCenterLz = (lz0 + lz1) / 2;
+        placeBox(halfWidth * 2, segTop - ceilY, lz1 - lz0, 0, (ceilY + segTop) / 2, segCenterLz, rockMat);
+        const segW = orientedBoxWorldFromLocal(0, segCenterLz, c);
+        // SAMME tall (segTop) brukt til den synlige boksen over OG kollideren her - garantert samsvar.
+        SOLID_COLLIDERS.push({ cx: segW.x, cz: segW.z, halfW: halfWidth, halfD: (lz1 - lz0) / 2, yaw: yaw, minY: ceilY, topY: segTop });
+    }
+
+    // Taklys, jevnt fordelt langs hele korridoren (brukerens krav: "må ha lys i tunellene. kanskje noen
+    // lys i taket?") - begge tunnelene er kun ambient-belyst inni (solens DirectionalLight når ikke inn
+    // under taket), så uten dette blir de ganske flate/mørke å fly gjennom sammenlignet med resten av
+    // banen. Armaturet er en liten mørk "husk"-boks med en lysende "pære"-flate rett under - pæren bruker
+    // MeshBasicMaterial (IKKE MeshStandardMaterial+emissive, som fortsatt skyggelegges av scenens lys og
+    // kan se svakt/dødt ut i den ellers ganske jevnt ambient-belyste tunnelen) for et garantert synlig,
+    // skyggeuavhengig lys, samme grunnprinsipp som de glødende vindusflatene på husene (se buildBuilding).
+    // PLUSS en myk "lyspøl"-dekal på gulvet under hver lampe (se buildTunnelLightPoolTexture - IKKE et
+    // ekte THREE.PointLight, se den funksjonens egen kommentar for hvorfor).
+    const LIGHT_SPACING = 22; // meter mellom hver lampe langs korridoren
+    const lightCount = Math.max(1, Math.floor((halfD * 2) / LIGHT_SPACING) + 1);
+    const lampHousingMat = new THREE.MeshStandardMaterial({ color: 0x262626, roughness: 0.7, metalness: 0.2 });
+    const lampBulbMat = new THREE.MeshBasicMaterial({ color: 0xfff0c0 });
+    const lightPoolMat = new THREE.MeshBasicMaterial({
+        map: buildTunnelLightPoolTexture(), transparent: true, depthWrite: false
+    });
+    for (let i = 0; i < lightCount; i++) {
+        const lz = lightCount === 1 ? 0 : -halfD + (2 * halfD) * (i / (lightCount - 1));
+        const wpHousing = orientedBoxWorldFromLocal(0, lz, c);
+        const housing = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.16, 1.0), lampHousingMat);
+        housing.position.set(wpHousing.x, ceilY - 0.08, wpHousing.z);
+        housing.rotation.y = yaw;
+        housing.castShadow = true;
+        group.add(housing);
+        const bulb = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.04, 0.7), lampBulbMat);
+        bulb.position.set(wpHousing.x, ceilY - 0.19, wpHousing.z);
+        bulb.rotation.y = yaw;
+        group.add(bulb);
+        // renderOrder 1 (etter selve gulvflaten, som er default renderOrder 0) - samme depthWrite:false/
+        // renderOrder-kombinasjon som droneens bakkeskygge-dekal bruker mot bakken/plattformen den ligger
+        // over, unngår z-fighting-flimring mot gulvet rett under.
+        // CircleGeometry (IKKE PlaneGeometry, som forrige versjon brukte) - en firkantet flate rotert flat
+        // KUN om X (rotation.x=-PI/2, uten en tilsvarende Y-rotasjon for selve korridorens yaw) beholder
+        // sin kvadratiske footprint LANGS VERDENS X/Z-AKSENE, uavhengig av korridorens faktiske retning -
+        // i toppunnelen (yaw ca. 20°, IKKE akse-rettet slik bakketunnelen tilfeldigvis er) stakk hjørnene
+        // på den 10+ m brede firkanten dermed synlig UT gjennom sideveggene på skrå, og så ut som et fast,
+        // lysende objekt som blokkerte korridoren (brukerens rapport: "den øverste tunellen har fortsatt
+        // et objekt inne i seg som blokkerer tunellen"). En sirkel er rotasjonssymmetrisk om sin egen
+        // normal, så den samme bugen er umulig uansett korridorretning - trenger ingen egen
+        // yaw-korrigering i det hele tatt. Også tydelig mindre (radius halfWidth*0.7=4.2 m, diameter 8.4 m
+        // - komfortabelt innenfor korridorens 12 m bredde) enn den forrige, nesten vegg-til-vegg firkanten.
+        const pool = new THREE.Mesh(new THREE.CircleGeometry(halfWidth * 0.7, 20), lightPoolMat);
+        pool.rotation.x = -Math.PI / 2;
+        pool.position.set(wpHousing.x, floorY + 0.02, wpHousing.z);
+        pool.renderOrder = 1;
+        group.add(pool);
+    }
+
+    // Selve "hullet" i den delte fjell-høydefelt-modellen (mountainHeightAt) - gulvet i korridoren, i
+    // stedet for den vanlige fjellprofilen, kun innenfor dette rektangelet (samme cx/cz/yaw/halfW/halfD som
+    // kollisjonsboksene over - én kilde til sannhet for hvor korridoren faktisk er).
+    MOUNTAIN_TUNNEL_VOIDS.push({ cx: cx, cz: cz, halfW: halfWidth, halfD: voidHalfD, yaw: yaw, floorY: floorY, ceilY: ceilY });
+
+    return group;
+}
+// Noen få lavpoly "steiner" spredt på selve toppflaten - brukerens ønske om mer tekstur/naturlige detaljer
+// deroppe. IcosahedronGeometry(r,0) (flatShading via materialet) gir en billig, uregelmessig steinform uten
+// egen vertex-jitter-logikk - per-instans skalering på alle tre akser (ulik per akse) bryter opp den
+// ellers for regelmessige polyeder-silhuetten videre. Rene dekorasjonsobjekter (ingen egen kollisjon,
+// samme "for lite/lavt til å trenge egen SOLID_COLLIDERS-oppføring"-prinsipp som PROP_HAZARDS-unntakene
+// andre steder i filen) - plassert (vinkel/avstand) for bevisst å unngå både påskeegget (offset ~10,5 fra
+// senter, θ≈63°) og målporten (offset -4,8/13,2, θ≈340°, dist≈14), se de valgte vinklene under. Nærmeste
+// stein til hver av dem (θ15/dist9 mot egget, θ310/dist11 mot målporten) har fortsatt 7+ m klaring.
+function buildSummitRocks() {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: MOUNTAIN_ROCK_COLOR, flatShading: true, roughness: 1 });
+    // { angleDeg, dist, r } - håndplassert, IKKE en loop-generert vifte, nettopp for å kunne styre unna
+    // påskeegget/målporten presist i stedet for å stole på en filtrerings-sjekk.
+    const ROCKS = [
+        { angleDeg: 15, dist: 9, r: 1.1 },
+        { angleDeg: 100, dist: 12, r: 0.8 },
+        { angleDeg: 130, dist: 8, r: 1.4 },
+        { angleDeg: 160, dist: 14, r: 0.9 },
+        { angleDeg: 190, dist: 10, r: 1.2 },
+        { angleDeg: 310, dist: 11, r: 0.7 }
+    ];
+    ROCKS.forEach(function (spec, i) {
+        const ang = THREE.MathUtils.degToRad(spec.angleDeg);
+        const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(spec.r, 0), mat);
+        rock.scale.set(1 + Math.sin(i * 2.2) * 0.35, 0.55 + Math.abs(Math.cos(i * 3.9)) * 0.35, 1 + Math.cos(i * 1.7) * 0.35);
+        rock.rotation.set(Math.sin(i) * 2, Math.cos(i * 1.3) * 3, Math.sin(i * 0.7) * 2);
+        rock.position.set(
+            SUMMIT_MOUNTAIN_CENTER_X + Math.sin(ang) * spec.dist,
+            69 + spec.r * 0.25,
+            SUMMIT_MOUNTAIN_CENTER_Z + Math.cos(ang) * spec.dist
+        );
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        group.add(rock);
+    });
+    return group;
+}
+function buildSummitMountain() {
+    const group = new THREE.Group();
+    // Selve fjellskallet - ETT sammenhengende, sømløst mesh (se buildSummitMountainGeometry sin egen
+    // kommentar for hele begrunnelsen bak omskrivingen fra det forrige, sømfulle bånd-baserte forsøket).
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, side: THREE.DoubleSide });
+    const shell = new THREE.Mesh(buildSummitMountainGeometry(), mat);
+    shell.castShadow = true;
+    shell.receiveShadow = true;
+    group.add(shell);
+    // Toppflaten - flat disk (radius = summitMountainRadiusAtHeightFrac(1) = topRadiusFrac*radius ≈ 19.8).
+    // EGEN, vanlig heltone-material (IKKE den delte vertexColors-`mat` båndene bruker) - CircleGeometry
+    // har ingen egen "color"-attributt satt, og et MeshStandardMaterial med vertexColors:true uten noen
+    // slik attributt på geometrien rendrer helt SVART (brukeren: "toppen av fjellet er helt svart?").
+    const capMat = new THREE.MeshStandardMaterial({ color: MOUNTAIN_ROCK_LIGHT_COLOR, flatShading: true, roughness: 1 });
+    const capRadius = summitMountainRadiusAtHeightFrac(1);
+    // SUMMIT_MESH_SEGS (IKKE MOUNTAIN_RADIAL_SEGMENTS) - matcher selve skallets toppring segment-for-segment
+    // langs samme sirkel, samme "ingen skjøt å mismatche"-prinsipp som resten av buildSummitMountainGeometry.
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(capRadius, SUMMIT_MESH_SEGS), capMat);
+    cap.rotation.x = -Math.PI / 2;
+    cap.position.set(SUMMIT_MOUNTAIN_CENTER_X, 69, SUMMIT_MOUNTAIN_CENTER_Z);
+    cap.receiveShadow = true;
+    group.add(cap);
+
+    // Påskeegget som tidligere satt på MOUNTAIN_PEAKS[0] (buildLoneHiker - se MOUNTAIN_EASTER_EGGS i
+    // buildMountainRange, som nå hopper over familyIndex 0) - flyttet hit, litt unna selve målporten
+    // (dx -4.8, dz 633.2, se GATE_WAYPOINTS_TUNNEL) så de to ikke overlapper på det samme lille platået.
+    const egg = buildLoneHiker();
+    egg.position.set(SUMMIT_MOUNTAIN_CENTER_X + 10, 69.04, SUMMIT_MOUNTAIN_CENTER_Z + 5);
+    egg.rotation.y = Math.PI;
+    group.add(egg);
+
+    // "kan ha mer tekstur på fjelltoppen også. kanskje noen naturlige steiner også?" (brukeren) - noen få
+    // lavpoly steiner spredt på selve toppflaten, se buildSummitRocks.
+    group.add(buildSummitRocks());
+
+    // Bakketunnelen - rett gjennom senteret (0,620) langs Z, mellom sør- og nordmunningen. overhang=25 (opp
+    // fra standard 3) - se buildMountainTunnelSegment sin egen kommentar for hvorfor: den ekte profilhøyden
+    // stiger BRATT rett utenfor sørmunningen (0 m ved selve fjellfoten, radius 110/dist 90+25=115 fra
+    // senter, til 15+ m allerede ved dist 90) - tilnærmingsruta inn (se GATE_WAYPOINTS_TUNNEL) trenger nok
+    // beskyttet sone til faktisk å NÅ munningen i åpen luft før den dykker ned til gulvhøyden, uten å
+    // krasje i den ekte fjellsiden et lite stykke FØR selve åpningen.
+    // roofCap=39 (SISTE argument, voidOverhang utelatt/undefined = uendret standardoppførsel der) - se
+    // buildMountainTunnelSegment sin egen roofCap-kommentar: uten denne fylte bakketunnelens "stein opp til
+    // ekte fjellhøyde"-tak rett gjennom toppunnelens eget luftrom (40-45 m) nær fjellsenteret, der begge
+    // korridorenes baner krysser samme punkt (begge er boret gjennom eksakt (0,620)).
+    group.add(buildMountainTunnelSegment(0, 530, 0, 710, 6, 2, 12, 25, undefined, 39));
+    // Toppunnelen - IKKE lenger en kort korde nær overflaten (θ210/θ250, så θ198/θ255 - flere tidligere
+    // runder), men en EKTE DIAMETRISK boring: inngang θ200, utgang θ20, NØYAKTIG 180° fra hverandre, begge
+    // på radius 48 fra fjellsenteret - korridoren går dermed i en RETT linje GJENNOM selve senterpunktet
+    // (0,620) i denne høyden, akkurat som bakketunnelen under (θ180 til θ0) allerede gjør lenger nede.
+    // Brukeren, etter flere runder med kortere korder som fortsatt så "skrå"/overflatiske ut: "rett gjennom
+    // midten av fjellet". En diametrisk linje har INGEN "korde buer innover fra sirkelen"-komplikasjon i det
+    // hele tatt (se tidligere versjoners lange resonnement om sagitta/mismatch, nå overflødig) - midtpunktet
+    // ER selve fjellsenteret (dist 0, ekte høyde helt opp til 69 m, se summitMountainHeightAt), så klaringen
+    // over taket er STØRST nøyaktig midtveis i stedet for å variere langs korridoren.
+    // Gulv/tak (40-45 m, uendret) er fortsatt trygt: den TRANGESTE flaskehalsen langs hele korridoren er
+    // (uforandret av selve vinkelen - kun radiusen 48 avgjør) EKTE fjellhøyde ved munningene selv (dist 48 →
+    // høyde ≈47,4 m) - taket (45 m) ligger 2,4 m under denne, og ellers langs korridoren (helt opp til
+    // ≈69 m midtveis) er klaringen enda større. ROOF_SEGMENTS fyller som før opp til ekte overflate langs
+    // hele den nå ≈96 m lange korridoren (full diameter).
+    // Selve hullet i fjellskallet (θ200±7/θ20±7) er utledet fra korridorens fysiske bredde OG ringens EGEN
+    // (videre) radius ved gulvhøyden - se SUMMIT_TUNNEL_HOLE_RANGES sin egen kommentar for hele
+    // regnestykket, inkludert hvorfor 48 (korridorplasseringen) IKKE er samme tall som ringradiusen der.
+    // overhang økt fra standard (3) til 13 (halfD=48+13=61) - MÅ rekke minst ut til gulvringens egen radius
+    // (≈57.7, se over) for at korridorboksens vegger faktisk skal dekke det utskårne hullet i skallet; med
+    // gammel overhang (3, halfD=51) stoppet veggene 6-7 m for tidlig, og selve fjellåpningen (som fysisk
+    // sitter ved radius ≈51.2-57.7, IKKE ved 48) sto delvis udekket - synlig som en boksstruktur med gress/
+    // bakke synlig rundt/under i stedet for solid fjell (brukerens rapport, med skjermbilde: "øverste
+    // tunell må strekkes lengre og ikke ha åpninger i fjellet"). Med halfD=61 stikker selve tunnelrøret nå
+    // godt synlig ut av fjellsiden ved begge munninger (13 m forbi de fysiske portene på θ200/θ20, se
+    // GATE_WAYPOINTS_TUNNEL) - en ekte, solid tunnelportal i stedet for en for kort boks gjemt for langt inne.
+    // voidOverhang=13 (SISTE argument - nå SAMME som selve vegg-/takstrukturens overhang, IKKE lenger en
+    // egen, mindre verdi). Den forrige, mindre verdien (3) var en overkorrigering: den ga en FOR SMAL
+    // beskyttet gulvsone helt inntil selve munningen (kun siste ~3 m før hullet) - en tilnærming som ikke
+    // traff eksakt midt på tunnelaksen (normalt for en ekte pilot) traff dermed den ekte, bratte
+    // fjellsiden rett før selve åpningen, umulig å skille fra vanlig fjellstein (brukerens rapport:
+    // "krasjer i noe usynlig på vei inn... det er fortsatt en synlig blokkering inne i tunellen. kan ikke
+    // se gjennom den eller fly gjennom"). Den opprinnelige bekymringen som ga voidOverhang=3 (et STORT
+    // hulrom ville dekke toppflaten der påskeegget/steinene står, se mountainHeightAt) er nå løst på riktig
+    // sted - selve høyde-bevisstheten (atY/ceilY-sjekken i mountainHeightAt, se den funksjonens kommentar)
+    // hindrer korridorens gulvhøyde-override fra å gjelde for spørringer langt over korridorens eget tak,
+    // UANSETT hvor langt hulrommets XZ-fotavtrykk strekker seg - trygt å gjøre hulrommet like langt som
+    // selve vegg-/takstrukturen igjen uten å gjeninnføre den opprinnelige "glitcher gjennom bakken"-bugen.
+    group.add(buildMountainTunnelSegment(-16.4, 574.9, 16.4, 665.1, 6, 40, 45, 13, 13));
+
+    return group;
+}
+
+const GATE_COURSE_TUNNEL_CENTER = new THREE.Vector3(0, 0, 0);
+// Portenes verdenskoordinater (dx/dz - GATE_COURSE_TUNNEL_CENTER er (0,0,0)). De seks første (skog/dam)
+// og de fire neste (langs elva, klatring begynner) er samme trasé som brukerens opprinnelige ønske
+// ("gjennom skogen ved vannet, opp langs elva") - se RIVER_POINTS/FOREST_TREES. Deretter svinger banen
+// vestover og glir ned mot fjellets sørmunning (world x≈0) i stedet for å fortsette til et eget fjell.
+const GATE_WAYPOINTS_TUNNEL = [
+    { type: "start", dx: 20, dz: 40, gap: 1.8, size: 3.2 },                    // sør for dammen (RIVER_POND_RADIUS ved 45,70)
+    { type: "gate", dx: 65, dz: 85, gap: 1.8, size: 3.0 },                     // forbi dammens østkant
+    { type: "gate", dx: 118, dz: 95, gap: 1.8, size: 3.0 },                    // inn i skogen (FOREST_TREES, senter 140,90)
+    { type: "gate", dx: 151, dz: 95, gap: 1.8, size: 3.0 },                    // gjennom skogens rad-mellomrom
+    { type: "gate", dx: 178, dz: 105, gap: 1.8, size: 3.0 },                   // ut av skogen, mot elva
+    // To NYE overgangsporter (brukeren: "banen etter skogen må ikke snu så brått tilbake mot elva. heller
+    // svinge slakere lenger opp mot elva og fjellet" - forrige versjon hoppet rett fra skogutgangen (dx178)
+    // til en enkelt elve-port langt mot vest (dx85), en brå ~140° helomvending i én eneste sving). Fortsetter
+    // nå stort sett rett fram et lite stykke først (dx200 - fortsatt utenfor selve skogen, som slutter rundt
+    // dx177, se FOREST_TREES), så en slakere, videre sving (dx175→videre) HØYERE OPP (større dz) enn før,
+    // fordelt over TO svinger i stedet for én brå - før den kobler seg på elve-følgingen ved dx120/dz200.
+    { type: "gate", dx: 200, dz: 118, gap: 1.8, size: 3.0, elevation: 2 },
+    { type: "gate", dx: 175, dz: 160, gap: 1.8, size: 3.0, elevation: 2 },
+    // Langs elva (RIVER_POINTS) - dx-verdiene er OFFSET ut til østbredden (halve elvebredden - RIVER_WIDTHS,
+    // interpolert ved samme z - PLUSS en liten margin) fra selve elvens senterlinje, IKKE midt i selve
+    // elveløpet (brukerens rapport: "ingen gates midt i elva" - forrige versjon brukte senterlinjens EGNE
+    // dx-verdier direkte, altså bokstavelig midt i vannet). Holdes lavt (elevation 2-6, ekte bakkekontakt
+    // et lite stykke over bredden) HELE veien til fjellfoten - ingen kunstig høy "sikkerhetsstrekning" i
+    // åpen luft over flatt mark lenger - korte, lave ben (brukerens rapport: "de skal ikke ha så lange
+    // ben.. skal være nært bakken. kun lengre ben i fjellsiden der det trengs").
+    // Senket enda et hakk (brukeren, gjentatt: "Gatene i til topps banen langs elva må senkes mye nærmere
+    // bakken") - omtrent halvert fra forrige runde (2/2/3/4/6 -> 1/1/1.5/2/3). Fortsatt stigende mot
+    // fjellfoten (der terrenget selv begynner å stige mot den ekte fjellsiden, se buildGroundedGate sin
+    // egen ekte terrengfølging) - IKKE 0 hele veien, som ville gitt for lite klaring over selve elvebredden/
+    // ujevnheter i bakken den siste strekningen.
+    { type: "gate", dx: 120, dz: 200, gap: 1.8, size: 3.0, elevation: 1 },
+    { type: "gate", dx: 131, dz: 270, gap: 1.8, size: 3.0, elevation: 1 },
+    { type: "gate", dx: 130, dz: 340, gap: 1.8, size: 3.0, elevation: 1.5 },
+    { type: "gate", dx: 123, dz: 400, gap: 1.8, size: 3.0, elevation: 2 },
+    { type: "gate", dx: 95, dz: 460, gap: 1.8, size: 3.0, elevation: 3 },
+    // IKKE lenger en egen liten port ved dz500 rett før selve munningsporten (brukeren: "nederste tunell.
+    // trenger ikke ha den lille gaten inne i tunellen rett før den store" - de to lå bare 30 m fra
+    // hverandre, unødvendig tett/overflødig). Går nå rett fra elve-følgingen til selve munningsporten -
+    // fortsatt trygt: den ekte fjellsiden stiger først BRATT innenfor radius 110 fra senter (0,620) (se
+    // buildMountainTunnelSegment sin overhang-kommentar), og ved x≈0 er MOUNTAIN_TUNNEL_VOIDS sin
+    // beskyttede korridor (halfW 6) allerede aktiv fra z>=505 - hele strekningen hit inn er derfor enten
+    // reelt flatt terreng (dist>110) eller inne i den beskyttede, flate korridorgulv-sonen.
+    { type: "gate", dx: 0, dz: 530, gap: 2.0, size: 6.0, elevation: 3 },    // bakketunnelen inn (sørmunning, θ180,dist90)
+    // yawFromPrev (se GATE_PLACEMENTS_TUNNEL) - denne portens "neste" i selve rekkefølgen er spiral-
+    // klatringen (svinger kraftig av mot θ45), IKKE rett frem gjennom tunnelen - uten dette pekte porten
+    // feil vei (mot neste banedel i stedet for langs tunnelaksen), og beina havnet utenfor den beskyttede
+    // korridoren, opp mot den ekte, bratte fjellsiden - porten endte synlig "oppå" munningen i stedet for i
+    // selve åpningen (brukerens rapport, med skjermbilde).
+    { type: "gate", dx: 0, dz: 710, gap: 2.0, size: 6.0, elevation: 3, yawFromPrev: true }, // bakketunnelen ut (nordmunning, θ0,dist90)
+    { type: "gate", dx: 55.2, dz: 675.2, gap: 1.8, size: 3.0, elevation: 26 }, // spiral opp østsiden (θ45,dist78)
+    { type: "gate", dx: 64.0, dz: 620.0, gap: 1.8, size: 3.0, elevation: 37 }, // (θ90,dist64)
+    { type: "gate", dx: 32.1, dz: 581.7, gap: 1.8, size: 3.0, elevation: 48 }, // (θ140,dist50)
+    { type: "gate", dx: -10.4, dz: 581.4, gap: 1.8, size: 3.0, elevation: 55 }, // (θ195,dist40)
+    // Munningsportene (bredere/lavere gap enn standard, se gate-kommentaren over) - gjør at ringen fyller
+    // det meste av selve tunneltverrsnittet (halfWidth 6, gulv/tak 40-45) i stedet for å henge som en liten
+    // frittstående ring midt i en mye større åpning (brukeren: "portene kan kanskje gå nesten flush med
+    // tunnelen inni der?"). Koordinatene (radius 48, θ200/θ20 - ekte diametrisk boring, se buildSummitMountain
+    // sin kommentar ved buildMountainTunnelSegment-kallet) og selve gulv-/takhøyden (40-45) matcher
+    // buildSummitMountain sin egen toppunnel-geometri - elevation sitter fortsatt nær korridorens eget gulv
+    // (40.2).
+    { type: "gate", dx: -16.4, dz: 574.9, gap: 0.6, size: 3.8, elevation: 40.2 }, // toppunnelen inn (θ200,dist48)
+    // yawFromPrev - samme begrunnelse som nordmunningen over: denne portens "neste" er klatreporten videre
+    // mot toppen (svinger kraftig av fra tunnelaksen, se under), ikke rett frem langs toppunnelens akse.
+    { type: "gate", dx: 16.4, dz: 665.1, gap: 0.6, size: 3.8, elevation: 40.2, yawFromPrev: true }, // toppunnelen ut (θ20,dist48)
+    // Kort klatring fra munningen (θ20,dist48,høyde40.2) opp mot toppflaten (θ~10,dist30,høyde~60 - ekte
+    // fjellhøyde der er ≈61.2 m, se summitMountainRadiusAtHeightFrac/mountainProfileHeightFrac, så 60 gir
+    // trygg klaring). Munningen ligger nå på MOTSATT side av fjellet fra den forrige (θ255-baserte) utgangen
+    // - målporten flyttet tilsvarende (se under) i stedet for å beholde en lang, unaturlig omvei tilbake
+    // rundt fjellet til den gamle plasseringen.
+    { type: "gate", dx: 5.2, dz: 649.5, gap: 1.8, size: 3.0, elevation: 60 },
+    // Mål - nær toppflaten (θ~340,dist14), god klaring til både påskeegget (offset ~10,5 fra senter, θ≈63°)
+    // og steinene ved θ15/dist9 (buildSummitRocks) - se koordinatvalget i git-historikken for regnestykket.
+    // type "goal" (ikke "gate") - svart/hvitt sjakkrutet i stedet for oransje/hvit, se buildGroundedGate.
+    { type: "goal", dx: -4.8, dz: 633.2, gap: 1.8, size: 3.0, elevation: 70 }
+];
+const GATE_PLACEMENTS_TUNNEL = GATE_WAYPOINTS_TUNNEL.map(function (wp, i) {
+    const isLast = i === GATE_WAYPOINTS_TUNNEL.length - 1;
+    // Ingen "neste port" å peke mot for den SISTE (i motsetning til GATE_PLACEMENTS_2 sin lukkede løkke,
+    // der (i+1)%length alltid finnes) - fortsetter i stedet samme retning som selve ankomsten dit.
+    // wp.yawFromPrev (valgfritt, satt på de to munnings-UTGANGENE - se GATE_WAYPOINTS_TUNNEL) - samme
+    // "fortsett ankomstretningen" som isLast, men brukt MIDT i lista: en munning-UTGANG sin "neste port" i
+    // selve rekkefølgen svinger av i en helt annen retning (inn i neste del av banen), mens porten selv
+    // fysisk MÅ stå på linje med selve tunnelaksen (samme retning som ankomsten FRA munning-INNGANGEN) -
+    // uten dette pekte utgangsporten mot neste bane-del i stedet for langs tunnelen, som ga en helt feil
+    // beinretning (buildGroundedGate sine ben endte da UTENFOR MOUNTAIN_TUNNEL_VOIDS sin smale, beskyttede
+    // korridor - der er ekte, bratt fjellside - i stedet for den flate tunnelgulv-høyden) - portens ben
+    // strakk seg da helt opp til den ekte fjelloverflaten, og porten endte synlig "oppå" munningen i
+    // stedet for å stå i selve åpningen (brukerens rapport, med skjermbilde).
+    const useIncoming = isLast || wp.yawFromPrev;
+    const reference = useIncoming ? GATE_WAYPOINTS_TUNNEL[i - 1] : GATE_WAYPOINTS_TUNNEL[i + 1];
+    const yaw = useIncoming
+        ? Math.atan2(wp.dx - reference.dx, wp.dz - reference.dz)
+        : Math.atan2(reference.dx - wp.dx, reference.dz - wp.dz);
+    return {
+        wp: wp,
+        x: GATE_COURSE_TUNNEL_CENTER.x + wp.dx,
+        z: GATE_COURSE_TUNNEL_CENTER.z + wp.dz,
+        y: wp.elevation || 0,
+        yaw: yaw
+    };
+});
+function buildGateCourseTunnel() {
+    const group = new THREE.Group();
+    GATE_PLACEMENTS_TUNNEL.forEach(function (placement) {
+        const wp = placement.wp;
+        // buildGroundedGate (IKKE buildGate/buildStartFinishGate) - hele denne banen klatrer i åpen luft
+        // over stigende terreng eller står tett inntil fjellsiden, så en fast beinlengde (som antar flatt
+        // terreng under selve porten) ville latt porten sveve med et synlig gap ned til bakken/fjellsiden -
+        // se buildGroundedGate for hvordan beina strekkes til EKTE terrenghøyde i stedet.
+        const obstacle = buildGroundedGate(wp, placement);
+        obstacle.position.set(placement.x, placement.y, placement.z);
+        obstacle.rotation.y = placement.yaw;
+        group.add(obstacle);
+    });
+    group.add(buildSummitMountain());
+    return group;
+}
+// Portenes fangstsoner for selve tidtakingen (se isDroneInGateOpening/updateRacingStage) - samme
+// 0.92-marginprinsipp/RACE_GATE_DEPTH_TOLERANCE som RACE_GATE_CENTERS_2. Ingen barn-/roofgate-type her
+// (kun "start"/"gate"), så oppslaget er enklere enn course 2 sitt.
+const RACE_GATE_CENTERS_TUNNEL = GATE_PLACEMENTS_TUNNEL.map(function (placement) {
+    const wp = placement.wp;
+    return {
+        x: placement.x, y: placement.y + wp.gap + wp.size / 2, z: placement.z,
+        yaw: placement.yaw,
+        halfW: wp.size / 2 * 0.92, halfH: wp.size / 2 * 0.92
+    };
+});
+const RACE_TUNNEL_START_PLACEMENT = GATE_PLACEMENTS_TUNNEL[0];
+const RACE_SPAWN_BACK_DIST_TUNNEL = 20; // samme avstand/begrunnelse som RACE_SPAWN_BACK_DIST (course 2)
+const RACE_SPAWN_POINT_TUNNEL = new THREE.Vector3(
+    RACE_TUNNEL_START_PLACEMENT.x - Math.sin(RACE_TUNNEL_START_PLACEMENT.yaw) * RACE_SPAWN_BACK_DIST_TUNNEL,
+    0,
+    RACE_TUNNEL_START_PLACEMENT.z - Math.cos(RACE_TUNNEL_START_PLACEMENT.yaw) * RACE_SPAWN_BACK_DIST_TUNNEL
+);
+const RACE_SPAWN_YAW_TUNNEL = RACE_TUNNEL_START_PLACEMENT.yaw + Math.PI;
+
+// Per-bane "ressurser" (portliste + spawn) for racing-stagene, slått opp på stage.assetsKey ved selve
+// KALLTIDSPUNKTET (inne i spawnRacingStage/updateRacingStage/racingGatesForStage, som kjører lenge etter
+// hele filen er lastet) - IKKE lagret direkte på EXERCISES-objektets stage-definisjoner. EXERCISES
+// evalueres STRAKS når det selv defineres, tidlig i filen, lenge FØR RACE_GATE_CENTERS_TUNNEL/
+// RACE_SPAWN_POINT_TUNNEL over i det hele tatt eksisterer - en direkte referanse fra en stage-definisjon
+// til dem ville feilet med en "kan ikke aksessere før initialisering"-feil. race1/race3 har ingen
+// assetsKey og faller derfor tilbake til RACE_GATE_CENTERS_2/RACE_SPAWN_POINT (se disse funksjonenes egne
+// fallback-verdier når oppslaget her gir undefined).
+const RACING_STAGE_ASSETS = {
+    raceTunnel: { gates: RACE_GATE_CENTERS_TUNNEL, spawnPoint: RACE_SPAWN_POINT_TUNNEL, spawnYaw: RACE_SPAWN_YAW_TUNNEL }
+};
+function racingGatesForStage(stage) {
+    const assets = RACING_STAGE_ASSETS[stage.assetsKey];
+    return (assets && assets.gates) || RACE_GATE_CENTERS_2;
+}
+
 /* ---------- Propell-treffbokser for racingbane 2 - se PROP_HAZARDS-kommentaren for prinsippet.
    Identisk oppbygging, bare med et Y-elevasjonsledd (placement.y) lagt til hvor relevant, for
    rådhustak-gaten (den eneste som ikke står med bunnbein rett på bakkeplanet). */
@@ -3263,7 +4278,33 @@ const PROP_HAZARDS_2 = GATE_PLACEMENTS_2.map(function (placement) {
         boxes: boxes
     };
 });
-const ALL_PROP_HAZARDS = PROP_HAZARDS.concat(PROP_HAZARDS_2);
+/* ---------- Propell-treffbokser for "Til topps" (tunnelbanen) - se PROP_HAZARDS-kommentaren for
+   prinsippet. Samme ring-geometri som PROP_HAZARDS/PROP_HAZARDS_2 sin egen (ikke-låve) gren - ingen
+   "barn"-type porter her - men med placement.y-løftet PROP_HAZARDS_2 allerede innførte for rådhustak-
+   gaten, siden STORE deler av denne banen (klatringen i fjellsiden, munningsportene) ikke står på
+   bakkeplan. Manglet helt før nå - brukerens krav: "pass på att alle gates har kollisjonsdeteksjon" -
+   tunnelbanens porter hadde ingen treffbokser i det hele tatt, verken for propell eller noe annet. */
+const PROP_HAZARDS_TUNNEL = GATE_PLACEMENTS_TUNNEL.map(function (placement) {
+    const wp = placement.wp;
+    const s = wp.size, gap = wp.gap, t = 0.09; // halv bar-tykkelse (0.18/2)
+    const hs = s / 2;
+    const boxes = [
+        { minX: -hs, maxX: hs, minY: gap - t, maxY: gap + t, minZ: -t, maxZ: t },           // nedre bar
+        { minX: -hs, maxX: hs, minY: gap + s - t, maxY: gap + s + t, minZ: -t, maxZ: t },   // øvre bar
+        { minX: -hs - t, maxX: -hs + t, minY: 0, maxY: gap + s, minZ: -t, maxZ: t },        // venstre stolpe + ben
+        { minX: hs - t, maxX: hs + t, minY: 0, maxY: gap + s, minZ: -t, maxZ: t }           // høyre stolpe + ben
+    ];
+    const yOffset = placement.y || 0;
+    boxes.forEach(function (b) { b.minY += yOffset; b.maxY += yOffset; });
+    return {
+        x: placement.x, z: placement.z,
+        cosYaw: Math.cos(placement.yaw), sinYaw: Math.sin(placement.yaw),
+        boundRSq: (hs + 0.2 + 1.5) * (hs + 0.2 + 1.5),
+        maxY: gap + s + 0.2 + yOffset + 0.5,
+        boxes: boxes
+    };
+});
+const ALL_PROP_HAZARDS = PROP_HAZARDS.concat(PROP_HAZARDS_2, PROP_HAZARDS_TUNNEL);
 
 function buildWorldObjects() {
     const group = new THREE.Group();
@@ -3279,7 +4320,9 @@ function buildWorldObjects() {
     // folkemengden bak seg. Nå står bilen bak mengden sett fra avgangsplassen: folkemengden er alltid
     // det nærmeste/synlige elementet, bilen bare et landemerke lenger bak.
     car.position.set(24, 0, 14);
-    car.rotation.y = THREE.MathUtils.degToRad(20);
+    // +90° fra før - buildCar sin lengdeakse ble snudd fra lokal X til lokal Z (se kommentaren der), denne
+    // justeringen holder akkurat samme synlige verdensvinkel som før ombyggingen.
+    car.rotation.y = THREE.MathUtils.degToRad(20 + 90);
     group.add(car);
 
     const crowd = buildCrowd();
@@ -3291,13 +4334,15 @@ function buildWorldObjects() {
     group.add(building);
 
     DECORATIVE_TREES.forEach(function (t) {
-        const tree = Sim.buildRandomTree(t.h);
+        // Seed fra treets egen (faste) posisjon - se buildRandomTree sin egen kommentar.
+        const tree = Sim.buildRandomTree(t.h, t.x * 7.13 + t.z * 3.71);
         tree.position.set(t.x, 0, t.z);
         group.add(treeSwayManager.addSwayingTree(tree));
     });
 
     group.add(buildGateCourse());
     group.add(buildGateCourse2());
+    group.add(buildGateCourseTunnel());
 
     return group;
 }
@@ -3476,7 +4521,13 @@ function buildDrone(classKey) {
 
 function initScene() {
     const canvas = document.getElementById("simCanvas");
-    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    // logarithmicDepthBuffer: brukeren rapporterte flimring i dybdebufferet ("flimring når jeg ser elva på
+    // avstand") - med near/far så langt fra hverandre (0.1/2000, se kameraene under) er en vanlig,
+    // lineær dybdebuffer svært unøyaktig langt unna kameraet (mesteparten av presisjonen brukes opp nær
+    // kameraet), så to flater som er tydelig atskilt på nært hold (f.eks. elva, RIVER_Y=0.12 over bakken)
+    // kan likevel z-fighte synlig på avstand. Logaritmisk dybdebuffer fordeler presisjonen jevnere over
+    // hele near-far-spennet i stedet - standard motorfiks for nettopp denne typen avstandsflimring.
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, logarithmicDepthBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -3498,7 +4549,10 @@ function initScene() {
     }, false);
 
     scene = new THREE.Scene();
-    skyMesh = Sim.buildGradientSky();
+    // radius 1400 (opp fra Sim.buildGradientSky sin egen default 800, se dens kommentar) - kun for
+    // quad-simulatoren (fixedwing/vtol kaller uten argument, uendret) - se fjellkjede-kommentaren ved
+    // MOUNTAIN_DEFS for hele begrunnelsen (brukerens rapport om svarte hull i himmelen ved fjellene).
+    skyMesh = Sim.buildGradientSky(1400);
     scene.add(skyMesh);
     scene.add(buildGround());
     scene.add(buildWorldObjects());
@@ -3523,6 +4577,9 @@ function initScene() {
     sunLight.target.position.copy(SHADOW_CENTER);
     scene.add(sunLight.target);
     scene.add(sunLight);
+
+    droneShadowDecal = buildDroneShadowDecal();
+    scene.add(droneShadowDecal);
 
     const aspect = window.innerWidth / Math.max(1, window.innerHeight - 70);
     chaseCamera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
@@ -3569,6 +4626,25 @@ function initScene() {
     scene.add(airplaneHandle);
     pedestrianHandle = buildPedestrianGroup();
     scene.add(pedestrianHandle);
+
+    // Mål for targetStrike - egne håndtak, bygget/skjult på samme måte, se buildTargetDrone/buildCar/
+    // Sim.buildPersonFigure-bruken i "Øvelser: mål-i-bevegelse"-seksjonen. buildTargetDrone() setter
+    // group.visible=false selv (i motsetning til buildCar/buildPedestrianGroup, som ikke gjør det - derfor
+    // eksplisitt satt for de to under) - denne linja er dermed strengt tatt overflødig, men holdt for
+    // symmetri/lesbarhet med de to andre håndtakene rett under.
+    targetDroneHandle = buildTargetDrone();
+    targetDroneHandle.visible = false;
+    scene.add(targetDroneHandle);
+    // Grønn/kamuflasjefarget (brukerens krav) - IKKE standardbilens røde karosseri/mørkeblå kabin (se
+    // buildCar-kommentaren), skiller også målet visuelt fra den statiske, røde bilen ved avgangsplassen.
+    targetCarHandle = buildCar(0x4b5320, 0x39431c);
+    targetCarHandle.visible = false;
+    scene.add(targetCarHandle);
+    // Grønne/kamuflasjefargede vester (brukerens krav) - IKKE de blå/røde standardfargene (se
+    // buildPedestrianGroup-kommentaren, godt synlige "publikum i fare"-farger som ville vært misvisende
+    // for et mål som faktisk SKAL være vanskelig å få øye på i skogen).
+    targetRunnerHandle = buildPedestrianGroup([0x4b5320, 0x3d4a1a]);
+    scene.add(targetRunnerHandle);
 
     activeCamera = chaseCamera;
     resizeRenderer();
@@ -4318,7 +5394,11 @@ function resolveGroundContact(dt, wasGrounded) {
             }
         });
         if (embeddedInWall) return false;
-        const groundY = Math.max(mountainHeightAt(f.x, f.z), colliderTop);
+        // f.y som atY (se mountainHeightAt sin egen kommentar) - dette ER kontaktpunktets faktiske,
+        // nåværende høyde, akkurat den referansen tunnel-hulrom-sjekken trenger for ikke å blindt svare
+        // "korridorgulvet" for et punkt som egentlig befinner seg langt over selve taket (f.eks. oppe på
+        // toppflaten, se buildSummitRocks).
+        const groundY = Math.max(mountainHeightAt(f.x, f.z, f.y), colliderTop);
         const penetration = groundY - f.y;
         if (penetration > maxPenetration) maxPenetration = penetration;
         return penetration > -LEG_CONTACT_TOLERANCE;
@@ -4431,7 +5511,7 @@ function resolveGroundContact(dt, wasGrounded) {
 function propPointHitsObstacle(p, nearbyHazards) {
     // Bakken/fjellene: alltid solid ved sin egen beregnede høyde, uavhengig av minY-konseptet under
     // (terreng har ingen "starter høyt oppe"-kollidere).
-    if (p.y <= mountainHeightAt(p.x, p.z) + PROP_GROUND_STRIKE_EPS) return true;
+    if (p.y <= mountainHeightAt(p.x, p.z, p.y) + PROP_GROUND_STRIKE_EPS) return true;
     // Andre solide objekter (tak, vegger, bil, trestammer/-kroner): pointInsideAnySolidCollider
     // respekterer minY (se kommentaren der) - IKKE solidSurfaceHeightAt, som bevisst ignorerer minY (den
     // svarer "hva ville jeg landet på herfra", ikke "er jeg fysisk inni noe akkurat nå") og dermed ville
@@ -4650,10 +5730,88 @@ function toggleCamera() {
     activeCamera = (mode === "chase") ? chaseCamera : (mode === "fpv") ? fpvCamera : vlosCamera;
 }
 
+// Myk, alltid synlig "blob"-skygge rett under droneen - reell shadow-mapping (sunLight.shadow, se
+// initScene) alene var for svak/vanskelig å se i lav høyde og på selve landingsplattformen (brukeren:
+// "quadens skygge mot bakken må være tydeligere i lav høyde. skyggen må være synlig på landingspadden
+// også"). Tegnes ALLTID rett under droneen på den FAKTISKE overflaten der (solidSurfaceHeightAt - bakke,
+// fjell ELLER landingsplattformen/tak/bro, samme funksjon fysikken selv bruker til bakkekontakt),
+// uavhengig av shadow map-oppløsning/bias/frustum - garantert synlig posisjons-/høydereferanse i stedet
+// for et supplement som kan svikte akkurat der man trenger det mest.
+let droneShadowTextureBase = null;
+function buildDroneShadowTexture() {
+    if (droneShadowTextureBase) return droneShadowTextureBase;
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    // Myk radial gradient (mørkest i sentrum, helt gjennomsiktig i ytterkanten) - IKKE en hardkantet
+    // sirkel, som ville sett ut som en klistrelapp klistret på bakken i stedet for en skygge.
+    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    grad.addColorStop(0, "rgba(0,0,0,0.9)");
+    grad.addColorStop(0.55, "rgba(0,0,0,0.6)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    droneShadowTextureBase = new THREE.CanvasTexture(canvas);
+    return droneShadowTextureBase;
+}
+let droneShadowDecal;
+function buildDroneShadowDecal() {
+    // MeshBasicMaterial (upåvirket av scenens lys) - en forutsigbar, jevnt mørk skygge uansett solvinkel/
+    // skydekke, i stedet for å arve variasjonen den ekte shadow map-en allerede har (og som var problemet).
+    // depthWrite:false + renderOrder ETTER bakken/plattformen den ligger 3 cm over unngår z-fighting-
+    // flimring mot akkurat DEN flaten (samme grunnleggende problem som klokkeskivens polygonOffset-fiks,
+    // se buildClockFace - her løst med render-rekkefølge i stedet siden dette er en helt separat,
+    // frittstående flate, ikke geometri limt tett inntil en annen mesh).
+    const mat = new THREE.MeshBasicMaterial({ map: buildDroneShadowTexture(), transparent: true, depthWrite: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = 1;
+    return mesh;
+}
+// Høyde (m over bakken/plattformen der droneen står) skyggen er helt falmet bort - over dette gir den
+// ingen posisjonsinformasjon uansett (droneen er for langt unna til at "rett under" er nyttig å vite).
+// Senket fra 45 (brukeren: "skyggen ... henger litt for lenge igjen når drone øker høyden. må forsvinne
+// litt tidligere med høyden") - falmer nå helt bort innen 26 m i stedet for 45.
+const DRONE_SHADOW_MAX_ALT = 26;
+const DRONE_SHADOW_MIN_OPACITY = 0, DRONE_SHADOW_MAX_OPACITY = 0.82;
+function updateDroneShadowDecal() {
+    // Klemt til ALDRI å overstige droneens egen, faktiske høyde - en skygge kan per definisjon ikke ligge
+    // OVER det den kastes fra. Rent forsvarsverk (brukerens gjentatte rapport: "stor svart sirkel på
+    // himmelen der nesa peker", som IKKE forsvant etter forrige runde sin minY-fiks i
+    // solidSurfaceHeightAt - trolig enda en, ikke identifisert, kilde til en for høy "bakke"-avlesning et
+    // sted i verden): uansett HVILKEN kollider/formel som måtte returnere en for høy verdi et sted, kan
+    // dekalen nå strukturelt aldri havne synlig oppe i himmelen foran droneen igjen - den flater i verste
+    // fall bare ut på droneens egen høyde (fullt synlig/opak, men RETT VED droneen, ikke langt unna og
+    // oppe i løse lufta).
+    const groundY = Math.min(
+        solidSurfaceHeightAt(droneState.position.x, droneState.position.z, droneState.position.y),
+        droneState.position.y
+    );
+    const altitude = Math.max(0, droneState.position.y - groundY);
+    droneShadowDecal.position.set(droneState.position.x, groundY + 0.03, droneState.position.z);
+    const reach = (DRONE_ARM_LENGTH + bladeLengthForClass(droneState.droneClass) / 2) * currentDroneSpec().visualScale;
+    const linT = Math.min(altitude / DRONE_SHADOW_MAX_ALT, 1);
+    // sqrt i stedet for lineær t - falmer BRATT med det samme i lav høyde og flater ut mot slutten, i
+    // stedet for en jevn lineær rampe helt til DRONE_SHADOW_MAX_ALT. Det var selve den lineære rampen som
+    // ga inntrykket av at skyggen "hang igjen" langt oppe (fortsatt godt synlig ved 30-40 m, langt forbi
+    // høyden den er til noen nytte) - med sqrt er skyggen allerede godt uttynnet et godt stykke under
+    // DRONE_SHADOW_MAX_ALT, ikke bare akkurat idet den kuttes helt.
+    const t = Math.sqrt(linT);
+    // Litt STØRRE og svakere jo høyere man er (naturlig penumbra-vekst), tydelig mindre og mørkere rett
+    // over bakken/plattformen - akkurat den kontrasten i lav høyde brukeren etterspurte.
+    const size = reach * 2.6 * (1 + t * 0.6);
+    droneShadowDecal.scale.set(size, size, 1);
+    droneShadowDecal.material.opacity = DRONE_SHADOW_MAX_OPACITY - t * (DRONE_SHADOW_MAX_OPACITY - DRONE_SHADOW_MIN_OPACITY);
+    droneShadowDecal.visible = linT < 1; // usynlig fra og med DRONE_SHADOW_MAX_ALT - ingen "henger igjen"-margin utover det
+}
+
 /* ---------- Visuell oppdatering + HUD ---------- */
 function updateDroneVisual(dt) {
     droneGroup.position.copy(droneState.position);
     droneGroup.quaternion.copy(droneState.quaternion);
+    updateDroneShadowDecal();
     const spinSpeed = droneState.armed ? (4 + inputState.stick.throttle * 60) : 0;
     dronePropellers.forEach(function (p) {
         p.mesh.rotation.y += p.spinDir * spinSpeed * dt;
@@ -4680,6 +5838,10 @@ const injuryBanner = document.getElementById("injuryBanner");
 const injuryBannerTitle = document.getElementById("injuryBannerTitle");
 const loiterWindBanner = document.getElementById("loiterWindBanner");
 const loiterWindBannerText = document.getElementById("loiterWindBannerText");
+// Livslager-ikonene ("Krasj i bevegelige mål") - se updateTargetLivesHud lenger ned i filen (samme
+// målseksjon som TARGET_STRIKE_DRONE_LIVES).
+const targetLivesHud = document.getElementById("targetLivesHud");
+const targetLivesIcons = document.getElementById("targetLivesIcons");
 const INJURY_TITLES = {
     pilot: "AU AU! DU HAR SKADET DEG SELV!",
     bystander: "DU HAR SKADET EN PERSON I PUBLIKUM!"
@@ -5031,7 +6193,30 @@ const exerciseState = {
     // Racingbanen (ex-race1) - se "Øvelser: racing-tilstandsmaskin". Gjenbruker wpIndex/engaged (samme
     // felt som løype-øvelsene) for hvilken port som er neste/om start/mål er krysset minst én gang.
     raceStartTime: 0, // tidspunkt inneværende runde startet (0 = klokken går ikke ennå)
-    savedFlightMode: null // flightMode slik den var før en øvelse tvang sin egen (racingbanen: Acro)
+    savedFlightMode: null, // flightMode slik den var før en øvelse tvang sin egen (racingbanen: Acro)
+
+    // Mål-i-bevegelse (targetStrike) - se "Øvelser: mål-i-bevegelse"-seksjonen. targetActiveVariant er
+    // null når intet mål er underveis (mellom stages, eller øvelsen ikke aktiv) - ellers "drone"/"car"/
+    // "person", samme streng som stage.variant.
+    targetActiveVariant: null,
+    // targetPatrolStartTime: tidspunktet MÅLETS inneværende patrulje (se TARGET_PATH_POINTS) startet - IKKE
+    // en engangs A->B-strekning lenger (brukeren: "målene skal ikke resettes før man har krasjet i de") -
+    // målet patruljerer frem og tilbake langs en flerpunkts-rute i det UENDELIGE fra dette tidspunktet, helt
+    // til spilleren faktisk treffer det. Se updateTargetHitVisuals.
+    targetPatrolStartTime: 0,
+    targetRunStartTime: 0, // tidspunkt HELE forsøket (alle tre mål) startet - se finishTimedLoopRun
+    // Antall treff på INNEVÆRENDE mål (0/1) - må nå TARGET_HITS_REQUIRED (2) før neste måltype (brukerens
+    // krav: "husk to krasj i hvert mål før neste måltype"). Nullstilles KUN når et NYTT mål starter (ikke
+    // ved hvert enkelt treff-respawn på samme mål) - se spawnTargetHitStage.
+    targetHitCount: 0,
+    // Antall PILOT-krasj brukt opp GJENNOM HELE forsøket (alle mål) - brukerens krav: "brukeren i denne
+    // krasj-øvelsen har 9 droner og kan altså resette posisjon 8 ganger før hele øvelsen resetter fra
+    // start og tiden nullstilles". Nullstilles KUN ved et helt nytt forsøk (steg 0, ikke-retry) eller når
+    // TARGET_STRIKE_DRONE_LIVES faktisk nås - se updateTargetHitStage/spawnTargetHitStage.
+    targetCrashesUsed: 0,
+    targetHitPendingUntil: 0 // 0 = intet treff venter. Ellers: tidspunktet popup-vinduet etter et treff er
+    // over og selve steget faktisk skal avansere/målet respawne - se updateTargetHitStage/
+    // TARGET_HIT_POPUP_DELAY_MS.
     // NB: FPV-kameravinkelen (settings.fpvTiltDeg) har bevisst INGEN tilsvarende saved/tving-mekanisme -
     // den skal alltid være brukerens egen, lagrede innstilling, uansett hvilken øvelse som pågår (se
     // kommentaren i startExercise). Ingen exercise setter forceFpvTiltDeg akkurat nå.
@@ -5159,6 +6344,10 @@ function buildExerciseGuide(stage) {
         // grenen MÅ finnes - uten den ville stage.waypoints under vært undefined for racing-steget og
         // kastet en feil midt i startExercise (som stopper den før menyen rekker å lukkes/ledertavlen
         // vises, se rebuildExerciseGuide-kallet i startExercise).
+    } else if (stage.type === "targetHit") {
+        // Mål-i-bevegelse (targetStrike): ingen løype å tegne - selve det bevegelige målet ER veiledningen
+        // (markøren under følger det live, se updateExerciseGuideVisual). Samme "denne grenen MÅ finnes"-
+        // begrunnelse som racing over - uten den ville stage.waypoints vært undefined her og kastet en feil.
     } else if (stage.type !== "return") {
         // "Returner hjem" har ingen løype/veiledning - hele poenget er å finne hjem selv; markøren
         // (under) pulserer over H-plassen som mål. ("hoverWind" er allerede fanget opp i grenen over,
@@ -5169,6 +6358,12 @@ function buildExerciseGuide(stage) {
 
     const markerMat = new THREE.MeshStandardMaterial({ color: 0xffee55, transparent: true, opacity: 0.85 });
     const nextWaypointMarker = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 10), markerMat);
+    // targetHit (Krasj i bevegelige mål): selve målet ER veiledningen (se grenen over) - denne gule kula
+    // (0.8 m i diameter) sitter da rett oppi/rundt selve målmodellen, mest synlig på den vesle dronen (0.34
+    // m kropp) - brukeren: "Dronemålet trenger ikke den enorme kule kula inni seg". Skjult (IKKE utelatt
+    // fra group - updateExerciseGuideVisual kaller fortsatt .position/.scale på den ubetinget hver bilde,
+    // uansett stage.type) for targetHit-steg.
+    nextWaypointMarker.visible = stage.type !== "targetHit";
     group.add(nextWaypointMarker);
 
     return { group: group, nextWaypointMarker: nextWaypointMarker };
@@ -5199,8 +6394,14 @@ function updateExerciseGuideVisual(now) {
     } else if (stage.type === "return") {
         exerciseGuideHandle.nextWaypointMarker.position.set(0, 1.0, 0); // målet: H-plassen hjemme
     } else if (stage.type === "racing") {
-        const wp = RACE_GATE_CENTERS_2[exerciseState.wpIndex];
+        const wp = racingGatesForStage(stage)[exerciseState.wpIndex];
         exerciseGuideHandle.nextWaypointMarker.position.set(wp.x, wp.y, wp.z);
+    } else if (stage.type === "targetHit") {
+        // Følger målets EGEN, live posisjon (samme håndtak som selve treff-sjekken, se
+        // targetHitHandleFor/updateTargetHitStage) - i motsetning til de andre grenene, som peker mot et
+        // FAST punkt, beveger denne markøren seg med målet.
+        const handle = targetHitHandleFor(stage.variant);
+        exerciseGuideHandle.nextWaypointMarker.position.copy(handle.position);
     } else {
         const wp = stage.waypoints[exerciseState.wpIndex];
         exerciseGuideHandle.nextWaypointMarker.position.set(wp.x, wp.y !== undefined ? wp.y : EXERCISE_ALTITUDE, wp.z);
@@ -5339,6 +6540,11 @@ function advanceExerciseStage() {
     resetStageProgress();
     const exercise = EXERCISES[exerciseState.exerciseId];
     if (exerciseState.stageIndex >= exercise.stages.length) {
+        // Tidsaktiviteter som løkker tilbake til steg 0 for et nytt forsøk i stedet for å avslutte
+        // (targetStrike, se EXERCISES.targetStrike.timedLoop) - samme "logg tid, klargjør et nytt
+        // forsøk"-idé som racingbanenes egen selv-resettende løkke, IKKE completeExercise/enterLandingPhase
+        // (de hører til det ENGANGS bestått/ikke-bestått-systemet, EXERCISE_ORDER - se finishTimedLoopRun).
+        if (exercise.timedLoop) { finishTimedLoopRun(exercise); return; }
         // Killswitch-scenarioene (ex11) ender alle med motorene kuttet - ingen vits i å kreve at
         // brukeren flyr (den nå disarmede) droneen hjem til H-plassen, i motsetning til de andre
         // øvelsene. Fullfør rett ut i stedet for å gå via enterLandingPhase().
@@ -5356,6 +6562,7 @@ function advanceExerciseStage() {
     exerciseState.warningIsSuccess = true;
     rebuildExerciseGuide();
     if (nextStage.type === "killswitch") spawnKillswitchStage(nextStage);
+    if (nextStage.type === "targetHit") spawnTargetHitStage(nextStage);
 }
 
 // Kalles rett etter den faste fysikk-løkka i animate() (se lenger ned) - droneState.position/
@@ -5415,6 +6622,12 @@ function updateExercise(dt, now) {
     if (stage.type === "racing") {
         updateRacingCrashAutoReset(now);
         updateRacingStage(stage, dt, now);
+        return;
+    }
+
+    if (stage.type === "targetHit") {
+        exerciseState.headingErrorDeg = null; // ingen nese-krav - bare kollider med målet
+        updateTargetHitStage(stage, dt, now);
         return;
     }
 
@@ -5663,8 +6876,10 @@ function updateExerciseHud() {
                     : stage.type === "racing"
                         ? (isMultiLapRacing
                             ? "Runde " + Math.min(exerciseState.raceLapSplits.length + 1, raceLapsRequired) + " av " + raceLapsRequired
-                            : (exerciseState.engaged ? "Port " + exerciseState.wpIndex + "/" + RACE_GATE_CENTERS_2.length : "Kryss start/mål"))
-                        : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
+                            : (exerciseState.engaged ? "Port " + exerciseState.wpIndex + "/" + racingGatesForStage(stage).length : "Kryss start/mål"))
+                        : stage.type === "targetHit"
+                            ? "Mål " + (exerciseState.stageIndex + 1) + "/" + EXERCISES.targetStrike.stages.length
+                            : exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS) + lapSuffix));
 
     // Rundetidene som allerede er i boks denne økten (race3) - vises kompakt oppe til venstre sammen
     // med totaltiden (samme HUD-bar som exerciseHudTimerItem), ikke i den store Fremdrift-boksen (som
@@ -5718,6 +6933,14 @@ function updateExerciseHud() {
         exerciseHudTimerItemEl.style.display = "";
         const elapsedSec = exerciseState.engaged ? (performance.now() - exerciseState.raceStartTime) / 1000 : 0;
         exerciseHudTimerEl.textContent = formatExerciseTime(elapsedSec, 2);
+    } else if (stage && stage.type === "targetHit") {
+        // Samme idé som racingbanens egen klokke over, men fra targetRunStartTime (satt idet det første
+        // målet spawnes, se spawnTargetHitStage) - IKKE exerciseState.startTime, som ellers ville fortsatt
+        // å telle fra ØVELSENS åpning gjennom flere fullførte forsøk på rad (samme selv-resettende løkke
+        // som racingbanene, se finishTimedLoopRun).
+        exerciseHudTimerItemEl.style.display = "";
+        const elapsedSec = (performance.now() - exerciseState.targetRunStartTime) / 1000;
+        exerciseHudTimerEl.textContent = formatExerciseTime(elapsedSec, 2);
     } else {
         exerciseHudTimerItemEl.style.display = "";
         const elapsed = (performance.now() - exerciseState.startTime) / 1000;
@@ -5744,6 +6967,9 @@ function spawnForExercise(exercise) {
         // Racingbanen (ex-race1): egen spawn ved den nye banens start/mål-port i stedet for
         // avgangsplassen - se spawnRacingStage/RACE_SPAWN_POINT.
         if (exercise.stages[0].type === "racing") spawnRacingStage(exercise.stages[0]);
+        // Mål-i-bevegelse (targetStrike): vanlig avgangsplass-spawn (resetDrone() over holder) - kun det
+        // FØRSTE målet (dronen) trenger å klargjøres/vises her, se spawnTargetHitStage.
+        if (exercise.stages[0].type === "targetHit") spawnTargetHitStage(exercise.stages[0]);
         if (exercise.startHint) {
             exerciseState.warningMessage = exercise.startHint;
             exerciseState.warningUntil = performance.now() + 4500;
@@ -5848,15 +7074,17 @@ function startExercise(id) {
     rebuildExerciseGuide();
     // Lukk menyen - piloten skal rett i gang, og panelet skygger for sikten mot treningsområdet.
     document.getElementById("exercisesPanel").style.display = "none";
-    // Racingbanens ledertavle vises i stedet for menyen mens den flys (se stopExercise for skjuling) -
-    // delvis gjennomsiktig, se CSS, så den ikke sperrer sikten helt slik selve menyen ville gjort.
-    document.getElementById("racingLeaderboardOverlay").style.display = (id === "race1" || id === "race3") ? "" : "none";
-    // race1/race3 har HVER SIN ledertavle (ikke sammenlignbare tider, se racingLeaderboard.entries/
-    // entries3) - må tegnes på nytt her, ikke bare når en ny tid legges til, ellers ville man se forrige
-    // øvelses liste et øyeblikk før man i det hele tatt har fullført en runde i DENNE.
-    if (id === "race1" || id === "race3") {
-        document.getElementById("racingLeaderboardTitle").textContent = "Ledertavle - " +
-            (id === "race3" ? "3 runder" : "Enkeltrunde");
+    // Ledertavlen vises i stedet for menyen mens en gradert tidsaktivitet flys (se stopExercise for
+    // skjuling) - delvis gjennomsiktig, se CSS, så den ikke sperrer sikten helt slik selve menyen ville
+    // gjort. Generalisert fra det opprinnelige "id === race1 || id === race3" til ALLE fire aktivitetene
+    // i ACRO_EXERCISE_ORDER (raceTunnel/targetStrike lagt til, se acroMedalProgress-seksjonen) - hver har
+    // sin egen liste (racingEntriesFor/RACING_ENTRIES_FIELD), ikke sammenlignbare med hverandre.
+    const isTimedAcroActivity = ACRO_EXERCISE_ORDER.indexOf(id) !== -1;
+    document.getElementById("racingLeaderboardOverlay").style.display = isTimedAcroActivity ? "" : "none";
+    // Må tegnes på nytt her, ikke bare når en ny tid legges til, ellers ville man se forrige øvelses liste
+    // et øyeblikk før man i det hele tatt har fullført et forsøk i DENNE.
+    if (isTimedAcroActivity) {
+        document.getElementById("racingLeaderboardTitle").textContent = "Ledertavle - " + exercise.label;
         renderRacingLeaderboard();
     }
 }
@@ -5899,6 +7127,15 @@ function stopExercise() {
     exerciseState.exerciseId = null;
     exerciseState.landingPhase = false;
     exerciseState.awaitingNext = false;
+    // Skjul et ev. aktivt targetStrike-mål og nullstill patruljetilstanden - uten dette kunne målet (som
+    // updateTargetHitVisuals flytter UBETINGET, uavhengig av exerciseState.active) fortsette å patruljere
+    // synlig i verden en liten stund etter at man har avbrutt/forlatt øvelsen, siden movement-logikken bare
+    // sjekker handle.visible/targetActiveVariant, ikke selve exerciseState.active.
+    if (exerciseState.targetActiveVariant) {
+        targetHitHandleFor(exerciseState.targetActiveVariant).visible = false;
+        exerciseState.targetActiveVariant = null;
+        exerciseState.targetHitPendingUntil = 0;
+    }
 }
 
 // Manuell R/reset-knapp: starter HELE øvelsen på nytt fra steg 0 og nullstiller stoppeklokken - i
@@ -5907,6 +7144,26 @@ function stopExercise() {
 function handleResetRequest() {
     if (!exerciseState.active) {
         resetDrone();
+        return;
+    }
+    // targetHit (Krasj i bevegelige mål): R skal oppføre seg som et SELVPÅFØRT krasj - bruke opp én
+    // drone/liv på SAMME måte som et ekte treff (se updateTargetHitStage), IKKE resette hele forsøket
+    // tilbake til mål 1 (brukerens krav: "reset knapp skal fjerne et liv, ikke resette hele øvelsen, med
+    // mindre det ikke vil være nok liv igjen til å fullføre øvelsen"). Den siste betingelsen ("ikke nok
+    // liv") faller naturlig ut av SAMME "tom for droner"-sjekk et ekte treff allerede bruker
+    // (targetCrashesUsed >= TARGET_STRIKE_DRONE_LIVES -> restartTargetStrikeRun) - ingen egen, separat
+    // sjekk trengs her. targetHitPendingUntil-vakten hindrer at en R rett etter et EKTE treff (mens
+    // popup-vinduet/den automatiske resetten fra DET treffet fortsatt teller ned) stjeler en ekstra
+    // drone på toppen.
+    const currentStage = getExerciseStage();
+    if (!exerciseState.landingPhase && currentStage.type === "targetHit" && !exerciseState.targetHitPendingUntil) {
+        exerciseState.targetCrashesUsed++;
+        resetDrone();
+        if (exerciseState.targetCrashesUsed >= TARGET_STRIKE_DRONE_LIVES) {
+            restartTargetStrikeRun(EXERCISES[exerciseState.exerciseId]);
+        } else {
+            spawnTargetHitStage(currentStage, true); // samme mål på nytt - fremdriften (X/2) beholdes
+        }
         return;
     }
     // Gyldig også rett etter en bestått (awaitingNext) - full omkamp i stedet for å måtte gå via
@@ -6233,10 +7490,302 @@ function updateKillswitchVisuals(now, dt) {
     }
 }
 
+/* ---------- Øvelser: mål-i-bevegelse (targetStrike, "Krasj i bevegelige mål") ----------
+   Tre bevegelige mål (drone/bil/person) flydd på rad, én tidtatt økt - se EXERCISES.targetStrike. Egne,
+   HELT NYE håndtak (targetDroneHandle/targetCarHandle/targetRunnerHandle, se initScene) i stedet for å
+   gjenbruke heliHandle/pedestrianHandle: det generiske sikkerhetssystemet
+   (updateBystanderCollision/updatePilotCollision) sjekker eksplisitt AVSTAND TIL pedestrianHandle og
+   disarmer/skader dronen ("droneState.injured") ved nærkontakt - stikk i strid med denne øvelsens mål, som
+   er å faktisk KOLLIDERE. Egne, nye props unngår enhver kobling til den logikken uten å måtte røre den i
+   det hele tatt (den ser bare på kjente, faste håndtak - ikke vilkårlige nye objekter). SOLID_COLLIDERS/
+   PROP_HAZARDS brukes av samme grunn IKKE for målene her - de er bygget for å blokkere/skade (se
+   pushOutOfSolidWalls/updatePropStrikes), ikke registrere et scorbart treff. Målene er derfor rene,
+   ukolliderende visuelle props - selve "treffet" er en enkel 3D-avstandssjekk, se updateTargetHitStage.
+   Bevegelsen (se TARGET_PATH_POINTS/getTargetPatrol) er en PATRULJE langs en myk Catmull-Rom-kurve gjennom
+   noen få rutepunkter, ping-ponget frem og tilbake i det UENDELIGE (aldri et tidsavbrudd som gjør at målet
+   forsvinner/resettes av seg selv - brukerens krav: "målene skal ikke resettes før man har krasjet i de") -
+   erstatter den forrige, enkle rette A->B-strekningen som talte som "bom" og respawnet ved tidsavbrudd.
+   Både kurven (i stedet for rette linjestykker mellom rutepunktene) OG selve ping-pong-easingen (i stedet
+   for en rett trekantbølge, se updateTargetHitVisuals) er der for å unngå brå fart-/retningsendringer
+   (brukerens rapport: "Farts og retningsendring kan ikke være så plutselige. må være en mer naturlig
+   bevegelse"). Den gule "neste veipunkt"-markørkula (buildExerciseGuide) er skjult for targetHit-steg -
+   den ville sittet midt oppi selve målmodellen (mest synlig på den vesle dronen, brukerens rapport: "Dronemålet
+   trenger ikke den enorme kule kula inni seg") og er uansett overflødig siden målet selv ER veiledningen. */
+const TARGET_DRONE_CENTER = new THREE.Vector3(EXERCISE_CENTER.x, 6, EXERCISE_CENTER.z - 40); // åpen luft over øvelsesområdet
+const TARGET_CAR_CENTER = new THREE.Vector3(90, 0, -140); // åpen mark øst for racingbane 1 (GATE_COURSE_CENTER, dx -40..36) - ingen overlapp
+const TARGET_RUNNER_CENTER = new THREE.Vector3(140, 0, 95); // inni FOREST_TREES (senter 140,90) - "en løpende person i skogen" (brukeren)
+// Patruljerute PER mål - punkter RELATIVT til eget senter (TARGET_CENTER under), fast y. Minst 3 segmenter
+// (4 punkter) hver, altså minst to reelle retningsendringer per full gjennomgang - IKKE bare én rett strek
+// frem og tilbake som før. Vinklene er bevisst holdt moderate (ingen skarpe brekk) for fortsatt naturlig
+// bevegelse - dronen "veiver" mykt i lufta, bilen svinger slakt over åpen mark, personen jukser lett mellom
+// noen trerader (se FOREST_TREES: spacing 11, senter 140,90 - TARGET_RUNNER_CENTER ligger ~5 m nord for
+// raden ved z=90, så en moderat z-amplitude på ±4-8 m her holder seg trygt unna selve trestammene).
+const TARGET_PATH_POINTS = {
+    drone: [{ x: -30, z: -8 }, { x: -8, z: 10 }, { x: 14, z: -10 }, { x: 30, z: 6 }],
+    car: [{ x: -40, z: 5 }, { x: -14, z: -12 }, { x: 12, z: 10 }, { x: 40, z: -8 }],
+    person: [{ x: -33, z: -4 }, { x: -11, z: 4 }, { x: 11, z: -4 }, { x: 33, z: 4 }]
+};
+// Fart i m/s - samme troverdige tempo som før (drone/bil ~13.3 m/s ≈ 48 km/t, person ~6 m/s ≈ 21.6 km/t,
+// en solid joggefart, IKKE de opprinnelige urealistiske ~59 km/t - brukerens tidligere rapport "sjekk at
+// objektene beveger seg naturlig"), nå brukt til å bevege målet langs HELE patruljelengden (se
+// updateTargetHitVisuals) i stedet for en fast "strekk/tid"-varighet.
+const TARGET_SPEED = { drone: 13.3, car: 13.3, person: 6 };
+// Dronemålet: lett høydegynging + krengning inn i svingene - brukeren: "måldronen er veldig flat og flyr
+// helt stabil på høyde. Må være mer realistisk" (orientTowardTravel gir i seg selv KUN gir - null krengning/
+// stigning, siden patruljepunktene har konstant y). Se bruken i updateTargetHitVisuals. Bil/person holder
+// seg bevisst flate/ukrengte (ingen tilsvarende rapport for dem - en bil/løper som "krenger" ville sett rart
+// ut, i motsetning til en drone).
+const TARGET_DRONE_BOB_FREQ = 1.3; // rad/s i sin() - rolig, syklisk høydesveiv, IKKE et fast, dødt nivå
+const TARGET_DRONE_BOB_AMPLITUDE = 0.45; // meter
+const TARGET_DRONE_BANK_GAIN = 9; // enhetsløs forsterkning (radian krengning per radian retningsendring i den korte kurve-prøven, se bruken)
+const TARGET_DRONE_MAX_BANK = THREE.MathUtils.degToRad(28); // klemmetak i radianer, samme enhet som selve krengningsutregningen
+const TARGET_HIT_RADIUS = { drone: 2.2, car: 2.6, person: 1.6 };
+const TARGET_CENTER = { drone: TARGET_DRONE_CENTER, car: TARGET_CAR_CENTER, person: TARGET_RUNNER_CENTER };
+const TARGET_HIT_LABEL = { drone: "dronen", car: "bilen", person: "personen" };
+// Antall treff PÅ SAMME mål som kreves før banen går videre til neste måltype (brukerens krav: "husk to
+// krasj i hvert mål før neste måltype") - IKKE "antall forsøk" som i den forrige (nå fjernede) bom/miss-
+// logikken. Målet resettes (ny patrulje fra start) etter HVERT treff, også det første (brukerens krav:
+// "og resett etter hver krasj") - se updateTargetHitStage.
+const TARGET_HITS_REQUIRED = 2;
+// Antall "droner" spilleren har totalt gjennom ETT forsøk (alle mål) - brukerens krav: "brukeren i denne
+// krasj-øvelsen har 9 droner og kan altså resette posisjon 8 ganger før hele øvelsen resetter fra start og
+// tiden nullstilles". Hvert treff (uansett mål) bruker opp én drone og teleporterer piloten tilbake til
+// avgangsplassen ("man har jo krasjet og trenger en 'ny' drone") - se updateTargetHitStage. Med 9 droner i
+// lager brukes 8 til å erstatte etter de 8 første krasjene; det NIENDE krasjet har ingen drone igjen å
+// erstatte med og trigger i stedet restartTargetStrikeRun (helt forfra, ingen tid logges).
+const TARGET_STRIKE_DRONE_LIVES = 9;
+// Livslager-ikonene nede i venstre hjørne (targetLivesHud/targetLivesIcons, se DOM-referansene lenger opp
+// i filen) - brukerens krav: "ikke noe 'x droner igjen' i popupene. ha heller noen ikoner nede i venstre
+// hjørne med antall droner/liv" (i stedet for tekstlinjen forrige runde brukte i selve treff-popupen, se
+// updateTargetHitStage). Bygges lat (kun første gang øvelsen faktisk er aktiv, se buildTargetLivesIconsIfNeeded)
+// i stedet for ved modul-lasting - TARGET_STRIKE_DRONE_LIVES-konstanten over finnes riktignok allerede da,
+// men det er ingen vits i å bygge DOM-noder for en HUD-del som nesten aldri vises.
+function buildTargetLivesIconsIfNeeded() {
+    if (targetLivesIcons.children.length) return;
+    for (let i = 0; i < TARGET_STRIKE_DRONE_LIVES; i++) {
+        const icon = document.createElement("i");
+        // fa-helicopter (IKKE et eget "drone"-ikon - Font Awesome sitt gratis sett har ingen quadcopter-
+        // variant) - samme ikon som allerede brukes for "Drone og kamera"-menyvalget (simulator.html),
+        // gjenkjennelig nok som en generisk luftfartøy-stand-in for "én drone i lager".
+        icon.className = "fa-solid fa-helicopter";
+        targetLivesIcons.appendChild(icon);
+    }
+}
+// Kalt fra animate() hvert bilde (samme mønster som updateHud) - viser/skjuler hele raden basert på om
+// targetStrike-øvelsen faktisk er aktiv akkurat nå, og dimmer ett ikon per drone som er brukt opp (se
+// exerciseState.targetCrashesUsed, satt i updateTargetHitStage). De ubrukte ikonene (indeks >= used) lyser
+// normalt - "antall droner/liv" er dermed alltid avlesbart med ett blikk, uten en tekstlinje som forstyrrer
+// selve treff-popupen.
+function updateTargetLivesHud() {
+    const active = exerciseState.active && exerciseState.exerciseId === "targetStrike";
+    targetLivesHud.classList.toggle("show", active);
+    if (!active) return;
+    buildTargetLivesIconsIfNeeded();
+    const used = exerciseState.targetCrashesUsed;
+    for (let i = 0; i < targetLivesIcons.children.length; i++) {
+        targetLivesIcons.children[i].classList.toggle("sim-target-life-used", i < used);
+    }
+}
+// Hvor lenge "Truffet!"-popupen (og selve ventetiden før målet faktisk respawner/steget avanserer) varer
+// etter et treff - brukerens krav: "når man har truffet må man få opp en liten popup om treff. vent i 2
+// sekunder før resett." Se updateTargetHitStage/exerciseState.targetHitPendingUntil.
+const TARGET_HIT_POPUP_DELAY_MS = 2000;
+
+function targetHitHandleFor(variant) {
+    return variant === "drone" ? targetDroneHandle : variant === "car" ? targetCarHandle : targetRunnerHandle;
+}
+// Klargjør/(re)starter ett måls patrulje - kalt fra spawnForExercise (steg 0, øvelsesstart/full R-restart),
+// advanceExerciseStage (neste måltype etter to treff) OG updateTargetHitStage (samme mål på nytt etter
+// treff 1 av 2). isRetry (default false): true KUN når SAMME mål respawnes etter et treff som IKKE var det
+// avgjørende (se updateTargetHitStage) - styrer om targetHitCount (TARGET_HITS_REQUIRED-telleren)
+// nullstilles eller beholdes.
+function spawnTargetHitStage(stage, isRetry) {
+    const variant = stage.variant;
+    exerciseState.targetActiveVariant = variant;
+    if (!isRetry) exerciseState.targetHitCount = 0;
+    exerciseState.targetPatrolStartTime = performance.now();
+    const handle = targetHitHandleFor(variant);
+    handle.visible = true;
+    // Posisjonerer/orienterer målet med en gang (t=0 på patruljen) i stedet for å vente til neste
+    // animate()-bilde - uten dette kunne målet blinke synlig ett bilde på sin GAMLE (forrige patruljes)
+    // posisjon før updateTargetHitVisuals først rakk å flytte det.
+    updateTargetHitVisuals(exerciseState.targetPatrolStartTime);
+    // Totaltiden for HELE forsøket (alle tre mål) regnes fra det aller første målet spawnes - kun sant
+    // for steg 0 (øvelsesstart/restart), IKKE når neste mål klargjøres etter to treff (steg 1/2) eller et
+    // mål respawnes etter treff nr. 1 (samme steg på nytt) - se finishTimedLoopRun. Samme betingelse for
+    // dronetallet (targetCrashesUsed) - det skal telle krasj GJENNOM HELE forsøket (alle tre mål), IKKE
+    // nullstilles hver gang man går videre til neste måltype (restartTargetStrikeRun nullstiller den
+    // separat for sitt eget tilfelle - "tom for droner" - se der).
+    if (exerciseState.stageIndex === 0 && !isRetry) {
+        exerciseState.targetRunStartTime = performance.now();
+        exerciseState.targetCrashesUsed = 0;
+    }
+    // Liten "hva skal jeg gjøre nå?"-tooltip etter en posisjonsreset (ekte treff ELLER manuell R, se
+    // handleResetRequest) - brukerens krav: "etter hver posisjonsresett må det komme opp et lite tooltip
+    // om hva man skal gjøre. for når f.eks. man skal krasje i bil for andre gang vet ikke brukeren
+    // nødvendigvis det." KUN ved isRetry (samme mål på nytt) eller helt i starten av øvelsen - IKKE når
+    // man akkurat har rykket videre til et NYTT måltype (isRetry false, stageIndex>0): der har
+    // advanceExerciseStage allerede satt sin egen "Fullført! Neste: ..."-melding (5 sek), som denne ellers
+    // ville kuttet ned til nesten ingenting ved å overskrive den med det samme.
+    if (isRetry || exerciseState.stageIndex === 0) {
+        exerciseState.warningMessage = "Kollider med " + TARGET_HIT_LABEL[variant] + " (" +
+            (exerciseState.targetHitCount + 1) + "/" + TARGET_HITS_REQUIRED + ")";
+        exerciseState.warningUntil = performance.now() + 3000;
+        exerciseState.warningIsSuccess = true;
+    }
+}
+// Glatt kurve gjennom TARGET_PATH_POINTS - bygget/cachet KUN én gang per mål (rutepunktene endrer seg
+// aldri, ingen vits i å bygge kurven på nytt hvert bilde). CatmullRomCurve3 (IKKE rette linjestykker
+// mellom punktene, som forrige versjon brukte) runder svingpunktene mykt av - brukeren: "Farts og
+// retningsendring kan ikke være så plutselige. må være en mer naturlig bevegelse" - en rett polyline gir
+// en brå knekk i retningen nøyaktig i hvert punkt, en Catmull-Rom-spline glir jevnt gjennom dem i stedet.
+// curve.getLength()/getPointAt/getTangentAt bruker kurvens egen bueleng­de-oppslagstabell - konstant fart
+// LANGS SELVE KURVEN (ikke bare langs de rette kontrollpunkt-segmentene), se updateTargetHitVisuals.
+const targetPatrolCurves = {};
+function getTargetPatrol(variant) {
+    if (targetPatrolCurves[variant]) return targetPatrolCurves[variant];
+    const center = TARGET_CENTER[variant];
+    const points3d = TARGET_PATH_POINTS[variant].map(function (p) {
+        return new THREE.Vector3(center.x + p.x, center.y, center.z + p.z);
+    });
+    const curve = new THREE.CatmullRomCurve3(points3d, false, "catmullrom", 0.5);
+    const entry = { curve: curve, length: curve.getLength() };
+    targetPatrolCurves[variant] = entry;
+    return entry;
+}
+// Animerer det AKTIVE målet langs patruljekurven si hvert bilde - kalt fra animate() UBETINGET, samme
+// mønster som updateKillswitchVisuals. Ping-ponger frem og tilbake langs HELE kurven i det uendelige - i
+// MOTSETNING til den forrige versjonen finnes det ingen "fullført uten treff"-gren her lenger: målet bare
+// fortsetter å patruljere til et faktisk treff (updateTargetHitStage) gjør det usynlig og ber om et nytt
+// forsøk (se der) - brukerens krav: "målene skal ikke resettes før man har krasjet i de".
+// "Heiset cosinus"-ping-pong (IKKE en rett trekantbølge, som forrige versjon brukte) - fasen 0..2 mappes
+// via (1-cos(πfase))/2 i stedet for rett frem/tilbake - farten (den deriverte) er NØYAKTIG null akkurat i
+// svingpunktene ved hver ende av ruta, så målet bremser mykt ned og snur i stedet for å momentant reversere
+// full fart (samme brukerrapport som over - gjaldt både retning OG fart).
+function updateTargetHitVisuals(now) {
+    const variant = exerciseState.targetActiveVariant;
+    if (!variant) return;
+    const handle = targetHitHandleFor(variant);
+    if (!handle.visible) return;
+    const patrol = getTargetPatrol(variant);
+    const elapsedSec = (now - exerciseState.targetPatrolStartTime) / 1000;
+    const cycleSec = (2 * patrol.length) / TARGET_SPEED[variant];
+    const phase = ((elapsedSec % cycleSec) / cycleSec) * 2; // 0..2 (0/2 = rutestart, 1 = ruteslutt)
+    const u = clamp((1 - Math.cos(Math.PI * phase)) / 2, 0, 1); // 0..1, easet kurveposisjon
+    const forward = phase < 1;
+    const pos = patrol.curve.getPointAt(u);
+    const tangent = patrol.curve.getTangentAt(u); // enhetsvektor, alltid i kurvens EGEN (økende u) retning
+    if (variant === "drone") pos.y += Math.sin(elapsedSec * TARGET_DRONE_BOB_FREQ) * TARGET_DRONE_BOB_AMPLITUDE;
+    handle.position.copy(pos);
+    const aheadPoint = pos.clone().addScaledVector(tangent, forward ? 1 : -1); // snur peikeretningen på returturen
+    if (variant === "person") {
+        orientPersonGroupTowardTravel(handle, pos, aheadPoint);
+        return;
+    }
+    orientTowardTravel(handle, pos, aheadPoint);
+    if (variant !== "drone") return;
+    // Krengning: sammenligner retningen NÅ med retningen et lite stykke lenger frem på kurven - jo mer
+    // den lokale kurvaturen svinger der, desto mer krengning (klemt til TARGET_DRONE_MAX_BANK). uAhead
+    // flyttes i SAMME retning som forward (fremover på turen, bakover på returen) - ellers ville
+    // krengningen pekt feil vei på halve patruljen.
+    const uAhead = clamp(u + (forward ? 0.01 : -0.01), 0, 1);
+    const tangentAhead = patrol.curve.getTangentAt(uAhead);
+    const turnAmount = tangent.angleTo(tangentAhead);
+    if (turnAmount > 1e-4) {
+        const turnCross = new THREE.Vector3().crossVectors(tangent, tangentAhead);
+        const bankSign = (turnCross.y >= 0 ? 1 : -1) * (forward ? 1 : -1);
+        const bank = clamp(turnAmount * TARGET_DRONE_BANK_GAIN, 0, TARGET_DRONE_MAX_BANK) * bankSign;
+        handle.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bank));
+    }
+}
+// Selve treffsjekken - ren 3D-avstand (i motsetning til de fleste andre steg-typenes horisontale sjekker,
+// se f.eks. HELI_SAFE_HORIZ_DISTANCE-kommentaren for hvorfor DE bevisst er horisontale - her skal en
+// treffende kollisjon telle uansett retning/vinkel, akkurat som et ekte sammenstøt ville gjort).
+function updateTargetHitStage(stage, dt, now) {
+    // Et treff venter allerede på popup-vinduet sitt (se under) - vent til TARGET_HIT_POPUP_DELAY_MS er
+    // over før selve steget faktisk avanserer/målet respawner (brukerens krav: "vent i 2 sekunder før
+    // resett"), i stedet for å hoppe rett videre idet drona berører målet.
+    if (exerciseState.targetHitPendingUntil) {
+        if (now >= exerciseState.targetHitPendingUntil) {
+            exerciseState.targetHitPendingUntil = 0;
+            // Piloten sin EGEN "drone" er brukt opp ved dette krasjet - tilbake til avgangsplassen med en
+            // frisk en (brukerens krav: "man har jo krasjet og trenger en 'ny' drone"), FØR selve
+            // mål-/steg-avgjørelsen under. Gjelder uansett hvilken av de to grenene under som følger.
+            resetDrone();
+            if (exerciseState.targetCrashesUsed >= TARGET_STRIKE_DRONE_LIVES) {
+                // Alle 9 dronene brukt opp - hele forsøket starter forfra, ingen tid logges (brukerens
+                // krav: "hele øvelsen resetter fra start og tiden nullstilles").
+                restartTargetStrikeRun(EXERCISES[exerciseState.exerciseId]);
+            } else if (exerciseState.targetHitCount < TARGET_HITS_REQUIRED) {
+                spawnTargetHitStage(stage, true); // treff 1 av 2 - samme mål på nytt, fra patruljestart
+            } else {
+                advanceExerciseStage(); // to av to treff unnagjort - videre til neste måltype
+            }
+        }
+        return;
+    }
+    const handle = targetHitHandleFor(stage.variant);
+    if (!handle.visible) return; // målet venter på neste spawn (nettopp truffet) - ingenting å sjekke akkurat nå
+    if (droneState.position.distanceTo(handle.position) <= TARGET_HIT_RADIUS[stage.variant]) {
+        handle.visible = false;
+        exerciseState.targetHitCount++;
+        exerciseState.targetCrashesUsed++;
+        // Ekte krasj (brukerens krav: "må ha kollisjonsdeteksjon på objektene så det blir et krasj") - SAMME
+        // flagg en hard landing/velt bruker (se updatePhysics), IKKE bare en stille avstandssjekk med
+        // umiddelbar teleport. Utløser det vanlige, sentrerte KRASJ-banneret ("Krasjet"-status i HUD-en,
+        // motoren kuttes - droneen faller fritt der den er) akkurat som et ekte sammenstøt ville gjort.
+        // Selve resetten under (se targetHitPendingUntil-grenen over) skjer likevel AUTOMATISK et par
+        // sekunder senere - i motsetning til et vanlig krasj (som krever manuell R) trenger man ikke gjøre
+        // noe selv her, se TARGET_HIT_POPUP_DELAY_MS.
+        droneState.crashed = true;
+        droneState.armed = false;
+        // Liten popup med selve treff-fremdriften (X/2) - egen fra advanceExerciseStage sin "Fullført!
+        // Neste: ..."-melding (som først vises idet steget FAKTISK avanserer, se over). IKKE lenger noe om
+        // hvor mange droner/liv som er igjen her (brukerens krav: "ikke noe 'x droner igjen' i popupene" -
+        // det tallet vises nå i stedet som ikonrekken nede i venstre hjørne, se updateTargetLivesHud).
+        exerciseState.warningMessage = "Truffet " + TARGET_HIT_LABEL[stage.variant] + "! (" +
+            exerciseState.targetHitCount + "/" + TARGET_HITS_REQUIRED + ")";
+        exerciseState.warningUntil = now + TARGET_HIT_POPUP_DELAY_MS;
+        exerciseState.warningIsSuccess = true;
+        exerciseState.targetHitPendingUntil = now + TARGET_HIT_POPUP_DELAY_MS;
+    }
+}
+// Alle 9 dronene brukt opp (se exerciseState.targetCrashesUsed/TARGET_STRIKE_DRONE_LIVES) - hele forsøket
+// starter helt forfra: tilbake til mål 1, klokken nullstilt (targetRunStartTime, satt av spawnTargetHitStage
+// siden stageIndex===0 og isRetry er usann her) - i MOTSETNING til finishTimedLoopRun (som logger et
+// FULLFØRT forsøk) logges INGEN tid her, siden dette er et mislykket forsøk, ikke et fullført ett.
+function restartTargetStrikeRun(exercise) {
+    exerciseState.warningMessage = "Tom for droner! Hele øvelsen starter på nytt fra mål 1.";
+    exerciseState.warningUntil = performance.now() + 4000;
+    exerciseState.warningIsSuccess = false;
+    exerciseState.targetCrashesUsed = 0;
+    exerciseState.stageIndex = 0;
+    resetStageProgress();
+    rebuildExerciseGuide();
+    spawnTargetHitStage(exercise.stages[0]);
+}
+// Alle tre mål truffet - logg totaltiden (finishTimedAcroRun/recordAcroMedal, se medaljeseksjonen) og
+// løkk tilbake til steg 0 for et nytt forsøk, samme "logg og klargjør umiddelbart et nytt forsøk"-idé som
+// racingbanenes egen selv-resettende løkke (updateRacingStage) - IKKE completeExercise/enterLandingPhase,
+// som hører til det ENGANGS bestått/ikke-bestått-systemet (EXERCISE_ORDER), se exercise.timedLoop i
+// advanceExerciseStage.
+function finishTimedLoopRun(exercise) {
+    const totalSec = (performance.now() - exerciseState.targetRunStartTime) / 1000;
+    const medal = recordAcroMedal(exercise.id, totalSec);
+    finishTimedAcroRun(exercise.id, totalSec, null);
+    exerciseState.warningMessage = acroRunResultMessage(exercise.id, totalSec, medal, "Alle mål");
+    exerciseState.warningUntil = performance.now() + 4000;
+    exerciseState.warningIsSuccess = true;
+    exerciseState.stageIndex = 0;
+    resetStageProgress();
+    rebuildExerciseGuide();
+    spawnTargetHitStage(exercise.stages[0]); // nytt forsøk, tilbake til mål 1 (dronen)
+}
+
 /* ---------- Øvelser: racing-tilstandsmaskin (racingbane 2, se GATE_COURSE_2_CENTER) ----------
    Fritt løpende tidsforsøk, ikke en engangs-øvelse: klokken starter idet start/mål-porten (element 0 i
    GATE_WAYPOINTS_2) krysses FØRSTE gang, og hver fullførte runde (alle porter i rekkefølge, tilbake til
-   samme port) logges i den lokale ledertavlen (se addRacingLapResult) - deretter starter neste runde
+   samme port) logges i den lokale ledertavlen (se finishTimedAcroRun) - deretter starter neste runde
    umiddelbart uten å måtte krysse start på nytt. wpIndex/engaged gjenbrukes fra det generelle
    øvelsessystemet (samme felt som løype-øvelsene bruker); racing-spesifikt er kun raceStartTime.
 */
@@ -6300,9 +7849,19 @@ const RACE_SPAWN_YAW = RACE_START_PLACEMENT.yaw + Math.PI;
 
 function spawnRacingStage(stage) {
     resetDrone();
-    droneState.position.x = RACE_SPAWN_POINT.x;
-    droneState.position.z = RACE_SPAWN_POINT.z;
-    droneState.quaternion.setFromEuler(new THREE.Euler(0, RACE_SPAWN_YAW, 0, "YXZ"));
+    // stage.assetsKey -> RACING_STAGE_ASSETS (definert lenger ned, ved RACE_SPAWN_YAW_TUNNEL) slår opp
+    // per-bane portliste/spawn - IKKE en direkte referanse til f.eks. RACE_GATE_CENTERS_TUNNEL lagt rett
+    // på stage-objektet: EXERCISES (der stage-objektene lever) evalueres tidlig i filen, lenge FØR
+    // tunnelbanens konstanter i det hele tatt eksisterer, og en slik direkte referanse ville feilet med en
+    // "kan ikke aksessere før initialisering"-feil. Et rent streng-nøkkel-oppslag her, gjort ved selve
+    // KALLET (lenge etter hele filen er lastet), unngår problemet. race1/race3 har ingen assetsKey og
+    // faller derfor tilbake til den opprinnelige banens spawn (course 2).
+    const assets = RACING_STAGE_ASSETS[stage.assetsKey];
+    const spawnPoint = (assets && assets.spawnPoint) || RACE_SPAWN_POINT;
+    const spawnYaw = (assets && assets.spawnYaw !== undefined) ? assets.spawnYaw : RACE_SPAWN_YAW;
+    droneState.position.x = spawnPoint.x;
+    droneState.position.z = spawnPoint.z;
+    droneState.quaternion.setFromEuler(new THREE.Euler(0, spawnYaw, 0, "YXZ"));
     settleDroneOnGround();
     exerciseState.wpIndex = 0;
     exerciseState.engaged = false;
@@ -6333,66 +7892,177 @@ function updateRacingCrashAutoReset(now) {
     }
 }
 
+// Bygger banner-teksten for et fullført forsøk på en av de fire tidsaktivitetene (kalt herfra OG fra
+// finishTargetHitRun) - medaljenavn når tiden var god nok (se acroMedalForTime/recordAcroMedal), pluss -
+// KUN når en ekte, kjent rekord finnes å slå (se ACRO_RECORD_SEC, i dag bare race1/race3) - en ekstra
+// oppfordring om å dokumentere en ny rekord. "kanskje en liten premie" (ikke et fast løfte) - brukerens
+// egen, bevisst forbeholdne ordlyd ("Slår man denne får man kanskje en liten premie"), gjentatt her
+// ordrett i stedet for gjort om til noe skråsikkert.
+function acroRunResultMessage(id, timeSec, medal, resultLabel) {
+    let msg = resultLabel + " fullført: " + formatExerciseTime(timeSec, 2) + "!";
+    if (medal) msg += " (" + acroMedalLabel(medal) + ")";
+    if (medal === "platinum" && ACRO_RECORD_SEC[id] !== undefined) {
+        msg += " Ny rekord! Dette kan gi en liten premie - ta skjermbilde og send det til rpas@ffi.no for dokumentasjon.";
+    }
+    return msg;
+}
+
 function updateRacingStage(stage, dt, now) {
     exerciseState.headingErrorDeg = null; // ingen nese-krav i racing - fri stil, bare gjennom portene
-    const gates = RACE_GATE_CENTERS_2;
+    const gates = racingGatesForStage(stage);
     const wp = gates[exerciseState.wpIndex];
     if (!isDroneInGateOpening(wp)) return;
 
-    if (exerciseState.wpIndex === 0) {
+    const isStartGate = exerciseState.wpIndex === 0;
+    // Punkt-til-punkt-baner (stage.pointToPoint, se raceTunnel): målporten er den SISTE i lista, ikke en
+    // retur til gate 0 - en lineær A-til-B-bane har ingen løkke å runde. Lukkede løyper (race1/race3)
+    // beholder den opprinnelige "tilbake til gate 0 = både forrige runde fullført OG neste runde startet"-
+    // oppførselen (samme port er både start og mål).
+    const isFinishGate = stage.pointToPoint ? exerciseState.wpIndex === gates.length - 1 : isStartGate;
+
+    if (isStartGate && !exerciseState.engaged) {
+        // Første kryssing av start(/mål)-porten - klokken starter (for HELE forsøket). Bevisst ingen
+        // forhåndsvarsel om NÅR dette skjer (kun det generelle exercise.startHint ved spawn) - selve
+        // klokkestarten skal oppleves akkurat idet streken krysses, som i ekte racing.
+        exerciseState.engaged = true;
+        exerciseState.raceStartTime = now;
+        exerciseState.raceLapStartTime = now; // starten på DENNE ene runden/etappen (splitt-tid, se under)
+        exerciseState.raceLapSplits = [];
+        exerciseState.warningUntil = 0; // fjern start-hintet med det samme - ikke la det henge igjen
+    } else if (isFinishGate && exerciseState.engaged) {
+        // Én runde/etappe fullført - alle porter truffet i rekkefølge for å komme hit.
         const lapsRequired = stage.lapsRequired || 1;
-        if (!exerciseState.engaged) {
-            // Første kryssing av start/mål - klokken starter (for HELE forsøket, alle rundene). Bevisst
-            // ingen forhåndsvarsel om NÅR dette skjer (kun det generelle exercise.startHint ved spawn) -
-            // selve klokkestarten skal oppleves akkurat idet streken krysses, som i ekte racing.
-            exerciseState.engaged = true;
-            exerciseState.raceStartTime = now;
-            exerciseState.raceLapStartTime = now; // starten på DENNE ene runden (splitt-tid, se under)
+        const lapSec = (now - exerciseState.raceLapStartTime) / 1000;
+        exerciseState.raceLapSplits.push(lapSec);
+        exerciseState.raceLapStartTime = now;
+        // Punkt-til-punkt-baner har ALLTID nok "runder" ved denne (eneste) målkryssingen - de har ingen
+        // løkke å runde flere ganger i samme forstand som race1/race3 (se lapsRequired-sjekken under).
+        if (stage.pointToPoint || exerciseState.raceLapSplits.length >= lapsRequired) {
+            // Nok runder for DETTE forsøket - lagre totaltiden (+ rundetidene hvis mer enn én, se
+            // finishTimedAcroRun) og grader den (recordAcroMedal). race1 (lapsRequired=1, ikke
+            // pointToPoint) treffer denne grenen på HVER kryssing (siden 1 alltid er >= 1).
+            const totalSec = (now - exerciseState.raceStartTime) / 1000;
+            const medal = recordAcroMedal(exerciseState.exerciseId, totalSec);
+            const lapSplits = (!stage.pointToPoint && lapsRequired > 1) ? exerciseState.raceLapSplits : null;
+            finishTimedAcroRun(exerciseState.exerciseId, totalSec, lapSplits);
+            const resultLabel = stage.pointToPoint ? "Løypa" : (lapsRequired > 1 ? "Løp" : "Runde");
+            exerciseState.warningMessage = acroRunResultMessage(exerciseState.exerciseId, totalSec, medal, resultLabel);
+            exerciseState.warningUntil = now + 4000;
+            exerciseState.warningIsSuccess = true;
+            exerciseState.engaged = false;
             exerciseState.raceLapSplits = [];
-            exerciseState.warningUntil = 0; // fjern start-hintet med det samme - ikke la det henge igjen
-        } else {
-            // Én runde fullført - alle porter truffet i rekkefølge for å komme hit igjen.
-            const lapSec = (now - exerciseState.raceLapStartTime) / 1000;
-            exerciseState.raceLapSplits.push(lapSec);
-            exerciseState.raceLapStartTime = now;
-            if (exerciseState.raceLapSplits.length >= lapsRequired) {
-                // Nok runder for DETTE forsøket - lagre totaltiden (+ rundetidene hvis mer enn én, se
-                // addRacingLapResult) og avslutt forsøket. race1 (lapsRequired=1) treffer denne grenen
-                // på HVER kryssing (siden 1 alltid er >= 1) - engaged settes til false her, men det
-                // gjenåpnes umiddelbart av den ELSE-grenen over neste gang start krysses, så det er
-                // ingen observerbar forskjell fra den gamle "evig løpende klokke"-oppførselen for
-                // enkeltrunde: hver kryssing gir fortsatt et resultat OG starter neste runde med det
-                // samme.
-                const totalSec = (now - exerciseState.raceStartTime) / 1000;
-                addRacingLapResult(totalSec, lapsRequired > 1 ? exerciseState.raceLapSplits : null);
-                exerciseState.warningMessage = (lapsRequired > 1 ? "Løp fullført: " : "Runde fullført: ") +
-                    formatExerciseTime(totalSec, 2) + "!";
-                exerciseState.warningUntil = now + 3500;
-                exerciseState.warningIsSuccess = true;
-                exerciseState.engaged = false;
-                exerciseState.raceLapSplits = [];
-                if (lapsRequired > 1) {
-                    // "Etter 3 runder resettes dronen" - samme kodesti som R-tasten/handleResetRequest,
-                    // som selv kaller spawnForExercise -> spawnRacingStage og nullstiller wpIndex/engaged
-                    // der. MÅ returnere med det samme etterpå - ellers ville linjen under (som ALLTID
-                    // kjører) overskrevet den nettopp nullstilte wpIndex=0 med 1.
-                    handleResetRequest();
-                    return;
-                }
-            } else {
-                exerciseState.warningMessage = "Runde " + exerciseState.raceLapSplits.length + "/" + lapsRequired +
-                    ": " + formatExerciseTime(lapSec, 2);
-                exerciseState.warningUntil = now + 2000;
-                exerciseState.warningIsSuccess = true;
+            // Punkt-til-punkt-baner og "N sammenhengende runder"-baner (race3) resetter dronen til start
+            // for et nytt forsøk - samme kodesti som R-tasten/handleResetRequest, som selv kaller
+            // spawnForExercise -> spawnRacingStage og nullstiller wpIndex/engaged der. Enkeltrunde-banen
+            // (race1) gjør IKKE dette (se kommentaren ved lapsRequired===1-grenen over) - piloten flyr
+            // videre uavbrutt, og en ny runde armes med det samme neste gang gate 0 nås igjen. MÅ
+            // returnere med det samme etter en reset - ellers ville linjen under (som ellers alltid
+            // kjører) overskrevet den nettopp nullstilte wpIndex=0 med 1.
+            if (stage.pointToPoint || lapsRequired > 1) {
+                handleResetRequest();
+                return;
             }
+        } else {
+            exerciseState.warningMessage = "Runde " + exerciseState.raceLapSplits.length + "/" + lapsRequired +
+                ": " + formatExerciseTime(lapSec, 2);
+            exerciseState.warningUntil = now + 2000;
+            exerciseState.warningIsSuccess = true;
         }
     }
     exerciseState.wpIndex = (exerciseState.wpIndex + 1) % gates.length;
 }
 
-/* ---------- Racingbanens ledertavle - lagres lokalt i nettleseren (samme Sim.loadJSON/saveJSON-mønster
-   som exerciseProgress/settings), helt separat fra det vanlige øvelses-fremgangssystemet siden dette
-   er et åpent tidsforsøk (så mange runder man vil), ikke en engangs bestått/ikke-bestått-sjekk. ---------- */
+/* ---------- Acro-utsjekk: medaljegradering på de fire tidsaktivitetene i ACRO_EXERCISE_ORDER ----------
+   Helt separat fra det stabiliserte utsjekk-programmet (EXERCISE_ORDER/exerciseProgress/allExercisesPassed
+   over) - disse fire er åpne tidsforsøk (flys så mange ganger man vil, se ledertavle-seksjonen rett under),
+   ikke engangs bestått/ikke-bestått-øvelser. I stedet graderes BESTE oppnådde tid på hver aktivitet til en
+   medalje, og selve "utsjekken" (Acro-diplomet, se openAcroDiploma) er den DÅRLIGSTE av de fire medaljene -
+   "3 gull og 1 bronse gir bronse" (brukeren). */
+// Rene sekundtall, uavhengig av alt annet i filen, så disse kan justeres fritt uten å røre resten av
+// medalje-/ledertavle-logikken. race1 er brukerens EGNE, eksakte grenser ("under 30 sek på en runde er
+// gull. tregere er sølv. tregere enn 45 sek er bronse. tregere enn 1:15 er ingen gradering") - de tre
+// andre er fortsatt førsteutkast ("litt usikker på passende tidsgrenser for de forskjellige. ta noe
+// passende til å begynne med"), justér fritt etter faktisk spilltesting.
+const ACRO_MEDAL_THRESHOLDS = {
+    race1: { gold: 30, silver: 45, bronze: 75 },
+    race3: { gold: 105, silver: 130, bronze: 180 },
+    raceTunnel: { gold: 55, silver: 75, bronze: 110 },
+    targetStrike: { gold: 60, silver: 90, bronze: 150 }
+};
+// Platinum: KUN for de to eksisterende banene, der brukeren allerede har en ekte, kjent rekord å slå
+// (brukeren: "rekorden min på 1-rundebanen er 0:26.12 og på trerunderbanen 1:24.05. Slår man de får man
+// platinum"). raceTunnel/targetStrike er nye baner uten noen etablert rekord ennå - de får ikke et
+// platinum-nivå før en reell referansetid finnes (legg til flere nøkler her den dagen det er aktuelt).
+const ACRO_RECORD_SEC = { race1: 26.12, race3: 84.05 };
+const ACRO_MEDAL_RANK = { bronze: 1, silver: 2, gold: 3, platinum: 4 };
+const ACRO_MEDAL_LABELS_NB = { bronze: "bronse", silver: "sølv", gold: "gull", platinum: "platinum" };
+function acroMedalLabel(medal) { return ACRO_MEDAL_LABELS_NB[medal] || ""; }
+// "Legg til ikoner med gull, sølv og bronsje medalje/pokaler" (brukeren) - egen liten HTML-rad
+// (#exerciseDetailMedalRow, se showExerciseDetail) med tre fa-award-ikoner farget via de delte
+// .sim-medal-*-klassene (css/style.css) - IKKE en del av selve exercise.fullDescription (som settes via
+// textContent, ikke innerHTML, se showExerciseDetail - ingen HTML tillatt der). Generisk over
+// ACRO_MEDAL_THRESHOLDS, så alle fire gradert tidsaktiviteter (ikke bare race1) får raden automatisk.
+function medalThresholdRowHtml(id) {
+    const t = ACRO_MEDAL_THRESHOLDS[id];
+    if (!t) return "";
+    function item(medal, text) {
+        return '<span class="sim-medal-threshold-item"><i class="fa-solid fa-award sim-medal-' + medal + '"></i> ' + text + '</span>';
+    }
+    return item("gold", "under " + formatExerciseTime(t.gold, 0)) +
+        item("silver", formatExerciseTime(t.gold, 0) + "–" + formatExerciseTime(t.silver, 0)) +
+        item("bronze", formatExerciseTime(t.silver, 0) + "–" + formatExerciseTime(t.bronze, 0));
+}
+// Under bronsegrensen fullføres aktiviteten fortsatt (tiden logges i ledertavlen som vanlig, se
+// finishTimedAcroRun), men den teller ikke som gradert ennå i utsjekk-sammenheng - returnerer null.
+function acroMedalForTime(id, timeSec) {
+    if (timeSec === null || timeSec === undefined) return null;
+    const record = ACRO_RECORD_SEC[id];
+    if (record !== undefined && timeSec < record) return "platinum";
+    const t = ACRO_MEDAL_THRESHOLDS[id];
+    if (!t) return null;
+    if (timeSec <= t.gold) return "gold";
+    if (timeSec <= t.silver) return "silver";
+    if (timeSec <= t.bronze) return "bronze";
+    return null;
+}
+// Beste medalje NOENSINNE oppnådd per aktivitet - kan bare forbedres, aldri forverres (samme "behold
+// beste"-prinsipp som exerciseProgress.bestTimeSec/racingLeaderboard). Egen lagringsnøkkel (ikke en del av
+// racingLeaderboard) siden dette er en avledet gradering, ikke selve rådataene (tidene) - rådataene ligger
+// fortsatt kun i racingLeaderboard/racingEntriesFor.
+const ACRO_MEDAL_STORAGE_KEY = "ffi-uas:acro-medals-v1";
+const acroMedalProgress = Sim.loadJSON(ACRO_MEDAL_STORAGE_KEY, {});
+function saveAcroMedalProgress() { Sim.saveJSON(ACRO_MEDAL_STORAGE_KEY, acroMedalProgress); }
+// Oppdaterer acroMedalProgress[id] KUN hvis den nye medaljen er bedre enn den som eventuelt alt står der -
+// returnerer medaljen for DENNE konkrete økten uansett (brukes til banner-/rekord-meldingen i
+// finishTimedAcroRun, uavhengig av om den faktisk var en forbedring av den lagrede fremgangen).
+function recordAcroMedal(id, timeSec) {
+    const medal = acroMedalForTime(id, timeSec);
+    if (!medal) return null;
+    const prevRank = ACRO_MEDAL_RANK[acroMedalProgress[id]] || 0;
+    if (ACRO_MEDAL_RANK[medal] > prevRank) {
+        acroMedalProgress[id] = medal;
+        saveAcroMedalProgress();
+    }
+    return medal;
+}
+function allAcroActivitiesGraded() {
+    return ACRO_EXERCISE_ORDER.every(function (id) { return !!acroMedalProgress[id]; });
+}
+// null til alle fire har minst bronse (se allAcroActivitiesGraded) - Acro-diplomet (openAcroDiploma) skal
+// ikke vise en "samlet gradering" før den faktisk betyr noe.
+function overallAcroGrade() {
+    if (!allAcroActivitiesGraded()) return null;
+    let worst = "platinum";
+    ACRO_EXERCISE_ORDER.forEach(function (id) {
+        if (ACRO_MEDAL_RANK[acroMedalProgress[id]] < ACRO_MEDAL_RANK[worst]) worst = acroMedalProgress[id];
+    });
+    return worst;
+}
+
+/* ---------- Ledertavler for de fire tidsaktivitetene - lagres lokalt i nettleseren (samme
+   Sim.loadJSON/saveJSON-mønster som exerciseProgress/settings), helt separat fra det vanlige
+   øvelses-fremgangssystemet siden dette er åpne tidsforsøk (så mange runder man vil), ikke engangs
+   bestått/ikke-bestått-sjekker. ---------- */
 // Bumpet til v2 (fra v1) idet racingbanen ble bygget om - de gamle v1-tidene ble målt på en helt annen
 // bane (kortere, andre porter) og er ikke lenger sammenlignbare. En ny nøkkel gir automatisk en tom
 // ledertavle ved denne oppdateringen (Sim.loadJSON returnerer DEFAULT_RACING_LEADERBOARD for en nøkkel
@@ -6404,10 +8074,11 @@ const RACING_LEADERBOARD_MAX_ENTRIES = 20;
 // Hvor lenge etter at en rekord ble satt navnet kan endres - se renderRacingLeaderboard (skjuler
 // endre-ikonet etter dette) og renameRacingLeaderboardEntry (sperrer selve endringen som ekstra sikring).
 const RACING_LEADERBOARD_RENAME_WINDOW_MS = 60 * 60 * 1000;
-// entries3 lagt til her (samme lagringsnøkkel/versjon fortsatt - Sim.loadJSON fyller inn manglende felt
-// fra denne default-strukturen, se defaults-merge-mønsteret, så et EKSISTERENDE v2-lagret objekt uten
-// entries3 fra før race3 fantes får den tom i stedet for undefined, uten behov for en ny nøkkel/versjon).
-const DEFAULT_RACING_LEADERBOARD = { playerName: "Pilot", entries: [], entries3: [] };
+// entriesTunnel/entriesTargets lagt til her (samme lagringsnøkkel/versjon fortsatt - Sim.loadJSON fyller
+// inn manglende felt fra denne default-strukturen, se defaults-merge-mønsteret, samme prinsipp som da
+// entries3 selv ble lagt til - et EKSISTERENDE v2-lagret objekt uten disse to fra før raceTunnel/
+// targetStrike fantes får dem tomme i stedet for undefined, uten behov for en ny nøkkel/versjon).
+const DEFAULT_RACING_LEADERBOARD = { playerName: "Pilot", entries: [], entries3: [], entriesTunnel: [], entriesTargets: [] };
 function loadRacingLeaderboard() {
     return Sim.loadJSON(RACING_LEADERBOARD_KEY, DEFAULT_RACING_LEADERBOARD);
 }
@@ -6416,16 +8087,18 @@ function saveRacingLeaderboard() {
 }
 const racingLeaderboard = loadRacingLeaderboard();
 
-// race1 (enkeltrunde) og race3 (3 runder) har HVER SIN liste - totaltiden for tre runder er ikke
-// sammenlignbar med én enkelt runde. id (default: den aktive øvelsen) avgjør hvilken.
+// Hver av de fire tidsaktivitetene har SIN EGEN liste - tidene er ikke sammenlignbare på tvers (ulik bane/
+// oppgave). id (default: den aktive øvelsen) avgjør hvilken.
+const RACING_ENTRIES_FIELD = { race1: "entries", race3: "entries3", raceTunnel: "entriesTunnel", targetStrike: "entriesTargets" };
 function racingEntriesFor(id) {
-    return (id || exerciseState.exerciseId) === "race3" ? racingLeaderboard.entries3 : racingLeaderboard.entries;
+    const field = RACING_ENTRIES_FIELD[id || exerciseState.exerciseId] || "entries";
+    return racingLeaderboard[field];
 }
 
 // Manuell nullstilling av HELE (aktive) ledertavlen (navnet i feltet øverst beholdes - kun tidene
 // fjernes) - egen "er du sikker"-bekreftelse siden dette er permanent og rammer ALLE tider, ikke bare
 // én. Samme mønster som renameRacingLeaderboardEntry. Rammer kun listen for øvelsen som faktisk vises
-// akkurat nå (se racingEntriesFor) - ikke begge lister på én gang.
+// akkurat nå (se racingEntriesFor) - ikke de andre listene på én gang.
 function resetRacingLeaderboard() {
     const entries = racingEntriesFor();
     if (entries.length === 0) return;
@@ -6439,10 +8112,17 @@ function resetRacingLeaderboard() {
     renderRacingLeaderboard();
 }
 
+// Registrerer et fullført forsøk på en av de fire tidsaktivitetene: lagrer tiden i aktivitetens egen
+// ledertavle (samme "beste tid øverst"-oppførsel som den gamle addRacingLapResult), OG grader den mot
+// acroMedalForTime/recordAcroMedal (se medaljeseksjonen over) - én, felles funksjon for BÅDE racingbanene
+// (kalt fra updateRacingStage) og mål-i-bevegelse-øvelsen (kalt fra finishTargetHitRun), i stedet for at
+// hver aktivitet skulle duplisert samme lagre+grader-logikk hver for seg.
 // lapSplits: kun for race3 (de tre enkeltrundetidene bak totaltiden, se updateRacingStage) - udefinert/
-// utelatt for race1, som kun har én rundetid (= selve timeSec, ingen egen splitt-liste å vise).
-function addRacingLapResult(timeSec, lapSplits) {
-    const entries = racingEntriesFor();
+// utelatt ellers (de andre tre aktivitetene har kun én samlet tid, ingen egen splitt-liste å vise).
+// Returnerer medaljen denne økten oppnådde (for banner-/rekord-meldingen hos kalleren), eller null hvis
+// tiden ikke var god nok til å telle mot utsjekken ennå.
+function finishTimedAcroRun(id, timeSec, lapSplits) {
+    const entries = racingEntriesFor(id);
     const entry = { name: racingLeaderboard.playerName || "Pilot", timeSec: timeSec, dateISO: new Date().toISOString() };
     if (lapSplits && lapSplits.length > 0) entry.lapSplits = lapSplits;
     entries.push(entry);
@@ -6480,7 +8160,7 @@ function renderRacingLeaderboard() {
         const hasSplits = entry.lapSplits && entry.lapSplits.length > 0;
         // Klikk på TIDEN (ikke hele raden - navnet/rangen skal ikke reagere) åpner en rullegardin med
         // hver enkelt rundetid som utgjør totaltiden (kun race3 - race1-oppføringer har ingen splitt-
-        // liste å vise, se addRacingLapResult).
+        // liste å vise, se finishTimedAcroRun).
         let splitsEl = null;
         if (hasSplits) {
             time.classList.add("sim-racing-lb-time-expandable");
@@ -6552,9 +8232,27 @@ function renderExerciseList(category) {
     container.innerHTML = "";
 
     if (category === "acro") {
+        // Acro-bekreftelse-rad ØVERST, samme "mest fremtredende plassen"-begrunnelse som den stabiliserte
+        // diplom-raden under - vises først når alle fire aktivitetene har nådd minst bronse (se
+        // allAcroActivitiesGraded/acroMedalProgress, medaljeseksjonen).
+        if (allAcroActivitiesGraded()) {
+            const acroDiplomaRow = document.createElement("button");
+            acroDiplomaRow.type = "button";
+            acroDiplomaRow.className = "sim-exercise-row sim-exercise-row-diploma";
+            acroDiplomaRow.innerHTML =
+                '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
+                '<span class="sim-exercise-row-main">' +
+                '<span class="sim-exercise-row-title">Acro-bekreftelse</span>' +
+                '<span class="sim-exercise-row-desc">Alle fire aktivitetene graderte! Samlet gradering: ' +
+                acroMedalLabel(overallAcroGrade()) + ".</span>" +
+                "</span>";
+            acroDiplomaRow.addEventListener("click", openAcroDiploma);
+            container.appendChild(acroDiplomaRow);
+        }
         ACRO_EXERCISE_ORDER.forEach(function (id) {
             const exercise = EXERCISES[id];
             const bestSec = racingBestTimeSec(id);
+            const medal = acroMedalProgress[id];
             const row = document.createElement("button");
             row.type = "button";
             row.className = "sim-exercise-row";
@@ -6565,7 +8263,8 @@ function renderExerciseList(category) {
                 '<span class="sim-exercise-row-desc">' + exercise.shortDescription + "</span>" +
                 "</span>" +
                 (bestSec !== null
-                    ? '<span class="sim-exercise-check"><i class="fa-solid fa-trophy"></i> ' + formatExerciseTime(bestSec, 2) + "</span>"
+                    ? '<span class="sim-exercise-check' + (medal ? " sim-medal-" + medal : "") + '"><i class="fa-solid ' +
+                        (medal ? "fa-award" : "fa-trophy") + '"></i> ' + formatExerciseTime(bestSec, 2) + "</span>"
                     : "");
             row.addEventListener("click", function () { showExerciseDetail(id); });
             container.appendChild(row);
@@ -6659,6 +8358,50 @@ function openDiploma() {
     };
     overlay.style.display = "";
 }
+
+// Acro-bekreftelsen - HELT separat fra openDiploma over (den stabiliserte, EXERCISE_ORDER-baserte
+// bekreftelsen) - se acroMedalProgress/overallAcroGrade/ACRO_EXERCISE_ORDER (medaljeseksjonen) og
+// #acroDiplomaOverlay i simulator.html. Medaljer i stedet for et bestått-kryss/tid per rad, og en samlet
+// gradering (den DÅRLIGSTE av de fire) øverst i stedet for en totaltid.
+function openAcroDiploma() {
+    const overlay = document.getElementById("acroDiplomaOverlay");
+    const timesEl = document.getElementById("acroDiplomaTimes");
+    timesEl.innerHTML = "";
+    ACRO_EXERCISE_ORDER.forEach(function (id) {
+        const rowEl = document.createElement("div");
+        rowEl.className = "sim-diploma-time-row";
+        const nameEl = document.createElement("span");
+        nameEl.textContent = EXERCISES[id].label;
+        const timeEl = document.createElement("span");
+        const bestSec = racingBestTimeSec(id);
+        const medal = acroMedalProgress[id];
+        timeEl.textContent = (bestSec !== null ? formatExerciseTime(bestSec, 2) : "-") +
+            (medal ? " (" + acroMedalLabel(medal) + ")" : "");
+        rowEl.appendChild(nameEl);
+        rowEl.appendChild(timeEl);
+        timesEl.appendChild(rowEl);
+    });
+    // overallAcroGrade() returnerer null kun hvis IKKE alle fire har minst bronse ennå - raden som åpner
+    // dette diplomet (renderExerciseList) vises selv først når allAcroActivitiesGraded() er sann, så dette
+    // burde alltid være en gyldig medalje her, men fallback til "bronse"-fargen/teksten uansett for
+    // robusthet (f.eks. et direkte kall utenfra, eller en fremtidig kodesti som glemmer å sjekke gaten).
+    const overallGrade = overallAcroGrade() || "bronze";
+    document.getElementById("acroDiplomaOverallGradeText").textContent = acroMedalLabel(overallGrade);
+    const medalIcon = document.getElementById("acroDiplomaOverallMedalIcon");
+    medalIcon.className = "fa-solid fa-award sim-diploma-medal sim-medal-" + overallGrade;
+    document.getElementById("acroDiplomaDate").textContent =
+        "Dato: " + new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "2-digit", day: "2-digit" });
+    document.getElementById("acroDiplomaPrintBtn").onclick = function () {
+        document.body.classList.add("printing-diploma");
+        window.print();
+        document.body.classList.remove("printing-diploma");
+    };
+    document.getElementById("acroDiplomaCloseBtn").onclick = function () {
+        overlay.style.display = "none";
+    };
+    overlay.style.display = "";
+}
+
 // Hvilken undermeny (Stabilized/Acro) som sist var åpen - husker valget slik at "Tilbake" fra
 // detaljvisningen og gjenåpning av panelet (M/knapp) havner samme sted, se showExerciseDetail/
 // toggleExercisesBtn-lytteren.
@@ -6684,6 +8427,17 @@ function showExerciseDetail(id) {
     document.getElementById("exerciseDetailTitle").innerHTML =
         '<i class="fa-solid ' + exercise.icon + ' sim-exercise-icon"></i>' + exercise.label;
     document.getElementById("exerciseDetailDescription").textContent = exercise.fullDescription;
+    // Medalje-/tidsgrense-ikonraden (se medalThresholdRowHtml) - kun for de fire gradert tidsaktivitetene
+    // (ACRO_MEDAL_THRESHOLDS har en oppføring for dem, ingen andre) - skjult for resten av øvelsene.
+    const medalRowEl = document.getElementById("exerciseDetailMedalRow");
+    const medalRowHtml = medalThresholdRowHtml(id);
+    medalRowEl.innerHTML = medalRowHtml;
+    medalRowEl.style.display = medalRowHtml ? "" : "none";
+    // exercise.medalNote (valgfritt, se race1) - egen kort tekst (platinum-rekorden osv.) vist rett UNDER
+    // selve medalje-ikon-listen over, IKKE som en del av selve fullDescription-avsnittet lenger.
+    const medalNoteEl = document.getElementById("exerciseDetailMedalNote");
+    medalNoteEl.textContent = exercise.medalNote || "";
+    medalNoteEl.style.display = exercise.medalNote ? "" : "none";
     // Direkte snarvei til kalibreringspanelet for øvelser som krever en fysisk kill-bryter (kun ex11 pt.
     // nå) - vises UANSETT om bryteren allerede er bundet eller ikke (i motsetning til gateBlocked-
     // varselet under, som kun vises når den IKKE er det) - praktisk å ha lett tilgjengelig for å
@@ -6721,8 +8475,10 @@ function showExerciseDetail(id) {
                 : stage.type === "hover"
                     ? " - " + exerciseState.hoverHoldSec.toFixed(0) + "/" + stage.holdSec + " s"
                     : stage.type === "racing"
-                        ? (exerciseState.engaged ? " - port " + exerciseState.wpIndex + "/" + RACE_GATE_CENTERS_2.length : " - kryss start/mål")
-                        : " - runde " + exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS));
+                        ? (exerciseState.engaged ? " - port " + exerciseState.wpIndex + "/" + racingGatesForStage(stage).length : " - kryss start/mål")
+                        : stage.type === "targetHit"
+                            ? " - mål " + (exerciseState.stageIndex + 1) + "/" + EXERCISES.targetStrike.stages.length
+                            : " - runde " + exerciseState.lapsCleanCount + "/" + (stage.requiredCleanLaps || REQUIRED_CLEAN_LAPS));
         }
         startBtn.style.display = "none";
         cancelBtn.style.display = "";
@@ -6737,10 +8493,17 @@ function showExerciseDetail(id) {
             document.getElementById("gateOpenCalibrationBtn").addEventListener("click", function () {
                 togglePanel(document.getElementById("gamepadPanel"));
             });
-        } else if (exercise.stages[0].type === "racing") {
+        } else if (ACRO_EXERCISE_ORDER.indexOf(id) !== -1) {
+            // Gradert tidsaktivitet (racingbanene + targetStrike, se ACRO_EXERCISE_ORDER/acroMedalProgress)
+            // - generalisert fra det opprinnelige "exercise.stages[0].type === 'racing'" (som ikke fanget
+            // targetStrike, som ikke er type "racing") til selve medlemskapet i listen.
             const bestSec = racingBestTimeSec(id);
             progressEl.style.display = bestSec !== null ? "" : "none";
-            if (bestSec !== null) progressEl.textContent = "Beste rundetid: " + formatExerciseTime(bestSec, 2);
+            if (bestSec !== null) {
+                const medal = acroMedalProgress[id];
+                progressEl.textContent = "Beste tid: " + formatExerciseTime(bestSec, 2) +
+                    (medal ? " (" + acroMedalLabel(medal) + ")" : "");
+            }
         } else if (progress.passed) {
             progressEl.style.display = "";
             progressEl.textContent = exercise.noTiming ? "Bestått" : "Bestått - beste tid: " + formatExerciseTime(progress.bestTimeSec);
@@ -6777,6 +8540,7 @@ function animate(now) {
     updateInCloudFog();
     updateExercise(frameDt, now);
     updateKillswitchVisuals(now, frameDt);
+    updateTargetHitVisuals(now);
 
     updateDroneVisual(frameDt);
     // Sikrer at FPV-kameraet faktisk står i den lagrede/husk­ede vinkelen kontinuerlig (ikke bare når
@@ -6792,9 +8556,32 @@ function animate(now) {
     updateShadowCamera();
     updateExerciseGuideVisual(now);
     updateHud();
+    updateTargetLivesHud();
     updateExerciseHud();
     updateSignalOverlay(now);
     updateFpvHud();
+    // Himmelkulen følger kameraet (IKKE verdensorigo) hvert bilde - den ble tidligere lagt til FAST ved
+    // (0,0,0) og aldri flyttet (se initScene). Et BackSide-material rendrer bare INNSIDEN av kulen, altså
+    // kun mens kameraet faktisk befinner seg INNI den (radius 1400) - Til topps-banen strekker seg alene
+    // til z≈620-730, og med litt høyde/kamerabevegelse oppå det er man fort langt nok fra origo til å ende
+    // UTENFOR selve kule-meshen i egen synsretning. Der kuller BackSide forsiden nærmest kameraet, og
+    // WebGL sin tomme clear-color (svart) skinner gjennom nøyaktig i det hullet - IKKE andre steder i bildet
+    // (brukerens rapport, presist: "svart sirkel... alltid omtrent sentrert der jeg peker nesa... vokser
+    // jo lengre unna jeg peker nesa" = et hull som vokser jo lenger UTENFOR kula kameraet befinner seg, i
+    // nøyaktig den retningen man ser). Ved å sentrere selve kule-meshen på kameraet hvert bilde er kameraet
+    // GARANTERT alltid inni den, uansett hvor langt fra origo man flyr - standard "uendelig himmelkule"-
+    // teknikk, ingen synlig endring i utseende (kula har ingen posisjonsbunden detaljer, bare en jevn
+    // gradient) siden radiusen (1400) er langt større enn noen reell flyavstand fra kameraet i én frame.
+    // getWorldPosition (IKKE activeCamera.position direkte) - fpvCamera er et BARN av droneGroup (se
+    // initScene: droneGroup.add(fpvCamera)), så .position der er LOKAL (offset fra droneen), ikke faktisk
+    // verdensposisjon. Å kopiere den lokale offseten direkte ga en himmelkule som satt fast nesten ved
+    // origo (kun forskjøvet med den vesle FPV-monteringsoffseten) i stedet for å følge droneen rundt i
+    // verden - akkurat like langt fra riktig som å ikke flytte den i det hele tatt så snart man faktisk
+    // flyr i FPV (brukerens rapport: "himmelbugen er der fortsatt" - forrige forsøk løste det aldri for
+    // den mest brukte kameramodusen). chaseCamera/vlosCamera er ikke barn av noe (world space allerede),
+    // så getWorldPosition er trygt/korrekt for alle tre kameraene uansett.
+    activeCamera.getWorldPosition(skyRecenterPos);
+    skyMesh.position.copy(skyRecenterPos);
     renderer.render(scene, activeCamera);
 }
 
