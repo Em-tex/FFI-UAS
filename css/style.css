@@ -1045,6 +1045,8 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 .sim-diploma-text { font-size: 0.9rem; line-height: 1.55; margin: 18px 0 10px; }
 /* Bestetider per øvelse - to kolonner (navn + tid), tynn skillelinje mellom radene. */
 .sim-diploma-times {
+    width: 100%;
+    box-sizing: border-box;
     margin: 0 auto 16px;
     max-width: 380px;
     text-align: left;
@@ -1101,7 +1103,14 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
    Til slutt: "Venstrejsutere det? og kanskje ikke bold blått?... svart vanlig" - venstrejustert (samme
    max-width/margin-mønster som .sim-diploma-times over, i stedet for diplomets vanlige sentrerte tekst)
    og vanlig svart skrift i stedet for den blå/halvfete stilen .sim-diploma-flighttime bruker. */
-.sim-diploma-spec { margin: 0 auto 16px; max-width: 380px; text-align: left; font-size: 0.82rem; }
+.sim-diploma-spec {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 auto 16px;
+    max-width: 380px;
+    text-align: left;
+    font-size: 0.82rem;
+}
 .sim-diploma-spec-line { display: block; color: #1a1a1a; font-weight: 400; line-height: 1.5; }
 .sim-diploma-date { font-size: 0.85rem; color: #555; margin: 0; }
 /* Delt mellom BEGGE simulatorene (css/style.css lastes av både simulator.html og simulator-vtol.html) -

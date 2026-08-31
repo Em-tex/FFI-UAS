@@ -38,19 +38,24 @@ const DRONE_CLASSES = {
     // aldri opp der uansett hva brukeren har valgt i innstillingene). Samme masse/ramme-profil som racing
     // (0.5 kg, samme liten-ramme-gruppe i legLengthForClass/bladeLengthForClass - de skiller kun ut
     // "cinematic" som egen, større profil), men maxThrust hevet til reelt racing-nivå: 49 N / (0.5 kg *
-    // 9.81 m/s^2) ≈ 10.0:1 TWR (til sammenligning: racing 3.7:1, mid 2.0:1, cinematic 1.4:1). Dukker
-    // automatisk opp som et eget alternativ i droneClassSelect (populeres fra Object.keys(DRONE_CLASSES),
-    // se der) - velges via
+    // 9.81 m/s^2) ≈ 10.0:1 TWR (til sammenligning: racing 3.7:1, mid 2.0:1, cinematic 1.4:1). Velges via
     // vanlig setDroneClass (IKKE ephemeral), og blir dermed brukerens PERMANENTE valg akkurat som de tre
     // andre klassene - det er nettopp DERFOR den aldri "lekker" inn i en øvelse: hver øvelse tvinger sin
     // EGEN, eksplisitte droneClass ved spawn (setDroneClassEphemeral, se spawnForExercise) UANSETT hva som
     // står i innstillingene, og går tilbake til brukerens valgte klasse (denne, om valgt) idet man forlater
     // øvelsen (via "Fri flyging"/Avbryt - se resetDrone-kallene der).
+    // hiddenFromMenu (brukerens krav, ordrett: "den var litt voldsom den kraftige racingdrona. skjul den
+    // fra valg i menyen. men bare ha den i koden så vi kan aktivere den senere.") - IKKE fjernet fra
+    // DRONE_CLASSES (klassen fungerer fortsatt helt fint om noe setter droneState.droneClass="racingPro"
+    // direkte/programmatisk), bare filtrert bort fra selve droneClassSelect-nedtrekket lenger ned i filen
+    // (se Object.keys(DRONE_CLASSES).forEach der) - reaktiveres senere ved ganske enkelt å fjerne dette
+    // ene feltet.
     racingPro: {
         label: "Racing Pro (svært kraftig, TWR ~10:1)",
         mass: 0.5, maxThrust: 49,
         inertiaRollPitch: 0.025, inertiaYaw: 0.05, maxYawRateDeg: 800,
-        dragLinear: 0.2, dragQuad: 0.006, visualScale: 0.72
+        dragLinear: 0.2, dragQuad: 0.006, visualScale: 0.72,
+        hiddenFromMenu: true
     },
     mid: {
         label: "Middels",
@@ -9791,6 +9796,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const droneClassSelect = document.getElementById("droneClassSelect");
     Object.keys(DRONE_CLASSES).forEach(function (key) {
+        // hiddenFromMenu (racingPro pt. nå, se DRONE_CLASSES) - i koden, men ikke valgbar her ennå.
+        if (DRONE_CLASSES[key].hiddenFromMenu) return;
         const opt = document.createElement("option");
         opt.value = key;
         // Vekten (DRONE_CLASSES sin mass, kg) tatt med i selve valg-teksten - brukeren ba om at den skal
