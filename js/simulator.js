@@ -7154,7 +7154,14 @@ function advanceExerciseStage() {
     exerciseState.warningIsSuccess = true;
     rebuildExerciseGuide();
     if (nextStage.type === "killswitch") spawnKillswitchStage(nextStage);
-    if (nextStage.type === "targetHit") spawnTargetHitStage(nextStage);
+    // spawnTargetHitStage posisjonerer målet med en gang (t=0, se der) - kallet MÅ derfor komme FØR
+    // targetClockHint leser handle.position, ellers hadde hintet pekt mot forrige måls (gamle) plassering.
+    // spawnTargetHitStage overskriver selv IKKE warningMessage her (stageIndex>0, isRetry usann - se dens
+    // egen betingelse), så "Fullført! Neste: ..."-meldingen satt over står fortsatt og kan trygt utvides.
+    if (nextStage.type === "targetHit") {
+        spawnTargetHitStage(nextStage);
+        exerciseState.warningMessage += targetClockHint(nextStage.variant);
+    }
 }
 
 // Kalles rett etter den faste fysikk-løkka i animate() (se lenger ned) - droneState.position/
@@ -8281,6 +8288,33 @@ function targetHitHandleFor(variant) {
     return variant === "drone" ? targetDroneHandle : variant === "car" ? targetCarHandle :
         variant === "fixedwing" ? targetFixedWingHandle : targetRunnerHandle;
 }
+// Klokkeretning fra dronens NÅVÆRENDE posisjon/nese til et gitt punkt, sett fra cockpiten (FPV,
+// tvunget for hele targetStrike-øvelsen - se EXERCISES.targetStrike.forceCameraMode) - 12 = rett fram
+// (langs droneState.quaternion sin lokale -Z, samme "nesa"-konvensjon som resten av fila, f.eks.
+// applyKillswitchInputOverride), 3 = rett til høyre, 6 = rett bak, 9 = rett til venstre, medurs derimellom.
+// Brukerens krav: "gi brukeren et lite hint i popupen om ca. hvor flyet er (retning kl.11?)" -
+// modellflyet (fixedwing) er MYE fortere og går i en stor, åpen løkke langt unna de tre andre målene
+// (se TARGET_PATH_POINTS.fixedwing), og er dermed betydelig vanskeligere å få øye på i tide enn de tre
+// andre - derfor kun brukt for den varianten (targetClockHint under), ikke drone/bil/person.
+function clockHourFromDrone(point) {
+    const toTarget = new THREE.Vector3().subVectors(point, droneState.position);
+    toTarget.y = 0;
+    if (toTarget.lengthSq() < 1e-6) return 12;
+    const local = toTarget.normalize().applyQuaternion(droneState.quaternion.clone().invert());
+    const angleDeg = Math.atan2(local.x, -local.z) * (180 / Math.PI); // lokal -Z er forover
+    let hour = Math.round(angleDeg / 30) % 12;
+    if (hour <= 0) hour += 12;
+    return hour;
+}
+// Kun et GROVT, ett-blikks anslag idet popupen vises (målets posisjon i selve trefføyeblikket, ikke
+// live-oppdatert mens popupen står) - modellflyet rekker uansett å bevege seg videre langs løkka i
+// mellomtiden, hintet er ment som "se omtrent DEN veien", ikke en presis peker.
+function targetClockHint(variant) {
+    if (variant !== "fixedwing") return "";
+    const handle = targetHitHandleFor(variant);
+    if (!handle.visible) return "";
+    return " Omtrent i retning kl. " + clockHourFromDrone(handle.position) + ".";
+}
 // Klargjør/(re)starter ett måls patrulje - kalt fra spawnForExercise (steg 0, øvelsesstart/full R-restart),
 // advanceExerciseStage (neste måltype etter to treff) OG updateTargetHitStage (samme mål på nytt etter
 // treff 1 av 2). isRetry (default false): true KUN når SAMME mål respawnes etter et treff som IKKE var det
@@ -8328,8 +8362,16 @@ function spawnTargetHitStage(stage, isRetry) {
     // advanceExerciseStage allerede satt sin egen "Fullført! Neste: ..."-melding (5 sek), som denne ellers
     // ville kuttet ned til nesten ingenting ved å overskrive den med det samme.
     if (isRetry || exerciseState.stageIndex === 0) {
-        exerciseState.warningMessage = "Kollider med " + TARGET_HIT_LABEL[variant] + " (" +
-            (exerciseState.targetHitCount + 1) + "/" + TARGET_HITS_REQUIRED + ")";
+        // stage.label (IKKE "Kollider med " + TARGET_HIT_LABEL[variant]) - samme "Treff ..."-ordlyd som
+        // advanceExerciseStage sin "Fullført! Neste: ..."-melding bruker (nextStage.label) for førstegangs-
+        // ankomst til et måltype. Brukerens rapport: runde 2 på samme mål (isRetry) viste plutselig
+        // "Kollider med personen" der runde 1 hadde vist "Treff personen i skogen" - inkonsekvent ordlyd
+        // for samme handling. "Kollider med" (uendret) brukes fortsatt bevisst andre steder i teksten som
+        // faktisk beskriver selve KOLLISJONEN som handling (f.eks. exercise.shortDescription,
+        // "feil bil"-hintet) - kun DENNE popup-meldingen (som duplisererte stage.label med andre ord)
+        // endres.
+        exerciseState.warningMessage = stage.label + " (" +
+            (exerciseState.targetHitCount + 1) + "/" + TARGET_HITS_REQUIRED + ")" + targetClockHint(variant);
         exerciseState.warningUntil = performance.now() + 3000;
         exerciseState.warningIsSuccess = true;
     }
