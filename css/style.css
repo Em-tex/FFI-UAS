@@ -645,6 +645,120 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     background: rgba(35, 140, 70, 0.92);
 }
 
+/* Racingbane-resultatpopup (tid+medalje ved fullført forsøk) - se showRaceResultPopup (js/simulator.js).
+   Egen, mer staselig enn sim-warning-banner over - brukerens krav, ordrett: "en popup med tid og medalje.
+   hvis det ble gull må det være ekstra stas, platinum må det være veldig ekstra stas." Sentrert (samme
+   prinsipp som sim-crash-banner) - i motsetning til sim-warning-banner (bevisst flyttet vekk fra sentrum,
+   se kommentaren der) trenger man ikke se banen forbi kortet akkurat idet et forsøk er over. */
+.sim-race-result {
+    position: absolute;
+    top: 42%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.85);
+    display: flex;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 5;
+}
+.sim-race-result.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+.sim-race-result-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    background: rgba(20, 24, 32, 0.92);
+    color: white;
+    padding: 22px 40px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    min-width: 220px;
+}
+.sim-race-result-medal-icon { font-size: 2.6rem; color: #ddd; margin-bottom: 2px; }
+/* Sammensatte selektorer (IKKE bare .sim-medal-gull alene) - garanterer riktig farge UANSETT rekkefølge i
+   filen i forhold til de delte .sim-medal-*-klassene (linje ~1500) - samme fire fargeverdier, kopiert hit
+   bevisst for den høyere spesifisiteten, ikke en ny fargedefinisjon. */
+.sim-race-result-medal-icon.sim-medal-bronze { color: #cd7f32; }
+.sim-race-result-medal-icon.sim-medal-silver { color: #9aa0a6; }
+.sim-race-result-medal-icon.sim-medal-gold { color: #d4af37; }
+.sim-race-result-medal-icon.sim-medal-platinum { color: #6fc3d6; }
+.sim-race-result-label { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.02em; opacity: 0.85; }
+.sim-race-result-time { font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sim-race-result-medal-text { font-size: 0.95rem; font-weight: 700; letter-spacing: 0.12em; }
+.sim-race-result-record { font-size: 0.8rem; max-width: 260px; margin-top: 4px; color: #ffe27a; font-weight: 600; }
+.sim-race-result-sparkles { display: none; } /* kun synlig for tier-platinum, se under */
+
+/* Gull - "ekstra stas": glødende, sakte pulserende kort + en liten hopp-animasjon på medaljeikonet. */
+.sim-race-result.tier-gold .sim-race-result-card {
+    border-color: rgba(212, 175, 55, 0.55);
+    animation: simRaceResultGoldGlow 1.8s ease-in-out infinite;
+}
+.sim-race-result.tier-gold .sim-race-result-medal-icon { animation: simRaceResultMedalBounce 1.2s ease-in-out infinite; }
+@keyframes simRaceResultGoldGlow {
+    0%, 100% { box-shadow: 0 10px 40px rgba(0,0,0,0.5), 0 0 0 rgba(212,175,55,0); }
+    50% { box-shadow: 0 10px 40px rgba(0,0,0,0.5), 0 0 34px 6px rgba(212,175,55,0.55); }
+}
+@keyframes simRaceResultMedalBounce {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-4px) scale(1.08); }
+}
+
+/* Platinum - "VELDIG ekstra stas": alt gull har, PLUSS en sterkere/raskere glød, en skimrende diagonal
+   lysstripe som feier over kortet, og seks synlige "sparkles" (se span-ene i HTML-markeringen) som
+   flimrer rundt kortet i forskjøvet takt. */
+.sim-race-result.tier-platinum .sim-race-result-card {
+    border-color: rgba(111, 195, 214, 0.7);
+    animation: simRaceResultPlatinumGlow 1.3s ease-in-out infinite;
+    overflow: hidden;
+}
+.sim-race-result.tier-platinum .sim-race-result-medal-icon { animation: simRaceResultMedalBounce 0.9s ease-in-out infinite; }
+.sim-race-result.tier-platinum .sim-race-result-card::after {
+    content: "";
+    position: absolute;
+    top: -50%;
+    left: -60%;
+    width: 40%;
+    height: 200%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+    transform: rotate(20deg);
+    animation: simRaceResultShimmer 2.4s ease-in-out infinite;
+}
+@keyframes simRaceResultPlatinumGlow {
+    0%, 100% { box-shadow: 0 10px 40px rgba(0,0,0,0.5), 0 0 10px 2px rgba(111,195,214,0.35); }
+    50% { box-shadow: 0 10px 40px rgba(0,0,0,0.5), 0 0 46px 10px rgba(111,195,214,0.85); }
+}
+@keyframes simRaceResultShimmer {
+    0% { left: -60%; }
+    100% { left: 140%; }
+}
+.sim-race-result.tier-platinum .sim-race-result-sparkles { display: block; position: absolute; inset: -30px; pointer-events: none; }
+.sim-race-result.tier-platinum .sim-race-result-sparkles span {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: #bdf1ff;
+    clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
+    animation: simRaceResultSparkle 1.6s ease-in-out infinite;
+    opacity: 0;
+}
+.sim-race-result.tier-platinum .sim-race-result-sparkles span:nth-child(1) { top: 6%;  left: 12%; animation-delay: 0s; }
+.sim-race-result.tier-platinum .sim-race-result-sparkles span:nth-child(2) { top: 14%; left: 82%; animation-delay: 0.25s; }
+.sim-race-result.tier-platinum .sim-race-result-sparkles span:nth-child(3) { top: 50%; left: 4%;  animation-delay: 0.5s; }
+.sim-race-result.tier-platinum .sim-race-result-sparkles span:nth-child(4) { top: 55%; left: 92%; animation-delay: 0.75s; }
+.sim-race-result.tier-platinum .sim-race-result-sparkles span:nth-child(5) { top: 88%; left: 20%; animation-delay: 1s; }
+.sim-race-result.tier-platinum .sim-race-result-sparkles span:nth-child(6) { top: 90%; left: 70%; animation-delay: 1.3s; }
+@keyframes simRaceResultSparkle {
+    0%, 100% { opacity: 0; transform: scale(0.4) rotate(0deg); }
+    50% { opacity: 1; transform: scale(1.15) rotate(90deg); }
+}
+
 /* Livslager-ikoner ("Krasj i bevegelige mål", js/simulator.js: updateTargetLivesHud) - brukerens krav:
    "ikke noe 'x droner igjen' i popupene. ha heller noen ikoner nede i venstre hjørne med antall droner/
    liv". Plassert høyere enn sim-mini-hint (bottom 16px, se under) for å ikke kollidere med arme-hintet i
@@ -1494,8 +1608,16 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     color: #2e8b57;
     white-space: nowrap;
 }
+/* Acro-øvelseslistens beste-tid-badge (renderExerciseList) - EGNE, eksplisitte farger for ikon/tid i
+   stedet for å arve .sim-exercise-check sin grønne "bestått"-farge over (som fortsatt er riktig for DEN
+   opprinnelige "fa-circle-check"-bruken andre steder, IKKE endret her). Brukerens krav: "nå er det en
+   grønn pokal ved siden av tiden som vises der. kan heller medaljen vises? og tiden i svart skrift."
+   sim-exercise-check-icon uten noen sim-medal-*-klasse (ingen medalje oppnådd ennå, bare en logget tid) -
+   nøytral grå i stedet for den misvisende "suksess"-grønne, siden ingenting faktisk er oppnådd ennå. */
+.sim-exercise-check-icon { color: #8a8f98; }
+.sim-exercise-check-time { color: #1a1a1a; }
 /* Medaljefarger for Acro-utsjekken (bronse/sølv/gull/platinum) - se acroMedalProgress/acroMedalForTime i
-   js/simulator.js. Brukt på BÅDE øvelseslistens .sim-exercise-check-badge (renderExerciseList("acro")) OG
+   js/simulator.js. Brukt på BÅDE øvelseslistens .sim-exercise-check-icon (renderExerciseList("acro")) OG
    Acro-diplomets .sim-diploma-medal-ikon (openAcroDiploma) - samme fire fargeklasser begge steder. */
 .sim-medal-bronze { color: #cd7f32; }
 .sim-medal-silver { color: #9aa0a6; }

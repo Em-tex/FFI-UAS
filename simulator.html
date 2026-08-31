@@ -14,7 +14,7 @@
          se samme forklaring over. En vanlig omlasting henter samme HTML (som selv aldri caches, se over),
          men uten en ny query-streng her kunne nettleseren likevel gjenbrukt en cachet KOPI av selve
          css/js-filene fra forrige gang de ble lastet med SAMME URL. -->
-    <link rel="stylesheet" href="css/style.css?v=20260831000001">
+    <link rel="stylesheet" href="css/style.css?v=20260831000003">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
@@ -47,6 +47,23 @@
         <div class="sim-warning-banner" id="loiterWindBanner">
             <span class="sim-crash-title">STERK VIND</span>
             <span class="sim-crash-hint" id="loiterWindBannerText">Loiter kan miste posisjonen</span>
+        </div>
+        <!-- Racingbane-resultatpopup (tid+medalje ved fullført forsøk) - se showRaceResultPopup
+             (js/simulator.js). Egen fra exerciseWarningBanner over (brukt til korte hint) - denne skal stå
+             tydelig synlig et par sekunder FØR dronen faktisk resettes til start (brukerens krav: "etter
+             fullført må det ikke resettes så brått... en popup med tid og medalje"). tier-klassen
+             (bronze/silver/gold/platinum, satt av JS) styrer staffasjen - se CSS. -->
+        <div class="sim-race-result" id="raceResultPopup">
+            <div class="sim-race-result-card">
+                <div class="sim-race-result-sparkles" aria-hidden="true">
+                    <span></span><span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <i class="fa-solid fa-medal sim-race-result-medal-icon" id="raceResultMedalIcon"></i>
+                <div class="sim-race-result-label" id="raceResultLabel"></div>
+                <div class="sim-race-result-time" id="raceResultTime"></div>
+                <div class="sim-race-result-medal-text" id="raceResultMedalText"></div>
+                <div class="sim-race-result-record" id="raceResultRecordText"></div>
+            </div>
         </div>
         <!-- Livslager-ikoner ("Krasj i bevegelige mål") - nede i venstre hjørne, se updateTargetLivesHud
              (js/simulator.js). Ikonene selv bygges der (TARGET_STRIKE_DRONE_LIVES stk, fa-helicopter) -
@@ -506,7 +523,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="js/simulator-common.js?v=20260831000002"></script>
-<script src="js/simulator.js?v=20260831000019"></script>
+<script src="js/simulator.js?v=20260831000026"></script>
 <script src="js/simulator-flightlog.js?v=20260821000013"></script>
 </body>
 </html>
