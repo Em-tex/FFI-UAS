@@ -1058,6 +1058,15 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
     border-bottom: 1px solid #eee;
 }
 .sim-diploma-time-row span:last-child { font-variant-numeric: tabular-nums; color: var(--ffi-blue); font-weight: 600; }
+/* Acro-diplomet (openAcroDiploma): samme rad/skillelinje-idé som over, men stablet - tittel+tid på égen
+   linje øverst (.sim-diploma-time-row-top, gjenbruker nettopp den blå/fete span:last-child-regelen over
+   for selve tiden), og et kort "hva øves"-avsnitt under (brukerens krav: "Bør det under hver øvelse stå
+   litt mer om innhold og hva som egentlig blir øvet?", se ACRO_DIPLOMA_SKILLS). Egen modifikator-klasse -
+   IKKE en endring av selve .sim-diploma-time-row - openDiploma (Stabilized-diplomet) gjenbruker den
+   klassen uendret, kun for navn+tid, uten denne stablingen. */
+.sim-diploma-time-row-acro { display: flex; flex-direction: column; gap: 3px; padding: 6px 2px; }
+.sim-diploma-time-row-top { display: flex; justify-content: space-between; gap: 12px; }
+.sim-diploma-time-row-desc { margin: 0; font-size: 0.72rem; font-weight: 400; color: #666; line-height: 1.35; }
 /* Totaltid-raden nederst i tabellen - tykkere skillelinje over og fet skrift skiller den fra de vanlige
    øvelsesradene den summerer (se openDiploma). */
 .sim-diploma-time-total { border-top: 2px solid var(--ffi-blue); border-bottom: none; margin-top: 4px; padding-top: 6px; font-weight: 700; }

@@ -8917,6 +8917,19 @@ function updateRacingStage(stage, dt, now) {
    ikke engangs bestått/ikke-bestått-øvelser. I stedet graderes BESTE oppnådde tid på hver aktivitet til en
    medalje, og selve "utsjekken" (Acro-diplomet, se openAcroDiploma) er den DÅRLIGSTE av de fire medaljene -
    "3 gull og 1 bronse gir bronse" (brukeren). */
+// Kort ferdighets-/læringsmål-setning under hver aktivitet på selve Acro-diplomet (openAcroDiploma) - KUN
+// diplomteksten, IKKE exercise.shortDescription/fullDescription (de dekker fortsatt selve øvelseslisten/
+// detaljvisningen som før, uendret). Brukerens krav, ordrett: "Bør det under hver øvelse stå litt mer om
+// innhold og hva som egentlig blir øvet? ... skriv det oversiktlig og elegant/passende for et diplom" - egne,
+// omskrevne setninger (bruker selv leverte et grovt førsteutkast per aktivitet), samme "kort, presist,
+// diplom-verdig" idé som VTOL_DIPLOMA_GOALS (js/simulator-vtol-exercises.js) bruker for det andre diplomet.
+const ACRO_DIPLOMA_SKILLS = {
+    race1: "Varierte manøvre i høy fart - krappe svinger og høydevariasjon.",
+    race3: "Samme bane, tre runder på rad - utholdenhet og jevn presisjon under vedvarende belastning.",
+    raceTunnel: "Klatrende svinger, trange passasjer og krappe retningsskift på vei mot toppen.",
+    targetStrike: "Baneberegning mot mål i bevegelse, i luft og på bakken - raske reaksjoner på " +
+        "plutselige endringer i retning og fart."
+};
 // Rene sekundtall, uavhengig av alt annet i filen, så disse kan justeres fritt uten å røre resten av
 // medalje-/ledertavle-logikken. race1 er brukerens EGNE, eksakte grenser ("under 30 sek på en runde er
 // gull. tregere er sølv. tregere enn 45 sek er bronse. tregere enn 1:15 er ingen gradering") - de tre
@@ -9347,16 +9360,21 @@ function openAcroDiploma() {
     timesEl.innerHTML = "";
     ACRO_EXERCISE_ORDER.forEach(function (id) {
         const rowEl = document.createElement("div");
-        rowEl.className = "sim-diploma-time-row";
-        const nameEl = document.createElement("span");
-        nameEl.textContent = EXERCISES[id].label;
-        const timeEl = document.createElement("span");
+        // sim-diploma-time-row-acro (IKKE bare sim-diploma-time-row - se css) - egen modifikator scopet
+        // KUN til denne løkka, slik at den delte klassen (fortsatt brukt uendret av openDiploma sin egen
+        // diplomTimes-liste) ikke også får den nye, stablede topp+beskrivelse-layouten ved et uhell.
+        rowEl.className = "sim-diploma-time-row sim-diploma-time-row-acro";
         const bestSec = racingBestTimeSec(id);
         const medal = currentAcroMedal(id);
-        timeEl.textContent = (bestSec !== null ? formatExerciseTime(bestSec, 2) : "-") +
+        const timeText = (bestSec !== null ? formatExerciseTime(bestSec, 2) : "-") +
             (medal ? " (" + acroMedalLabel(medal) + ")" : "");
-        rowEl.appendChild(nameEl);
-        rowEl.appendChild(timeEl);
+        // Beskrivelsen er et <p>, IKKE et <span> (i motsetning til de to over) - unngår at den eksisterende
+        // ".sim-diploma-time-row span:last-child"-regelen (blå/fet skrift, ment for selve TIDEN) også
+        // treffer beskrivelsen bare fordi den tilfeldigvis også er siste barn i raden. Se css.
+        rowEl.innerHTML =
+            '<span class="sim-diploma-time-row-top"><span>' + EXERCISES[id].label + "</span><span>" +
+            timeText + "</span></span>" +
+            '<p class="sim-diploma-time-row-desc">' + ACRO_DIPLOMA_SKILLS[id] + "</p>";
         timesEl.appendChild(rowEl);
     });
     // overallAcroGrade() returnerer null kun hvis IKKE alle fire har minst bronse ennå - raden som åpner
