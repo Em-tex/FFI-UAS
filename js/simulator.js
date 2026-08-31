@@ -8888,10 +8888,13 @@ const ACRO_MEDAL_THRESHOLDS = {
     // - opp fra 80 (1:20.0). Silver/bronse uendret (fortsatt god avstand oppover fra det nye gull-taket).
     targetStrike: { gold: 90, silver: 120, bronze: 200 }
 };
-// Platinum: KUN for de to eksisterende banene, der brukeren allerede har en ekte, kjent rekord å slå
-// (brukeren: "rekorden min på 1-rundebanen er 0:26.12 og på trerunderbanen 1:24.05. Slår man de får man
-// platinum"). raceTunnel/targetStrike er nye baner uten noen etablert rekord ennå - de får ikke et
-// platinum-nivå før en reell referansetid finnes (legg til flere nøkler her den dagen det er aktuelt).
+// Platinum: KUN for de to eksisterende banene, der en ekte, kjent rekord finnes å slå - operativ leder
+// UAS sine egne rekorder (0:26.12 på enkeltrundebanen, 1:24.05 på tre runder-banen), IKKE en vanlig
+// spillers personlige beste (brukeren, presisert: "det skal ikke bli platinum. Det er kun hvis man slår
+// operativ leder UAS sine rekorder som blir platinum" - se også acroDiplomaOverlay sin note i
+// simulator.html, som tidligere feilaktig omtalte dette som "dine egne rekorder"). raceTunnel/targetStrike
+// er nye baner uten noen etablert rekord ennå - de får ikke et platinum-nivå før en reell referansetid
+// finnes (legg til flere nøkler her den dagen det er aktuelt).
 const ACRO_RECORD_SEC = { race1: 26.12, race3: 84.05 };
 const ACRO_MEDAL_RANK = { bronze: 1, silver: 2, gold: 3, platinum: 4 };
 const ACRO_MEDAL_LABELS_NB = { bronze: "bronse", silver: "sølv", gold: "gull", platinum: "platinum" };

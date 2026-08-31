@@ -477,15 +477,17 @@
 
         <!-- Acro-bekreftelsen - helt separat fra diplomaOverlay over (den stabiliserte, bestått/ikke-
              bestått-baserte bekreftelsen for EXERCISE_ORDER) - se openAcroDiploma i js/simulator.js.
-             Medaljer i stedet for et bestått-kryss, og en fast rekord-notis (samme mailto-mønster som
-             simulator-vtol.html sin diplomaOverlay bruker for "send diplomet til rpas@ffi.no"). -->
+             Medaljer i stedet for et bestått-kryss, og en fast innsendings-notis (samme mailto-mønster som
+             simulator-vtol.html sin diplomaOverlay bruker for "send diplomet til rpas@ffi.no").
+             IKKE lenger noe om platinum/rekorder/premie her (brukeren: "det skal ikke bli platinum. Det er
+             kun hvis man slår operativ leder UAS sine rekorder som blir platinum" - platinum-logikken i
+             seg selv er UENDRET (se ACRO_RECORD_SEC/acroMedalForTime i js/simulator.js), bare den
+             misvisende "dine egne rekorder"/premie-formuleringen her er fjernet). -->
         <div class="sim-diploma-overlay" id="acroDiplomaOverlay" style="display:none;">
             <div class="sim-diploma">
                 <div class="sim-diploma-actions sim-diploma-actions-with-note no-print">
-                    <p class="sim-diploma-note">Slår du en av dine egne rekorder (enkeltrunde-/tre runder-banen)
-                        blir det markert som platinum her, og det kan vanke en liten premie - ta i så fall et
-                        skjermbilde av denne bekreftelsen og send det til
-                        <a href="mailto:rpas@ffi.no"><strong>rpas@ffi.no</strong></a> for dokumentasjon.
+                    <p class="sim-diploma-note">Lagre bekreftelsen som PDF og send inn til
+                        <a href="mailto:rpas@ffi.no"><strong>rpas@ffi.no</strong></a>.
                         Denne siden er statisk og lagrer informasjon kun lokalt i din egen nettleser - ingen informasjon sendes noe sted.</p>
                     <div class="sim-diploma-action-buttons">
                         <button type="button" class="sim-btn sim-btn-primary" id="acroDiplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
