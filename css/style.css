@@ -1613,10 +1613,18 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
    opprinnelige "fa-circle-check"-bruken andre steder, IKKE endret her). Brukerens krav: "nå er det en
    grønn pokal ved siden av tiden som vises der. kan heller medaljen vises? og tiden i svart skrift."
    sim-exercise-check-icon uten noen sim-medal-*-klasse (ingen medalje oppnådd ennå, bare en logget tid) -
-   nøytral grå i stedet for den misvisende "suksess"-grønne, siden ingenting faktisk er oppnådd ennå. */
-.sim-exercise-check-icon { color: #8a8f98; }
+   nøytral grå OG dempet opacity, IKKE bare en annen gråtone: en udempet grå er for lett å forveksle med
+   selve sølv-medaljefargen (#9aa0a6, i seg selv grå av natur) på en rask titt - den dempede opaciteten gir
+   et tydelig "ikke oppnådd ennå"-preg en annen gråtone alene ikke kan (brukerens forvirring: "har noen
+   tider fra før av, men vises som sølv i menyen"). Selve rotårsaken til AT den saken viste seg her var for
+   øvrig en helt annen, ekte bug - se currentAcroMedal (js/simulator.js): eksisterende tider fra før
+   medaljesystemet fantes ble aldri regnet om, og viste seg dermed som "ingen medalje" selv når tiden
+   klart kvalifiserte. */
+.sim-exercise-check-icon { color: #8a8f98; opacity: 0.55; }
+.sim-exercise-check-icon.sim-medal-bronze, .sim-exercise-check-icon.sim-medal-silver,
+.sim-exercise-check-icon.sim-medal-gold, .sim-exercise-check-icon.sim-medal-platinum { opacity: 1; }
 .sim-exercise-check-time { color: #1a1a1a; }
-/* Medaljefarger for Acro-utsjekken (bronse/sølv/gull/platinum) - se acroMedalProgress/acroMedalForTime i
+/* Medaljefarger for Acro-utsjekken (bronse/sølv/gull/platinum) - se currentAcroMedal/acroMedalForTime i
    js/simulator.js. Brukt på BÅDE øvelseslistens .sim-exercise-check-icon (renderExerciseList("acro")) OG
    Acro-diplomets .sim-diploma-medal-ikon (openAcroDiploma) - samme fire fargeklasser begge steder. */
 .sim-medal-bronze { color: #cd7f32; }

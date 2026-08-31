@@ -8944,8 +8944,22 @@ function recordAcroMedal(id, timeSec) {
     }
     return medal;
 }
+// Medaljen som FAKTISK gjelder akkurat nå for en aktivitet - regnet direkte fra beste tid i ledertavlen
+// (racingBestTimeSec) mot DE GJELDENDE terskelverdiene (acroMedalForTime), IKKE lest fra den lagrede
+// acroMedalProgress-ratsjen over. Brukt i ALLE visnings-sammenhenger (øvelseslisten/detaljsiden/diplomet)
+// - acroMedalProgress[id] brukes fortsatt til å AVGJØRE om en akkurat fullført økt var en ny personlig
+// forbedring (recordAcroMedal, for selve popup-meldingen), men er IKKE en pålitelig kilde for HVA som
+// faktisk vises: (1) tider logget FØR medaljesystemet fantes hadde aldri fått noen oppføring der i det
+// hele tatt (viste seg som et nøytralt, "ingen medalje ennå"-ikon i menyen selv med en klart medaljeverdig
+// tid), og (2) en senere justering av selve terskelverdiene (ACRO_MEDAL_THRESHOLDS, som har skjedd flere
+// ganger denne økten) endrer aldri en allerede lagret medalje retroaktivt. Å regne medaljen fersk fra
+// selve tiden hver gang løser begge, uten noen egen migrerings-/tilbakefyllings-logikk (brukerens rapport:
+// "har noen tider fra før av, men vises som sølv i menyen etter oppdateringen?").
+function currentAcroMedal(id) {
+    return acroMedalForTime(id, racingBestTimeSec(id));
+}
 function allAcroActivitiesGraded() {
-    return ACRO_EXERCISE_ORDER.every(function (id) { return !!acroMedalProgress[id]; });
+    return ACRO_EXERCISE_ORDER.every(function (id) { return !!currentAcroMedal(id); });
 }
 // null til alle fire har minst bronse (se allAcroActivitiesGraded) - Acro-diplomet (openAcroDiploma) skal
 // ikke vise en "samlet gradering" før den faktisk betyr noe.
@@ -8953,7 +8967,8 @@ function overallAcroGrade() {
     if (!allAcroActivitiesGraded()) return null;
     let worst = "platinum";
     ACRO_EXERCISE_ORDER.forEach(function (id) {
-        if (ACRO_MEDAL_RANK[acroMedalProgress[id]] < ACRO_MEDAL_RANK[worst]) worst = acroMedalProgress[id];
+        const medal = currentAcroMedal(id);
+        if (ACRO_MEDAL_RANK[medal] < ACRO_MEDAL_RANK[worst]) worst = medal;
     });
     return worst;
 }
@@ -9151,7 +9166,7 @@ function renderExerciseList(category) {
         ACRO_EXERCISE_ORDER.forEach(function (id) {
             const exercise = EXERCISES[id];
             const bestSec = racingBestTimeSec(id);
-            const medal = acroMedalProgress[id];
+            const medal = currentAcroMedal(id);
             const row = document.createElement("button");
             row.type = "button";
             row.className = "sim-exercise-row";
@@ -9282,7 +9297,7 @@ function openAcroDiploma() {
         nameEl.textContent = EXERCISES[id].label;
         const timeEl = document.createElement("span");
         const bestSec = racingBestTimeSec(id);
-        const medal = acroMedalProgress[id];
+        const medal = currentAcroMedal(id);
         timeEl.textContent = (bestSec !== null ? formatExerciseTime(bestSec, 2) : "-") +
             (medal ? " (" + acroMedalLabel(medal) + ")" : "");
         rowEl.appendChild(nameEl);
@@ -9408,7 +9423,7 @@ function showExerciseDetail(id) {
             const bestSec = racingBestTimeSec(id);
             progressEl.style.display = bestSec !== null ? "" : "none";
             if (bestSec !== null) {
-                const medal = acroMedalProgress[id];
+                const medal = currentAcroMedal(id);
                 progressEl.textContent = "Beste tid: " + formatExerciseTime(bestSec, 2) +
                     (medal ? " (" + acroMedalLabel(medal) + ")" : "");
             }
