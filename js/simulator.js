@@ -8917,18 +8917,22 @@ function updateRacingStage(stage, dt, now) {
    ikke engangs bestått/ikke-bestått-øvelser. I stedet graderes BESTE oppnådde tid på hver aktivitet til en
    medalje, og selve "utsjekken" (Acro-diplomet, se openAcroDiploma) er den DÅRLIGSTE av de fire medaljene -
    "3 gull og 1 bronse gir bronse" (brukeren). */
-// Kort ferdighets-/læringsmål-setning under hver aktivitet på selve Acro-diplomet (openAcroDiploma) - KUN
+// Kort læringsmål-setning under hver aktivitet på selve Acro-diplomet (openAcroDiploma) - KUN
 // diplomteksten, IKKE exercise.shortDescription/fullDescription (de dekker fortsatt selve øvelseslisten/
 // detaljvisningen som før, uendret). Brukerens krav, ordrett: "Bør det under hver øvelse stå litt mer om
-// innhold og hva som egentlig blir øvet? ... skriv det oversiktlig og elegant/passende for et diplom" - egne,
-// omskrevne setninger (bruker selv leverte et grovt førsteutkast per aktivitet), samme "kort, presist,
-// diplom-verdig" idé som VTOL_DIPLOMA_GOALS (js/simulator-vtol-exercises.js) bruker for det andre diplomet.
+// innhold og hva som egentlig blir øvet? ... skriv det oversiktlig og elegant/passende for et diplom", senere
+// presisert: "husk at det skal være dokumentasjon på hva piloten HA LÆRT. læringsmål aktig", og til slutt
+// justert bort fra "mestrer"-ordlyden igjen: "ikke mestrer kanskje, men hva som kreves?" - formulert som
+// KRAVET øvelsen stiller (dokumentert oppfylt ved at aktiviteten står fullført/gradert på selve diplomet,
+// se overskriftsteksten "har fullført ... med en samlet gradering på ...") i stedet for et eksplisitt
+// mestrings-utsagn på hver enkelt rad. Samme "kort, presist, diplom-verdig" idé som VTOL_DIPLOMA_GOALS
+// (js/simulator-vtol-exercises.js) bruker for det andre diplomet.
 const ACRO_DIPLOMA_SKILLS = {
-    race1: "Varierte manøvre i høy fart - krappe svinger og høydevariasjon.",
-    race3: "Samme bane, tre runder på rad - utholdenhet og jevn presisjon under vedvarende belastning.",
-    raceTunnel: "Klatrende svinger, trange passasjer og krappe retningsskift på vei mot toppen.",
-    targetStrike: "Baneberegning mot mål i bevegelse, i luft og på bakken - raske reaksjoner på " +
-        "plutselige endringer i retning og fart."
+    race1: "Krever varierte manøvre i høy fart - krappe svinger og høydevariasjon.",
+    race3: "Krever utholdenhet og jevn presisjon gjennom tre sammenhengende runder.",
+    raceTunnel: "Krever klatrende svinger, trange passasjer og krappe retningsskift.",
+    targetStrike: "Krever baneberegning mot mål i bevegelse og rask reaksjon på plutselige endringer i " +
+        "retning og fart, i luft og på bakken."
 };
 // Rene sekundtall, uavhengig av alt annet i filen, så disse kan justeres fritt uten å røre resten av
 // medalje-/ledertavle-logikken. race1 er brukerens EGNE, eksakte grenser ("under 30 sek på en runde er
@@ -9377,6 +9381,40 @@ function openAcroDiploma() {
             '<p class="sim-diploma-time-row-desc">' + ACRO_DIPLOMA_SKILLS[id] + "</p>";
         timesEl.appendChild(rowEl);
     });
+    // Utstyrsspesifikasjon - brukerens krav: "få med hva slags drone som er brukt? vekt og thrust to
+    // weight ratio? så dokumentasjonen blir skikkelig", senere presisert bort fra DRONE_CLASSES.racing sin
+    // egen menyvalg-tekst ("Racing (rask, lett) er vel ikke så proft? kanskje quad - størrelse - vekt -
+    // TWR?") - DRONE_CLASSES.racing.label er ment for innstillinger-nedtrekksmenyen (kort/uformell), IKKE
+    // en spesifikasjonslinje på selve diplomet, derfor en egen, mer "proff" fast tekst ("Racing-quadkopter")
+    // her i stedet. Wheelbase (motor-til-motor, X-oppsett - se getLegTopLocalPositions) og TWR er fortsatt
+    // regnet direkte ut fra kildekonstantene (IKKE hardkodet) slik at begge automatisk følger med om
+    // DRONE_ARM_LENGTH/DRONE_CLASSES.racing justeres siden - se buildDrone (armLength=DRONE_ARM_LENGTH,
+    // deretter droneGroup.scale.setScalar(spec.visualScale)) for hvorfor visualScale hører med i selve
+    // avstandsberegningen: den skalerer HELE den bygde modellen (motorposisjoner inkludert), ikke bare et
+    // rent kosmetisk overlegg.
+    // Propellerstørrelse i tommer ("hvor mange inch blir det?... er det propellerstørrelsen de referer
+    // til når de sier f.eks. 10 inch quad?" - brukeren) - JA, "X inch/tommer quad" i FPV-miljøet er
+    // ALLTID selve propelldiameteren (ikke wheelbase), derfor tatt med som EGEN, primær størrelses-
+    // betegnelse foran wheelbase-tallet (som fortsatt står med som et sekundært, mer presist detaljmål i
+    // parentes). bladeLengthForClass returnerer selve propelldiameteren (unskalert, se dens egen
+    // kommentar - "tuppradius er halve bladlengden") - skaleres med visualScale på samme måte som
+    // wheelbase over, og konverteres fra meter til tommer (1" = 0.0254 m).
+    // "kan du sette opp spesifikasjonene linje for linje? er det ryddigere?" (brukeren) - fem separate
+    // .sim-diploma-spec-line-elementer i stedet for én kommaseparert setning.
+    const racingSpec = DRONE_CLASSES.racing;
+    const twRatio = racingSpec.maxThrust / (racingSpec.mass * GRAVITY);
+    const wheelbaseMm = Math.round(2 * DRONE_ARM_LENGTH * racingSpec.visualScale * Math.SQRT2 * 1000);
+    const propDiameterIn = bladeLengthForClass("racing") * racingSpec.visualScale / 0.0254;
+    const specLines = [
+        "Drone: Racing-quadkopter",
+        "Propeller: " + propDiameterIn.toFixed(1) + "\"",
+        "Wheelbase: " + wheelbaseMm + " mm",
+        "Vekt: " + racingSpec.mass.toFixed(1) + " kg",
+        "TWR: " + twRatio.toFixed(1) + ":1"
+    ];
+    document.getElementById("acroDiplomaDroneSpec").innerHTML = specLines.map(function (line) {
+        return '<span class="sim-diploma-spec-line">' + line + "</span>";
+    }).join("");
     // overallAcroGrade() returnerer null kun hvis IKKE alle fire har minst bronse ennå - raden som åpner
     // dette diplomet (renderExerciseList) vises selv først når allAcroActivitiesGraded() er sann, så dette
     // burde alltid være en gyldig medalje her, men fallback til "bronse"-fargen/teksten uansett for
