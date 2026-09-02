@@ -15,6 +15,15 @@
 </head>
 <body>
 
+<!-- Vises kun mens brukeren drar en fil inn over vinduet (se dragenter/dragleave/drop i
+     js/sjekkliste-bygger.js) - "må være mulig å dra json fil fra PC over i vinduet for å laste inn". -->
+<div class="drop-json-overlay no-print" id="dropJsonOverlay">
+    <div class="drop-json-overlay-inner">
+        <i class="fa-solid fa-file-import"></i>
+        <p>Slipp JSON-filen her for å laste den inn</p>
+    </div>
+</div>
+
 <div class="container">
 
     <div style="text-align:center; padding: 20px 0 30px 0;">
@@ -23,6 +32,7 @@
             Tilpass sjekklistene og last ned som PDF.
         </p>
         <button class="btn no-print" id="downloadPdfBtnTop"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
+        <button class="btn btn-secondary no-print" id="downloadJsonBtnTop"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
     </div>
 
     <div class="checklist-tabs no-print">
@@ -33,7 +43,7 @@
             <i class="fa-solid fa-triangle-exclamation"></i> Contingency
         </button>
         <button type="button" class="checklist-tab-btn" data-tab-btn="emergency">
-            <i class="fa-solid fa-truck-medical"></i> Emergency
+            <i class="fa-solid fa-fire"></i> Emergency
         </button>
         <button type="button" class="checklist-tab-btn" data-tab-btn="erp">
             <i class="fa-solid fa-people-group"></i> ERP
@@ -198,7 +208,7 @@
     <div class="no-print" style="text-align:center; margin-top: 20px;">
         <button class="btn" id="downloadPdfBtn"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
         <button class="btn btn-secondary" id="downloadJsonBtn"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
-        <button class="btn btn-secondary" id="uploadJsonBtn"><i class="fa-solid fa-file-import"></i> Last opp JSON</button>
+        <button class="btn btn-secondary" id="uploadJsonBtn"><i class="fa-solid fa-file-import"></i> Last inn JSON</button>
         <input type="file" id="uploadJsonInput" accept="application/json,.json" style="display:none">
         <button class="btn btn-danger" id="resetFormBtn"><i class="fa-solid fa-rotate-left"></i> Nullstill denne fanen</button>
     </div>

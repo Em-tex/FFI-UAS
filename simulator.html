@@ -365,12 +365,50 @@
                 <h3>Øvelser</h3>
                 <button type="button" class="sim-panel-close" title="Lukk"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div id="exerciseCategoryView">
+            <!-- Toppnivå - hvilket TRENINGSPROGRAM (initiell/recurrent, se js/simulator.js
+                 showExerciseProgramView) - "Fri flyging" ligger her (IKKE inni hvert program) siden den
+                 er program-uavhengig. -->
+            <div id="exerciseProgramView">
+                <button type="button" class="sim-exercise-row" id="programInitialBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-graduation-cap"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">Initiell trening</span>
+                        <span class="sim-exercise-row-desc">Quadcopter intro og Acro mode - hele det grunnleggende treningsprogrammet.</span>
+                    </span>
+                </button>
+                <button type="button" class="sim-exercise-row" id="programRecurrentBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-rotate"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">Recurrent trening</span>
+                        <span class="sim-exercise-row-desc">Et mindre, jevnlig gjentatt utvalg - vind/nødprosedyrer for Quadcopter, racingbanen for Acro.</span>
+                    </span>
+                </button>
+                <button type="button" class="sim-exercise-row" id="categoryFreeFlightBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-plane-up"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">Fri flyging</span>
+                        <span class="sim-exercise-row-desc">Avslutter en aktiv øvelse/racingbane og går tilbake til vanlig flyging.</span>
+                    </span>
+                </button>
+            </div>
+            <!-- Kategorivalg - INITIELL trening (uendret innhold fra før programvalget ble lagt til,
+                 kun "Stabilized / Angle mode" -> "Quadcopter intro", se categoryStabilizedBtn sin egen
+                 kommentar). -->
+            <div id="exerciseCategoryViewInitial" style="display:none;">
+                <button type="button" class="sim-exercise-back-btn" id="exerciseBackToProgramBtnInitial">
+                    <i class="fa-solid fa-arrow-left"></i> Tilbake
+                </button>
+                <!-- "Quadcopter intro" (IKKE "Stabilized / Angle mode" som før - brukerens krav: "Stabilized
+                     / Angle mode kan heller hete Quadcopter intro. kan nevne Stabilized / angle mode i
+                     beskrivelsen heller") - selve flymodus-navnet nevnes i beskrivelsen i stedet for
+                     tittelen. id-en er bevisst UENDRET (categoryStabilizedBtn) - kun visningsteksten er
+                     endret, minimerer diff mot resten av koden (currentExerciseCategory bruker nå uansett
+                     "initialQuad" som nøkkel, se EXERCISE_CATEGORY_CONFIG i js/simulator.js). -->
                 <button type="button" class="sim-exercise-row" id="categoryStabilizedBtn">
                     <span class="sim-exercise-row-icon"><i class="fa-solid fa-compass"></i></span>
                     <span class="sim-exercise-row-main">
-                        <span class="sim-exercise-row-title">Stabilized / Angle mode</span>
-                        <span class="sim-exercise-row-desc">De tolv grunnleggende øvelsene - hover, løyper, retur og uforutsette hendelser.</span>
+                        <span class="sim-exercise-row-title">Quadcopter intro</span>
+                        <span class="sim-exercise-row-desc">De tolv grunnleggende øvelsene i Stabilized/Angle mode - hover, løyper, retur og uforutsette hendelser.</span>
                     </span>
                 </button>
                 <button type="button" class="sim-exercise-row" id="categoryAcroBtn">
@@ -380,11 +418,25 @@
                         <span class="sim-exercise-row-desc">Fire tidsaktiviteter - full manuell kontroll, FPV-kamera, ledertavler og medaljer på veien mot en egen Acro-bekreftelse.</span>
                     </span>
                 </button>
-                <button type="button" class="sim-exercise-row" id="categoryFreeFlightBtn">
-                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-plane-up"></i></span>
+            </div>
+            <!-- Kategorivalg - RECURRENT trening (nye, mindre omfattende øvelser - se
+                 RECURRENT_QUAD_ORDER/RECURRENT_ACRO_ORDER i js/simulator.js). -->
+            <div id="exerciseCategoryViewRecurrent" style="display:none;">
+                <button type="button" class="sim-exercise-back-btn" id="exerciseBackToProgramBtnRecurrent">
+                    <i class="fa-solid fa-arrow-left"></i> Tilbake
+                </button>
+                <button type="button" class="sim-exercise-row" id="categoryRecurrentQuadBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-compass"></i></span>
                     <span class="sim-exercise-row-main">
-                        <span class="sim-exercise-row-title">Fri flyging</span>
-                        <span class="sim-exercise-row-desc">Avslutter en aktiv øvelse/racingbane og går tilbake til vanlig flyging.</span>
+                        <span class="sim-exercise-row-title">Quadcopter</span>
+                        <span class="sim-exercise-row-desc">Hover i vind, returner hjem i vind og nødprosedyrer.</span>
+                    </span>
+                </button>
+                <button type="button" class="sim-exercise-row" id="categoryRecurrentAcroBtn">
+                    <span class="sim-exercise-row-icon"><i class="fa-solid fa-flag-checkered"></i></span>
+                    <span class="sim-exercise-row-main">
+                        <span class="sim-exercise-row-title">Acro</span>
+                        <span class="sim-exercise-row-desc">Den vanlige racingbanen - én runde og tre runder.</span>
                     </span>
                 </button>
             </div>
@@ -412,6 +464,19 @@
                     <button type="button" class="sim-btn sim-btn-primary" id="exerciseStartBtn">Start</button>
                     <button type="button" class="sim-btn sim-btn-primary" id="exerciseCancelBtn" style="display:none;">Avbryt</button>
                 </div>
+            </div>
+            <!-- "Kopier lenke" - diskré, liten lenke nederst i menyvinduet (brukerens krav, ordrett: "Gjerne
+                 med en liten 'kopier lenke' diskre nede på menyvinduet") - kopierer en lenke til det ÅPNE
+                 PROGRAMMET (?exercises=initial/recurrent, se copyExerciseMenuLink/deep-lenke-oppslaget i
+                 js/simulator.js). Skjult på selve programvalg-toppskjermen (updateExerciseCopyLinkVisibility) -
+                 ingenting spesifikt å lenke til der ennå. Utenfor de fire innholds-viewene over (alltid til
+                 stede i DOM-en, kun display styrt av JS), så den forblir synlig uansett hvilket av dem som
+                 vises. -->
+            <div class="sim-exercise-copy-link-row">
+                <button type="button" class="sim-exercise-copy-link" id="exerciseCopyLinkBtn">
+                    <i class="fa-solid fa-link"></i> Kopier lenke
+                </button>
+                <span class="sim-exercise-copy-link-status" id="exerciseCopyLinkStatus"></span>
             </div>
         </div>
 
@@ -460,11 +525,16 @@
                         <i class="fa-solid fa-award sim-diploma-medal"></i>
                     </div>
                     <h2>BEKREFTELSE</h2>
-                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter stikkeferdigheter</p>
+                    <!-- "Initiell trening" lagt til i undertittelen (brukerens krav: "Husk å oppdatere
+                         bekreftelsene at de reflekterer initielt treningsprogram", etter at øvelsene ble
+                         delt i initiell/recurrent - se exerciseProgramView) - selve resten av bekreftelsen
+                         (kriteriene/EXERCISE_ORDER) er UENDRET. -->
+                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter stikkeferdigheter (Initiell trening)</p>
                     <p class="sim-diploma-line">Dette bekrefter at</p>
                     <input type="text" id="diplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
                     <p class="sim-diploma-text">har gjennomført simulatortrening og bestått alle tolv
-                        øvelsene i quadkopter-simulatoren, i stabilisert modus (ingen GPS-assistanse).</p>
+                        øvelsene i quadkopter-simulatoren, i stabilisert modus (ingen GPS-assistanse), som
+                        del av det initielle treningsprogrammet.</p>
                     <div class="sim-diploma-times" id="diplomaTimes"></div>
                     <p class="sim-diploma-date" id="diplomaDate"></p>
                 </div>
@@ -510,14 +580,90 @@
                         <i class="fa-solid fa-award sim-diploma-medal" id="acroDiplomaOverallMedalIcon"></i>
                     </div>
                     <h2>ACRO-BEKREFTELSE</h2>
-                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter Acro-utsjekk</p>
+                    <!-- "Initiell trening" lagt til (se diplomaOverlay sin egen kommentar over for
+                         bakgrunnen - samme brukerkrav gjelder begge de to initielle bekreftelsene). -->
+                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter Acro-utsjekk (Initiell trening)</p>
                     <p class="sim-diploma-line">Dette bekrefter at</p>
                     <input type="text" id="acroDiplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
                     <p class="sim-diploma-text">har fullført de fire krevende Acro-modus øvelsene i quadkopter-simulatoren,
-                        alle fløyet i FPV (First Person View), med en samlet gradering på <strong id="acroDiplomaOverallGradeText"></strong>.</p>
+                        alle fløyet i FPV (First Person View), som del av det initielle treningsprogrammet, med en
+                        samlet gradering på <strong id="acroDiplomaOverallGradeText"></strong>.</p>
                     <div class="sim-diploma-times" id="acroDiplomaTimes"></div>
                     <div class="sim-diploma-spec" id="acroDiplomaDroneSpec"></div>
                     <p class="sim-diploma-date" id="acroDiplomaDate"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recurrent-bekreftelsen for Quadcopter - HELT separat fra diplomaOverlay over (den initielle),
+             men samme enkle mal (bestått/tid per rad + totaltid) - se openRecurrentQuadDiploma/
+             RECURRENT_QUAD_ORDER i js/simulator.js. -->
+        <div class="sim-diploma-overlay" id="recurrentQuadDiplomaOverlay" style="display:none;">
+            <div class="sim-diploma">
+                <div class="sim-diploma-border">
+                    <div class="sim-diploma-icons">
+                        <svg class="sim-diploma-quad" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" aria-hidden="true">
+                            <line x1="32" y1="32" x2="13" y2="13"></line>
+                            <line x1="32" y1="32" x2="51" y2="13"></line>
+                            <line x1="32" y1="32" x2="13" y2="51"></line>
+                            <line x1="32" y1="32" x2="51" y2="51"></line>
+                            <circle cx="13" cy="13" r="8"></circle>
+                            <circle cx="51" cy="13" r="8"></circle>
+                            <circle cx="13" cy="51" r="8"></circle>
+                            <circle cx="51" cy="51" r="8"></circle>
+                            <rect x="25" y="25" width="14" height="14" rx="2" fill="currentColor" stroke="none"></rect>
+                        </svg>
+                        <i class="fa-solid fa-award sim-diploma-medal"></i>
+                    </div>
+                    <h2>RECURRENT-BEKREFTELSE</h2>
+                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter recurrent trening</p>
+                    <p class="sim-diploma-line">Dette bekrefter at</p>
+                    <input type="text" id="recurrentQuadDiplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
+                    <p class="sim-diploma-text">har gjennomført recurrent trening og bestått hover i vind,
+                        returner hjem i vind og nødprosedyrer i quadkopter-simulatoren.</p>
+                    <div class="sim-diploma-times" id="recurrentQuadDiplomaTimes"></div>
+                    <p class="sim-diploma-date" id="recurrentQuadDiplomaDate"></p>
+                </div>
+                <div class="sim-diploma-actions no-print">
+                    <button type="button" class="sim-btn sim-btn-primary" id="recurrentQuadDiplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="recurrentQuadDiplomaCloseBtn">Lukk</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recurrent-bekreftelsen for Acro - HELT separat fra acroDiplomaOverlay over. Ingen medaljer/
+             drone-spek-blokk/innsendings-notis her (brukerens krav: recurrent skal ikke være like
+             omfattende som den initielle Acro-bekreftelsen) - se openRecurrentAcroDiploma/
+             RECURRENT_ACRO_ORDER i js/simulator.js. -->
+        <div class="sim-diploma-overlay" id="recurrentAcroDiplomaOverlay" style="display:none;">
+            <div class="sim-diploma">
+                <div class="sim-diploma-border">
+                    <div class="sim-diploma-icons">
+                        <svg class="sim-diploma-quad" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" aria-hidden="true">
+                            <line x1="32" y1="32" x2="13" y2="13"></line>
+                            <line x1="32" y1="32" x2="51" y2="13"></line>
+                            <line x1="32" y1="32" x2="13" y2="51"></line>
+                            <line x1="32" y1="32" x2="51" y2="51"></line>
+                            <circle cx="13" cy="13" r="8"></circle>
+                            <circle cx="51" cy="13" r="8"></circle>
+                            <circle cx="13" cy="51" r="8"></circle>
+                            <circle cx="51" cy="51" r="8"></circle>
+                            <rect x="25" y="25" width="14" height="14" rx="2" fill="currentColor" stroke="none"></rect>
+                        </svg>
+                        <i class="fa-solid fa-award sim-diploma-medal"></i>
+                    </div>
+                    <h2>RECURRENT-BEKREFTELSE</h2>
+                    <p class="sim-diploma-sub">FFI UAS &ndash; Quadkopter Acro recurrent trening</p>
+                    <p class="sim-diploma-line">Dette bekrefter at</p>
+                    <input type="text" id="recurrentAcroDiplomaNameInput" class="sim-diploma-name" placeholder="Skriv navnet ditt her">
+                    <p class="sim-diploma-text">har gjennomført recurrent trening på racingbanen i Acro-modus,
+                        én runde og tre sammenhengende runder, fløyet i FPV (First Person View).</p>
+                    <div class="sim-diploma-times" id="recurrentAcroDiplomaTimes"></div>
+                    <p class="sim-diploma-date" id="recurrentAcroDiplomaDate"></p>
+                </div>
+                <div class="sim-diploma-actions no-print">
+                    <button type="button" class="sim-btn sim-btn-primary" id="recurrentAcroDiplomaPrintBtn"><i class="fa-solid fa-file-pdf"></i> Lagre som PDF</button>
+                    <button type="button" class="sim-btn sim-btn-primary" id="recurrentAcroDiplomaCloseBtn">Lukk</button>
                 </div>
             </div>
         </div>

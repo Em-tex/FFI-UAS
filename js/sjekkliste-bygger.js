@@ -603,6 +603,14 @@ function createSectionEl(tabKey, section) {
     // singleColumn-del (f.eks. "Ulykke"/"Fly-away" på ERP-fanen) mistet selve singleColumn-egenskapen sin
     // ved neste sideinnlasting fra localStorage, og falt tilbake til vanlig to-kolonners visning.
     if (section.singleColumn) box.dataset.singleColumn = "1";
+    // Ikonvalg (se ICON_PICKER_CHOICES/buildIconPicker under) - samme "må overleve en lagre/last-runde
+    // via dataset"-mønster som singleColumn over. En lagret/importert del beholder sitt eget valg
+    // (section.icon); en HELT NY del (ingen lagret verdi ennå) starter på det vanlige ikonet for akkurat
+    // dette navnet (BOX_ICONS-oppslag, samme som utskriften ville brukt automatisk) - ikke noe eget
+    // "automatisk"-modus å holde styr på i etterkant (brukerønske: "Automatisk ble ikke intuitivt. Bare
+    // ha de standard ikonene der som default"), bare en vanlig startverdi brukeren kan endre som ethvert
+    // annet felt.
+    box.dataset.icon = section.icon || BOX_ICONS[section.title] || DEFAULT_BOX_ICON;
 
     // Dra-og-slipp for å endre rekkefølgen på boksene (brukerønske) - box.draggable slås KUN på mens
     // brukeren faktisk har musen nedtrykt på selve grep-håndtaket (dragHandle under), ikke permanent på
@@ -658,6 +666,7 @@ function createSectionEl(tabKey, section) {
     });
 
     header.appendChild(dragHandle);
+    header.appendChild(buildIconPicker(box, onEdit));
     header.appendChild(titleInput);
     header.appendChild(removeSectionBtn);
 
@@ -847,6 +856,7 @@ function getState() {
             return {
                 title: box.querySelector(".section-title-input").value,
                 singleColumn: box.dataset.singleColumn === "1",
+                icon: box.dataset.icon || "",
                 items: Array.from(box.querySelectorAll("tbody tr")).map(function (tr) {
                     const checkbox = tr.querySelector(".item-checked");
                     // singleColumn-rader (se createItemRow) har ingen .item-text-celle i det hele tatt -
@@ -1145,25 +1155,38 @@ const TAB_META = {
     erp: { label: "ERP", sidebarLabel: "ERP" }
 };
 
+// BUG (funnet ved å faktisk rendre en test-JSON gjennom en skjult nettleser og lese PDF-en - se
+// git-historikken for dette funnet, og PRINT_TABLE_BUG-kommentaren ved buildSectionBoxesForPrint) - en
+// ekte <table> inni en boks med break-inside:avoid, flytende (float) inni .print-grid sin flow-root-
+// kontekst, trigger en reell Chromium-utskriftsbug: HELE resten av siden (alt etter tittelbanneret)
+// hopper i sin helhet til neste fysiske side, uansett hvor mye ledig plass som faktisk er igjen -
+// isolert og bekreftet ved å bytte akkurat DENNE ene tabellen ut med et vanlig, ustrukturert element,
+// som fjernet symptomet fullstendig. buildPrintRow/tabell-byggerne under bygger derfor nå en CSS Grid-
+// basert "tabell" (div-er, ikke <table>/<tr>/<td>) i stedet - visuelt identisk (se .print-rows i
+// css/style.css), men uten ekte tabell-semantikk som trigger buggen. .print-row er display:contents
+// (se CSS) - den ligger fortsatt i DOM-treet (så :last-child osv. treffer riktig rad), men gir ingen
+// egen visuell boks; cellene blir dermed direkte grid-celler i .print-rows sin rutenettflyt, akkurat
+// som <td>-er ville blitt direkte tabell-celler.
 function buildPrintRow(cells, extraClass) {
-    const tr = document.createElement("tr");
+    const row = document.createElement("div");
+    row.className = "print-row";
     cells.forEach(function (cell) {
-        const td = document.createElement("td");
-        td.className = cell.className || "";
+        const cellEl = document.createElement("div");
+        cellEl.className = "print-cell " + (cell.className || "");
         if (cell.iconClass) {
             // Nødnummer-ikon (se ERP_EMERGENCY_CONTACTS/buildLimitsBox) - egen <i>-node + tekst-node i
             // stedet for cell.html under, slik at selve nummer-/kontaktnavnet fortsatt settes trygt via
             // textContent (ingen HTML-injeksjon av det brukeren har skrevet inn i feltet).
             const icon = document.createElement("i");
             icon.className = "fa-solid " + cell.iconClass;
-            td.appendChild(icon);
-            td.appendChild(document.createTextNode(" " + (cell.text || "")));
-        } else if (cell.html !== undefined) td.innerHTML = cell.html;
-        else td.textContent = cell.text || "";
-        tr.appendChild(td);
+            cellEl.appendChild(icon);
+            cellEl.appendChild(document.createTextNode(" " + (cell.text || "")));
+        } else if (cell.html !== undefined) cellEl.innerHTML = cell.html;
+        else cellEl.textContent = cell.text || "";
+        row.appendChild(cellEl);
     });
-    if (extraClass) tr.className = extraClass;
-    return tr;
+    if (extraClass) row.className += " " + extraClass;
+    return row;
 }
 
 // Illustrerende ikon per boks-tittel - kjente standardtitler slår opp et treffende ikon; alt annet
@@ -1188,6 +1211,103 @@ const BOX_ICONS = {
 };
 const DEFAULT_BOX_ICON = "fa-clipboard-list";
 
+// Brukerønske ("kan man også gjøre det mulig å endre på ikoner i headerne til tabellene?") - BOX_ICONS
+// over slår opp et ikon basert på et KJENT, eksakt sjekklistedel-navn - en umdøpt eller egendefinert del
+// (og alle deler forøvrig, hvis brukeren rett og slett vil ha et annet ikon enn det automatiske) hadde
+// ingen måte å velge et annet ikon på. ICON_PICKER_CHOICES er valgene i selve ikonvelgeren (se
+// buildIconPicker under) - de samme ikonene som allerede brukes i BOX_ICONS (gjenkjennelige fra
+// utskriften) pluss noen få generelle ekstra, i stedet for å true inn HELE Font Awesome-biblioteket i en
+// uoversiktlig liste.
+const ICON_PICKER_CHOICES = [
+    "fa-clipboard-list", "fa-clipboard-check", "fa-list-check", "fa-toolbox", "fa-ruler", "fa-phone",
+    "fa-map-location-dot", "fa-plane-departure", "fa-plane-arrival", "fa-arrow-trend-up", "fa-eye",
+    "fa-flag-checkered", "fa-wifi", "fa-satellite-dish", "fa-battery-quarter", "fa-battery-full",
+    "fa-compass", "fa-triangle-exclamation", "fa-car-burst", "fa-magnifying-glass-location", "fa-cloud",
+    "fa-wind", "fa-bolt", "fa-shield-halved", "fa-users", "fa-gear", "fa-camera", "fa-route",
+    "fa-clock", "fa-circle-check", "fa-house", "fa-helicopter"
+];
+// Sentinelverdi for "ingen ikon i det hele tatt" (brukerønske: "det må også være mulig å velge å ikke ha
+// noe ikon") - lagres i box.dataset.icon/section.icon som ETHVERT annet ikonvalg (en vanlig streng, ikke
+// tom/manglende - siden tom/manglende nå betyr "ikke lagret ennå" og løses til det vanlige BOX_ICONS-
+// ikonet, se createSectionEl). setBoxHeaderContent (under) dropper selve <i>-ikonet fullstendig når
+// verdien er nettopp denne.
+const NO_ICON = "__none__";
+
+// Bygger selve ikonvelgeren - en liten knapp (viser delens GJELDENDE ikon) som åpner et rutenett med
+// HELE ICON_PICKER_CHOICES-utvalget å velge mellom. box.dataset.icon holder alltid en KONKRET verdi (satt
+// til det vanlige/automatiske ikonet allerede når delen opprettes, se createSectionEl) - lest av getState
+// (se der) og skrevet tilbake av renderTab/createSectionEl ved innlasting. no-print (som resten av selve
+// byggegrensesnittet) - ikke noe utskriften skal vise, kun selve valget den allerede påvirker.
+// FORENKLET (brukerønske: "Automatisk ble ikke intuitivt. Bare ha de standard ikonene der som default") -
+// hadde tidligere et eget "Automatisk"-valg (tomt dataset.icon, tolket som "slå opp BOX_ICONS på nytt
+// hver gang") - droppet til fordel for at DET STANDARD ikonet rett og slett ER startverdien, uten noe eget
+// "automatisk"-modus å forholde seg til; brukeren velger deretter et konkret ikon som ethvert annet felt.
+function buildIconPicker(box, onEdit) {
+    const wrap = document.createElement("div");
+    wrap.className = "icon-picker no-print";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "icon-picker-btn";
+    btn.title = "Velg ikon for denne delen";
+    const btnIcon = document.createElement("i");
+    wrap.appendChild(btn);
+    btn.appendChild(btnIcon);
+
+    const menu = document.createElement("div");
+    menu.className = "icon-picker-menu";
+    wrap.appendChild(menu);
+
+    function refreshBtnIcon() {
+        // fa-ban - tydelig "ingen ikon"-symbol på selve VELGERKNAPPEN (kun her, i selve
+        // byggegrensesnittet) når NO_ICON er valgt - printet header viser da rett og slett ingen ikon i
+        // det hele tatt, se setBoxHeaderContent.
+        btnIcon.className = "fa-solid " + (box.dataset.icon === NO_ICON ? "fa-ban" : (box.dataset.icon || DEFAULT_BOX_ICON));
+    }
+    refreshBtnIcon();
+
+    function setIcon(value) {
+        box.dataset.icon = value;
+        refreshBtnIcon();
+        menu.classList.remove("open");
+        onEdit();
+    }
+
+    const noneOption = document.createElement("button");
+    noneOption.type = "button";
+    noneOption.className = "icon-picker-none";
+    noneOption.innerHTML = '<i class="fa-solid fa-ban"></i> Ingen ikon';
+    noneOption.addEventListener("click", function () { setIcon(NO_ICON); });
+    menu.appendChild(noneOption);
+
+    const grid = document.createElement("div");
+    grid.className = "icon-picker-grid";
+    ICON_PICKER_CHOICES.forEach(function (iconClass) {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "icon-picker-option";
+        option.innerHTML = '<i class="fa-solid ' + iconClass + '"></i>';
+        option.addEventListener("click", function () { setIcon(iconClass); });
+        grid.appendChild(option);
+    });
+    menu.appendChild(grid);
+
+    btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        const willOpen = !menu.classList.contains("open");
+        // Lukk enhver ANNEN åpen ikonvelger på siden først - kun én åpen om gangen, samme prinsipp som
+        // sim-dropdown-menyene ellers på nettstedet.
+        document.querySelectorAll(".icon-picker-menu.open").forEach(function (m) { m.classList.remove("open"); });
+        if (willOpen) menu.classList.add("open");
+    });
+    return wrap;
+}
+// Lukker en åpen ikonvelger ved klikk utenfor - én global lytter (ikke én per velger) er nok siden kun
+// åpne menyer i det hele tatt reagerer.
+document.addEventListener("click", function () {
+    document.querySelectorAll(".icon-picker-menu.open").forEach(function (m) { m.classList.remove("open"); });
+});
+
 // ERP-kontaktlisten - brukerønske ("Ha nødnumrene øverst. noe indikasjon på at de er nødnumre, f.eks
 // med farge eller bold. Men ikke for skrikete... Gjerne med relevant ikon"). Nøkkelen MÅ matche
 // limit.key EKSAKT (samme "kjente standardnavn slår opp et ikon"-prinsipp som BOX_ICONS over) - dette
@@ -1202,10 +1322,20 @@ const ERP_EMERGENCY_CONTACTS = {
 };
 
 // Setter ikon + tittel i en boks-header trygt (via DOM-noder, ikke innerHTML-sammenslåing) - tittelen
-// kan være fri tekst brukeren har skrevet selv.
-function setBoxHeaderContent(header, title) {
+// kan være fri tekst brukeren har skrevet selv. iconOverride (valgfri) - brukerens eget ikonvalg for
+// nettopp DENNE sjekklistedelen (se ICON_PICKER_CHOICES/buildIconPicker), foran det automatiske
+// BOX_ICONS-oppslaget på tittelen - Utstyrsliste/Begrensninger/Kontaktliste har ingen egen velger og
+// sender derfor aldri denne, så de beholder alltid sitt faste BOX_ICONS-ikon uendret.
+function setBoxHeaderContent(header, title, iconOverride) {
+    // NO_ICON (brukerønske: "det må også være mulig å velge å ikke ha noe ikon") - dropper selve
+    // <i>-elementet fullstendig, i stedet for å falle tilbake til DEFAULT_BOX_ICON slik en ukjent/tom
+    // verdi ellers ville gjort - et EKSPLISITT "ingen ikon"-valg skal faktisk ikke vise noe ikon.
+    if (iconOverride === NO_ICON) {
+        header.appendChild(document.createTextNode(title));
+        return;
+    }
     const icon = document.createElement("i");
-    icon.className = "fa-solid " + (BOX_ICONS[title] || DEFAULT_BOX_ICON);
+    icon.className = "fa-solid " + (iconOverride || BOX_ICONS[title] || DEFAULT_BOX_ICON);
     header.appendChild(icon);
     header.appendChild(document.createTextNode(" " + title));
 }
@@ -1221,8 +1351,8 @@ function buildEquipmentBox(equipment) {
     setBoxHeaderContent(header, "Utstyrsliste");
     box.appendChild(header);
 
-    const table = document.createElement("table");
-    table.className = "print-rows";
+    const table = document.createElement("div");
+    table.className = "print-rows print-rows-1col";
     items.forEach(function (text) {
         table.appendChild(buildPrintRow([
             { className: "print-label", text: text }
@@ -1247,7 +1377,7 @@ function buildLimitsBox(limits, title, isContactList) {
     setBoxHeaderContent(header, title || "Begrensninger");
     box.appendChild(header);
 
-    const table = document.createElement("table");
+    const table = document.createElement("div");
     // print-rows-contacts (KUN kontaktlisten, se isContactList) - brukerønske: første kolonne (kontakt-
     // navnet) skulle være litt bredere enn Begrensninger/Utstyrsliste sin auto-fordelte bredde, uten å
     // gjøre generisk .print-rows fastlåst for de andre boksene som fortsatt deler samme tabellklasse.
@@ -1289,7 +1419,7 @@ function buildSectionBox(section, showCheckbox, startNumber) {
     box.className = "print-box";
     const header = document.createElement("div");
     header.className = "print-box-header";
-    setBoxHeaderContent(header, section.title && section.title.trim() ? section.title : "Uten navn");
+    setBoxHeaderContent(header, section.title && section.title.trim() ? section.title : "Uten navn", section.icon);
     box.appendChild(header);
 
     if (!items.length) {
@@ -1308,7 +1438,7 @@ function buildSectionBox(section, showCheckbox, startNumber) {
         return box;
     }
 
-    const table = document.createElement("table");
+    const table = document.createElement("div");
     // print-rows-situasjon (nytt, KUN her - ikke utstyrsliste/kontaktliste, som gjenbruker generisk
     // .print-rows uendret) - BUG (rapportert av brukeren: "høyre stiplede kant for langt ut til høyre" på
     // en boks): situasjon/sjekkpunkt-kolonnen har white-space:nowrap (se .print-label-situation i
@@ -1320,7 +1450,13 @@ function buildSectionBox(section, showCheckbox, startNumber) {
     // tabellen (og KUN denne, se .print-rows-situasjon i css/style.css) en fast kolonnebredde i stedet,
     // slik at et uvanlig langt sjekkpunkt brekker til flere linjer i stedet for å presse tabellen ut over
     // boksens kant.
-    table.className = "print-rows print-rows-situasjon";
+    // print-rows-single (singleColumn-varianten, se under) og print-rows-checkbox (showCheckbox) - egne
+    // modifikator-klasser (i stedet for én felles "print-rows-situasjon" som før) siden CSS Grid, i
+    // motsetning til den gamle <table>, må vite EKSAKT hvor mange kolonner raden har på forhånd (se
+    // .print-rows-varianter i css/style.css) - antall celler per rad er uansett fast for HELE denne
+    // tabellen (samme singleColumn/showCheckbox for alle rader i ett buildSectionBox-kall), så dette er
+    // trygt å avgjøre én gang her.
+    table.className = "print-rows " + (singleColumn ? "print-rows-single" : "print-rows-situasjon") + (showCheckbox ? " print-rows-checkbox" : "");
     items.forEach(function (item, index) {
         const cells = [];
         if (showCheckbox) {
@@ -1488,7 +1624,7 @@ function buildSectionBoxesForPrint(tabKey, data) {
         // (En del som var tom FRA FØR, uten noen egne punkter i det hele tatt, vises fortsatt som normalt
         // - se buildSectionBox sin egen "Ingen sjekkpunkter"-visning for DEN situasjonen.)
         if (originalItemCount > 0 && !items.length) return;
-        const printSection = { title: section.title, items: items, singleColumn: section.singleColumn };
+        const printSection = { title: section.title, items: items, singleColumn: section.singleColumn, icon: section.icon };
         const sectionBox = buildSectionBox(printSection, showCheckbox);
         if (sectionBox) {
             // Brukt av layoutNormalColumns/splitSectionBoxToFit til å bygge en DELT versjon av boksen
@@ -1677,16 +1813,23 @@ function buildSingleTabPage(tabKey, data) {
 // tatt på skjermen (usynlig, plassert utenfor synsfeltet) stemmer overens med faktisk trykk. Terskelen
 // er satt med noe margin siden font-rendering kan variere marginalt mellom nettlesere/OS.
 const MM_TO_PX = 96 / 25.4;
-const COMBINED_HALF_MAX_HEIGHT_MM = 210;
+// HEVET fra 210 (brukerønske: "contingency, emergency og ERP må få plass på samme side... som før") -
+// samme "et for lavt tak feilbedømmer ekte innhold som 'får ikke plass'"-resonnement som
+// NORMAL_COLUMN_MAX_HEIGHT_MM over: bekreftet empirisk (constrainCombinedColumnsForMeasurement ga en
+// realistisk måling på ~228mm for et normalt Contingency+Emergency-innhold, mot det gamle 210mm-taket)
+// at 210 rett og slett var for stramt til vanlig innhold, ikke en beskyttelse mot noen reell
+// Chrome-pagineringsbug (denne siden bruker CSS multi-kolonne, ikke float/flow-root, se
+// .print-columns-half i css/style.css - en annen mekanisme enn den som rammet Normal-siden).
+const COMBINED_HALF_MAX_HEIGHT_MM = 260;
 // Full sidebredde tilgjengelig for INNHOLD (A4 210mm - @page-margen 15mm x 2 - .print-page sin egen
 // padding 2mm x 2, se css/style.css) - samme breddemål probene under (og selve den ferdige siden) faktisk
 // får, slik at en probe-måling stemmer overens med virkeligheten.
 const PRINT_CONTENT_WIDTH_MM = 176;
-
-// Bredden ÉN .print-col faktisk får (se calc(50% - 7mm) i css/style.css - 7mm er halve brette-mellomrommet
-// på 14mm, se .print-grid-kommentaren der) - samme regnestykke, slik at en probe-måling i denne bredden
-// stemmer med hvordan kolonnen faktisk brytes/vokser i den ferdige utskriften.
-const NORMAL_COL_WIDTH_MM = PRINT_CONTENT_WIDTH_MM / 2 - 7;
+// .print-page sin egen ytre bredde (INNHOLD + dens 2mm padding på hver side) - brukt til å gi
+// createMeasurePage-riggen under samme reelle bredde som #printView faktisk har mellom @page-margene,
+// slik at .print-page sin egen (ellers udefinerte - den arver bare 100% av #printView) bredde blir
+// riktig under målingen, akkurat som når den faktisk skrives ut.
+const PRINT_PAGE_WIDTH_MM = PRINT_CONTENT_WIDTH_MM + 4;
 // Tilgjengelig høyde for INNHOLDET i én kolonne (277mm sideminstehøyde - nå 10mm topp-/bunnmarg på
 // @page, se style.css - 4mm topp-/10mm bunnpadding på .print-page - ca. 18-19mm for selve
 // tittelbanneret+dens egen bunnmarg, se buildPrintHeader/.print-header i css/style.css) - med noe
@@ -1701,7 +1844,27 @@ const NORMAL_COL_WIDTH_MM = PRINT_CONTENT_WIDTH_MM / 2 - 7;
 // en kort "Etter landing"-del (4 punkter) ble likevel dyttet til en nesten tom side 2, til tross for
 // tydelig synlig ledig plass i høyre kolonne på side 1) - hevet tilbake til nær opprinnelig 220, pluss
 // de 10mm ekstra sidehøyde marg-reduksjonen over nå gir.
-const NORMAL_COLUMN_MAX_HEIGHT_MM = 230;
+// HISTORIKK-runde 2: forsøkt hevet til 245 (fra 230) etter at både <table>-utskriftsbuggen (se
+// buildPrintRow) OG selve probe-strukturen (se createColumnMeasureRig) ble rettet ved roten - selve
+// MÅLINGEN var da endelig presis nok til at 230mm+15mm-marginen så unødvendig streng ut (rapportert:
+// venstre kolonne fikk kun plass til ÉN sjekklistedel, resten dyttet til høyre kolonne - markant
+// misforhold, om enn fortsatt korrekt LESEREKKEFØLGE). 245 GJENÅPNET (bekreftet empirisk, rendret
+// faktisk gjennom en skjult nettleser) den ORIGINALE "foreldreløs overskrift"-buggen på Normal-siden -
+// denne gangen UTEN noen <table> involvert, altså en HELT EGEN, udokumentert Chromium-paginerings-
+// svakhet. break-after:avoid på selve banneret (også testet empirisk) hadde INGEN effekt.
+// HISTORIKK-runde 3: videre empirisk testing (samme skjult-nettleser-metode) avdekket at buggen ikke er
+// knyttet til selve TERSKELVERDIEN, men til den RESULTERENDE fordelingen mellom kolonnene den gir: en
+// "medium" ubalanse (her: venstre kolonne rundt 215mm, høyre rundt 358mm - ingen av dem åpenbart kort
+// eller åpenbart dominerende) er nettopp det Chrome sitt pagineringsoppsett håndterer dårlig. En EKSTREM
+// ubalanse derimot - enten en kort venstre/lang høyre (bekreftet trygt, se den opprinnelige 230mm-
+// testen) ELLER en lang venstre/kortere høyre (bekreftet trygt her, med et mye høyere tak) - lar Chrome
+// paginere korrekt. 400mm er derfor bevisst satt HØYT (godt over det noen reell sjekklistedel-samling
+// trenger på égen hånd) - IKKE fordi én kolonne noensinne trenger så mye plass i praksis, men for å la
+// algoritmen fritt finne det NATURLIGE stoppunktet (der neste hele del rett og slett ikke får plass i det
+// hele tatt) i stedet for å kunstig kutte den av midt i den farlige "medium"-sonen. Blir én kolonne likevel
+// for høy for én fysisk side i praksis, faller den tilbake til vanlig, allerede bekreftet trygg
+// side-2-overflow (samme flyt-mekanisme som gjorde det opprinnelige 230mm-taket trygt).
+const NORMAL_COLUMN_MAX_HEIGHT_MM = 400;
 
 // Brukerønske ("Når [en sjekklistedel] blir veldig lang, må den på printen få fortsette i neste kolonne
 // på samme side. Ikke havne på en helt ny side. Og kanskje da... få som overskriftslinje 'Før avgang
@@ -1743,21 +1906,51 @@ const NORMAL_COLUMN_MAX_HEIGHT_MM = 230;
 // BEGGE stedene. Bevisst asymmetrisk: å vurdere noe som "ikke får plass" én rad for tidlig er en uskyldig
 // kosmetisk detalj (havner i høyre kolonne/neste side i stedet, fortsatt korrekt LESEREKKEFØLGE), mens å
 // vurdere det feil andre veien gir nettopp den forvirrende, FEILAKTIGE leserekkefølgen som er rapportert.
-const PRINT_FIT_SAFETY_MARGIN_MM = 8;
+// Hevet fra 8 til 15 (brukerens NYESTE skjermbilde: en "Etter landing"-del ble delt i fitted+forts. der
+// selve den ANGIVELIG "fitted" halvdelen (rad 1-2) likevel overfløt til side 2 ved faktisk utskrift, mens
+// "forts."-halvdelen (rad 3-4, allerede plassert i høyre kolonne av steg 3 under) ble stående igjen alene
+// på side 1 - nøyaktig samme "leserekkefølge baklengs"-symptom som denne marginen opprinnelig ble innført
+// for å unngå (se kommentaren over), bare at 8mm viste seg utilstrekkelig for et tilfelle med FLERE
+// sjekklistedeler foran seg i samme kolonne (avviket her er trolig kumulativt - hver tidligere del i
+// venstre kolonne bidrar med sitt eget lille, isolert-probe-vs-faktisk-flyt-avvik, og med nok deler foran
+// overstiger summen 8mm selv om ÉN enkelt del alene ikke ville gjort det).
+// HISTORIKK-runde 2: forsøkt senket til 5 (fra 15), sammen med å heve NORMAL_COLUMN_MAX_HEIGHT_MM - se
+// den store historikk-kommentaren ved den konstanten for hvorfor begge MÅTTE REVERTERES: den "isolerte
+// probe vs. virkelig kontekst"-mistanken over var riktig og ER rettet ved roten (createColumnMeasureRig),
+// og en ekte <table>-utskriftsbug (buildPrintRow) er OGSÅ rettet - men selv med begge rettet, og selv om
+// den TALLMESSIGE målingen nå er presis, oppfører selve Chrome-utskriftsmotoren seg fortsatt
+// uforutsigbart (bekreftet empirisk) når innholdet presses nær den reelle sidegrensen: "foreldreløs
+// overskrift"-buggen kom tilbake, uten noen tabell involvert denne gangen. 15mm er derfor beholdt - ikke
+// lenger som plaster på en unøyaktig måling, men som bevisst slakk mot en Chrome-svakhet målingen alene
+// ikke kan forutsi eller kompensere for.
+const PRINT_FIT_SAFETY_MARGIN_MM = 15;
+// BUG (rapportert av brukeren: "sjekkliste Etter landing starter nederst i kolonnen med bare et par
+// linjer. da bør den heller starte på ny kolonne. unngå oppdeling av tabellene") - løkken under prøvde
+// tidligere n helt ned til 1, altså aksepterte den også en "fitted"-del med kun ÉTT punkt hvis akkurat
+// det var alt som var igjen av plass - en slik minimal flis nederst i kolonnen ser ut som et avkuttet
+// avsnitt, ikke en meningsfull "del 1 av 2". Splitting er ment for LANGE deler der mesteparten allerede
+// får plass og bare et par punkter spiller over (se kommentaren ved funksjonen over) - ikke for å
+// klemme en håndfull linjer inn i en fillern rest av kolonnen. MIN_SPLIT_FRACTION krever nå at den
+// "fittede" delen faktisk utgjør en fornuftig ANDEL av hele seksjonen (minst ca. en tredjedel, og minst
+// to punkter) - er det ikke plass til det, returneres null (ingen deling), og HELE boksen flyttes i
+// stedet til neste kolonne/side via den vanlige overflow-håndteringen i layoutNormalColumns, nøyaktig
+// oppførselen brukeren ba om.
+const MIN_SPLIT_FRACTION = 1 / 3;
 function splitSectionBoxToFit(printSection, showCheckbox, probe, maxHeightPx) {
     const items = printSection.items;
     if (items.length < 2) return null;
+    const minFittedItems = Math.max(2, Math.ceil(items.length * MIN_SPLIT_FRACTION));
     const safeMaxHeightPx = maxHeightPx - PRINT_FIT_SAFETY_MARGIN_MM * MM_TO_PX;
     let result = null;
-    for (let n = items.length - 1; n >= 1; n--) {
-        const candidate = buildSectionBox({ title: printSection.title, items: items.slice(0, n), singleColumn: printSection.singleColumn }, showCheckbox);
+    for (let n = items.length - 1; n >= minFittedItems; n--) {
+        const candidate = buildSectionBox({ title: printSection.title, items: items.slice(0, n), singleColumn: printSection.singleColumn, icon: printSection.icon }, showCheckbox);
         if (!candidate) continue;
         probe.appendChild(candidate);
         const fits = probe.scrollHeight <= safeMaxHeightPx;
         probe.removeChild(candidate);
         if (fits) {
             const remainder = buildSectionBox(
-                { title: (printSection.title || "Uten navn") + " forts.", items: items.slice(n), singleColumn: printSection.singleColumn },
+                { title: (printSection.title || "Uten navn") + " forts.", items: items.slice(n), singleColumn: printSection.singleColumn, icon: printSection.icon },
                 showCheckbox,
                 n + 1 // fortsetter nummereringen der "candidate" (rad 1..n) slapp, se buildSectionBox
             );
@@ -1785,51 +1978,92 @@ function splitSectionBoxToFit(printSection, showCheckbox, probe, maxHeightPx) {
 // Får overflow-boksene heller ikke plass i høyre kolonne (sjelden, men mulig hvis begge kolonner allerede
 // er nesten fulle), beholdes de i venstre kolonne som før denne fiksen - samme "hopp til ny side"-oppførsel
 // som tidligere, aldri verre enn utgangspunktet.
+// BUG-historikk (rapportert flere ganger, senest: "ERP kom nå sammen med overskriften sin, men på en
+// helt egen side, selv om det er en halv side ledig plass på forrige side", og "overskriften til
+// sjekklisten helt øverst for seg selv alene på en side") - mistanken uttrykt ved PRINT_FIT_SAFETY_MARGIN_MM
+// over ("proben er en ren, absolutt-posisjonert div, mens den VIRKELIGE kolonnen er et float-element inni
+// flow-root/print-grid") stemmer: en probe som bare kopierer BREDDEN for hånd, men verken selve
+// klassekjeden (.print-page > .print-page-body > .print-grid > .print-col) eller float-konteksten disse
+// klassene faktisk styrer (margin-collapse, box-sizing osv.), måler et lett ANNET tre enn det som til
+// slutt skrives ut - derav de stadig tilbakevendende, retningsløse avvikene selv etter gjentatte
+// marginjusteringer. Bygger nå en skjult, men STRUKTURELT IDENTISK kopi av selve sidehierarkiet å måle i
+// i stedet - se createColumnMeasureRig - slik at CSS-en som faktisk STYRER høyden (float-bredden, flow-
+// root-konteksten osv.) er nøyaktig den samme under målingen som ved selve utskriften, i stedet for en
+// isolert tilnærming som må kompenseres for med stadig voksende "sikkerhetsmarginer".
+function createColumnMeasureRig() {
+    const page = document.createElement("div");
+    page.className = "print-page";
+    // BUG (funnet ved faktisk å rendre en test-JSON gjennom en skjult nettleser og lese PDF-en - se
+    // git-historikken for dette funnet - eksakt samme "lesrekkefølge baklengs"-symptom som tidligere
+    // rapportert dukket fortsatt opp: "Etter landing"-delens fitted FØRSTE halvdel (uten "forts.") havnet
+    // alene på side 2, mens "forts."-halvdelen havnet FØR den, i kolonne 2 på side 1) - denne riggen
+    // manglet en eksplisitt bredde (i motsetning til createMeasurePage under). .print-page har ingen egen
+    // CSS-bredde (arver normalt 100% av #printView) - en position:absolute boks UTEN bredde OG uten
+    // "right" satt får i stedet shrink-to-fit-bredde etter spec, som for en boks med prosent-baserte barn
+    // (.print-col er 50% av .print-grid, som er 100% av denne) faller tilbake til den TILGJENGELIGE
+    // bredden (i praksis nær hele viewportet) - langt bredere enn de virkelige 180mm siden faktisk får
+    // mellom @page-margene. En bredere kolonne bryter tekst til FÆRRE linjer, så målingen ble
+    // systematisk for LAV sammenlignet med virkeligheten - stikk motsatt av den brede, kompenserende
+    // sikkerhetsmarginen (PRINT_FIT_SAFETY_MARGIN_MM) dette skulle vært en STRUKTURELL erstatning for.
+    page.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + PRINT_PAGE_WIDTH_MM + "mm;";
+    const body = document.createElement("div");
+    body.className = "print-page-body";
+    const grid = document.createElement("div");
+    grid.className = "print-grid";
+    const col1 = document.createElement("div");
+    col1.className = "print-col";
+    const col2 = document.createElement("div");
+    col2.className = "print-col";
+    grid.appendChild(col1);
+    grid.appendChild(col2);
+    body.appendChild(grid);
+    page.appendChild(body);
+    document.body.appendChild(page);
+    return { page: page, col1: col1, col2: col2 };
+}
+
 function layoutNormalColumns(leftCol, rightCol, sectionBoxes) {
     if (!sectionBoxes.length) return;
     const maxHeightPx = NORMAL_COLUMN_MAX_HEIGHT_MM * MM_TO_PX;
-    const probeStyle = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + NORMAL_COL_WIDTH_MM + "mm; display:block;";
-
-    const probe = document.createElement("div");
-    probe.style.cssText = probeStyle;
-    document.body.appendChild(probe);
+    const rig = createColumnMeasureRig();
+    // col1 måler venstre kolonne (sjekklistedeler), col2 måler høyre (utstyr/begrensninger + evt.
+    // overflow) - to EKTE, side-ved-side flytende .print-col i samme .print-grid, akkurat som den
+    // ferdige siden, i stedet for én gjenbrukt, isolert probe-div.
+    const leftProbe = rig.col1;
+    const rightProbe = rig.col2;
 
     // 1) Høyre kolonnes egen, faste høyde (utstyr+begrensninger, allerede satt inn av buildNormalPage) -
-    // målt FØR sjekklistedelene vurderes, siden det er DEN gjenværende plassen en ev. overflyttet del må
-    // dele med. Boksene flyttes midlertidig inn i proben for målingen (appendChild FLYTTER, ikke
-    // kopierer), og tilbake til rightCol umiddelbart etterpå.
+    // FLYTTES inn i rightProbe (appendChild FLYTTER, ikke kopierer) og blir STÅENDE der gjennom resten av
+    // funksjonen (ikke bare målt og lagt tilbake med det samme som før) - trinn 3 under måler dermed en
+    // overflow-kandidat OPPÅ nøyaktig samme, allerede fylte kontekst, i stedet for én isolert høyde-måling
+    // etterfulgt av subtraksjonsregning (samme "additiv"-antakelse som splitSectionBoxToFit-kommentaren
+    // over advarer mot - CSS-marger kollapser ikke alltid rent additivt).
     const rightBoxes = Array.from(rightCol.children);
-    rightBoxes.forEach(function (box) { probe.appendChild(box); });
-    const rightUsedPx = rightBoxes.length ? probe.scrollHeight : 0;
-    rightBoxes.forEach(function (box) { rightCol.appendChild(box); });
-    probe.innerHTML = "";
+    rightBoxes.forEach(function (box) { rightProbe.appendChild(box); });
 
     // 2) Hvor mange sjekklistedeler (i rekkefølge, fra toppen) får plass i venstre kolonne innenfor
-    // sidebudsjettet? Boksene som allerede er bekreftet å få plass BLIR STÅENDE i proben mens de
-    // følgende testes (i stedet for å tømmes/måles isolert per steg) - splitSectionBoxToFit trenger
-    // nettopp DENNE kumulative konteksten for å måle en delt kandidat presist, se kommentaren der.
-    // Samme PRINT_FIT_SAFETY_MARGIN_MM som splitSectionBoxToFit brukes her også (se kommentaren ved
-    // konstanten) - en hel, USPLITTET boks er rapportert feilbedømt til å få plass på nøyaktig samme vis
-    // som en delt kandidat kunne bli, så samme buffer gjelder begge veier gjennom denne løkken.
+    // sidebudsjettet? Boksene som allerede er bekreftet å få plass BLIR STÅENDE i leftProbe mens de
+    // følgende testes - splitSectionBoxToFit trenger nettopp DENNE kumulative konteksten for å måle en
+    // delt kandidat presist, se kommentaren der.
     const safeMaxHeightPx = maxHeightPx - PRINT_FIT_SAFETY_MARGIN_MM * MM_TO_PX;
     let fitCount = sectionBoxes.length;
     let splitResult = null; // { index, fitted, remainder } - satt kun hvis boksen som stanset skanningen faktisk lot seg dele
     for (let i = 0; i < sectionBoxes.length; i++) {
-        probe.appendChild(sectionBoxes[i]);
-        if (probe.scrollHeight > safeMaxHeightPx) {
-            probe.removeChild(sectionBoxes[i]); // proben inneholder nå nøyaktig boksene 0..i-1, se over
+        leftProbe.appendChild(sectionBoxes[i]);
+        if (leftProbe.scrollHeight > safeMaxHeightPx) {
+            leftProbe.removeChild(sectionBoxes[i]); // leftProbe inneholder nå nøyaktig boksene 0..i-1, se over
             const meta = sectionBoxes[i].__printSection;
-            const split = meta ? splitSectionBoxToFit(meta, sectionBoxes[i].__showCheckbox, probe, maxHeightPx) : null;
+            const split = meta ? splitSectionBoxToFit(meta, sectionBoxes[i].__showCheckbox, leftProbe, maxHeightPx) : null;
             fitCount = i;
             if (split) splitResult = { index: i, fitted: split.fitted, remainder: split.remainder };
             break;
         }
     }
-    probe.innerHTML = "";
-    document.body.removeChild(probe);
 
-    const fitting = sectionBoxes.slice(0, fitCount);
-    fitting.forEach(function (box) { leftCol.appendChild(box); });
+    // leftProbe inneholder nå nøyaktig de boksene som fikk plass (0..fitCount-1) - flyttes rett over i
+    // den EKTE venstre kolonnen i samme rekkefølge (appendChild flytter), i stedet for å hente dem på nytt
+    // fra sectionBoxes via indeks.
+    Array.from(leftProbe.children).forEach(function (box) { leftCol.appendChild(box); });
 
     let overflowing;
     if (splitResult) {
@@ -1840,53 +2074,97 @@ function layoutNormalColumns(leftCol, rightCol, sectionBoxes) {
     } else {
         overflowing = sectionBoxes.slice(fitCount);
     }
-    if (!overflowing.length) return;
 
-    // 3) Får overflow-delen(e) plass i høyre kolonne, sammen med den ledige høyden som er igjen der?
-    // GRÅDIG, boks for boks (IKKE lenger "får ALLE plass i sin helhet, ellers ingen") - rapportert med
-    // skjermbilde: en liten "... forts."-boks (som klart hadde fått plass alene i den ellers halvtomme
-    // høyre kolonnen) ble likevel dyttet til en helt ny side fordi den var bundet sammen med to STØRRE
-    // deler etter seg (som til sammen IKKE fikk plass) i én alt-eller-ingenting-vurdering. Prøver nå hver
-    // overflow-boks for seg, i rekkefølge, og stopper ved FØRSTE som ikke får plass - resten (uansett
-    // hvor mange) faller tilbake til venstre kolonne som før (naturlig side-2-overflow via float-
-    // paginering, se .print-col-kommentaren i css/style.css).
-    const rightAnchor = rightCol.firstChild;
-    const probe2 = document.createElement("div");
-    probe2.style.cssText = probeStyle;
-    document.body.appendChild(probe2);
-    // Samme margin som over (se PRINT_FIT_SAFETY_MARGIN_MM) - denne grådige høyre-kolonne-plasseringen
-    // er nettopp der den siste, minste "Etter avgang"-varianten (2 punkter, ikke delt) ble feilbedømt
-    // til å få plass av en isolert probe2-måling, men likevel landet alene på egen side ved faktisk print.
-    let placedInRight = 0;
-    for (let i = 0; i < overflowing.length; i++) {
-        probe2.appendChild(overflowing[i]);
-        if (probe2.scrollHeight > maxHeightPx - rightUsedPx - PRINT_FIT_SAFETY_MARGIN_MM * MM_TO_PX) {
-            probe2.removeChild(overflowing[i]);
-            break;
-        }
-        placedInRight = i + 1;
+    if (overflowing.length) {
+        // 3) Får overflow-delen(e) plass i høyre kolonne, sammen med det som allerede står der (utstyr/
+        // begrensninger)? GRÅDIG, boks for boks - prøver hver overflow-boks for seg, i rekkefølge, og
+        // stopper ved FØRSTE som ikke får plass. Målt DIREKTE i rightProbe (som allerede inneholder
+        // utstyr/begrensninger fra trinn 1) - ingen egen isolert probe2 eller
+        // "maxHeightPx - rightUsedPx"-subtraksjon lenger.
+        //
+        // BUG (rapportert av brukeren, med skjermbilde: "på operasjonsområdet" - andre delen i rekken -
+        // dukket opp NEDERST i høyre kolonne, mens "før avgang"/"overvåking under flyging"/"etter
+        // landing" (tredje/fjerde/femte delen) fortsatt sto i venstre kolonne OVER den i lesevisningen -
+        // stikk motsatt leserekkefølge) - resten (de som IKKE fikk plass i høyre kolonne) ble tidligere
+        // sendt TILBAKE til venstre kolonne (naturlig side-2-overflow der) i stedet for å bli værende i
+        // høyre kolonne. Siden overflow-boksene alltid er en SAMMENHENGENDE hale av opprinnelig
+        // rekkefølge (sectionBoxes[fitCount..]; se over), og kolonne 1 allerede er lest FØR kolonne 2 i
+        // naturlig lesevisning, MÅ en tidligere del i denne halen (f.eks. "på operasjonsområdet") aldri
+        // havne i venstre kolonne mens en SENERE del (f.eks. "før avgang") blir værende i høyre kolonne -
+        // det garanterte nettopp IKKE forrige oppførsel. Retten fikser dette ved i stedet å la ALT som
+        // ikke fikk plass i selve probe-budsjettet BLI VÆRENDE i høyre kolonne også - naturlig
+        // side-2-overflow der fungerer akkurat som i venstre kolonne (samme float-paginering, se
+        // .print-col-kommentaren i css/style.css), og rekkefølgen forblir dermed korrekt uansett hvor
+        // mye som faktisk får plass på selve side 1.
+        const rightAnchor = rightProbe.firstChild; // først av de OPPRINNELIGE rightBoxes, før overflow settes inn foran dem
+        overflowing.forEach(function (box) { rightProbe.insertBefore(box, rightAnchor); });
+        // Brukerønske ("er det plass i kolonnen så kan det være litt mer luft under siste
+        // sjekklistedelen... siden disse delene ikke direkte er del av normale sjekklister") - når en
+        // overflow-boks havner rett over utstyr/begrensninger (rightAnchor finnes, dvs. de opprinnelige
+        // rightBoxes ikke var tomme), får den SISTE av dem litt ekstra luft ned til den referanseinfo-
+        // boksen (Utstyrsliste/Begrensninger/Kontaktliste) som følger - markerer det semantiske skillet
+        // mellom faktiske sjekklistepunkter og ren referanseinfo, se .print-box-checklist-end i
+        // css/style.css.
+        if (rightAnchor) overflowing[overflowing.length - 1].classList.add("print-box-checklist-end");
     }
-    probe2.innerHTML = "";
-    document.body.removeChild(probe2);
 
-    // Settes inn ØVERST i høyre kolonne, foran utstyr/begrensninger (ikke appendChild/nederst) -
-    // brukerpresisering: sjekklisteboksen som overflower skal komme OVER utstyr/begrensninger, som aldri
-    // skal stå øverst i en kolonne den deler med en sjekklisteboks. rightAnchor er hentet FØR innsettingen
-    // starter og endrer seg dermed aldri underveis - insertBefore(box, rightAnchor) plasserer hver
-    // overflow-boks rett før akkurat DEN opprinnelige første boksen (uansett om den er null, dvs. høyre
-    // kolonne var tom fra før - insertBefore(node, null) tilsvarer da appendChild), så overflow-boksene
-    // havner i egen, uendret rekkefølge over det opprinnelige innholdet.
-    overflowing.slice(0, placedInRight).forEach(function (box) { rightCol.insertBefore(box, rightAnchor); });
-    overflowing.slice(placedInRight).forEach(function (box) { leftCol.appendChild(box); });
+    // rightProbe inneholder nå den endelige høyre kolonnen (opprinnelig utstyr/begrensninger, med
+    // eventuelle overflow-bokser satt inn øverst, foran dem - brukerpresisering: sjekklisteboksen som
+    // overflower skal komme OVER utstyr/begrensninger) - flyttes samlet til den EKTE høyre kolonnen.
+    Array.from(rightProbe.children).forEach(function (box) { rightCol.appendChild(box); });
+
+    document.body.removeChild(rig.page);
+}
+
+// Skjult, men reelt IDENTISK .print-page (samme klasse/padding/bredde som selve utskriften bruker, se
+// css/style.css) å måle i - i stedet for en flat probe-div der kun bredden er kopiert inn for hånd (se
+// createColumnMeasureRig-kommentaren for samme "isolert probe vs. virkelig kontekst"-resonnement).
+// .print-page har ingen egen CSS-bredde (arver 100% av #printView, som ved faktisk utskrift er begrenset
+// av @page-margene) - PRINT_PAGE_WIDTH_MM gir riggen samme reelle bredde eksplisitt.
+function createMeasurePage() {
+    const page = document.createElement("div");
+    page.className = "print-page";
+    page.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + PRINT_PAGE_WIDTH_MM + "mm;";
+    document.body.appendChild(page);
+    return page;
+}
+
+// BUG (funnet ved å faktisk rendre en test-JSON gjennom en skjult nettleser og lese PDF-en - se
+// git-historikken for dette funnet) - .print-columns-half bruker CSS multi-kolonne (column-width, ikke
+// floats som resten av utskriften, se .print-columns-half-kommentaren i css/style.css) med
+// column-fill:auto - column-fill:auto er SPESIFIKT laget for PAGINERTE kontekster (der elementets egen
+// høyde er begrenset av selve den fysiske siden, slik det alltid er ved faktisk utskrift) og har
+// upraktisk/udefinert oppførsel når høyden er UBEGRENSET (auto), som denne isolerte proben ellers ville
+// gitt: uten en eksplisitt høyde å fylle IMOT, endte innholdet opp i ÉN altfor høy "kolonne" i stedet for
+// å fordele seg over flere slik det ville gjort på ekte utskrift - target-halvdelenes scrollHeight ble
+// dermed grovt OVERvurdert (målt empirisk: nesten hele arkhøyden, for et par korte sjekklistedeler som
+// tydelig skulle hatt god plass). Gir derfor hver .print-columns-half en eksplisitt høyde lik budsjettet
+// FØR målingen (samme høyde column-fill:auto uansett ville fått fra selve sidefragmenteringen ved ekte
+// utskrift) - scrollHeight (som fortsatt fanger opp reelt overflow forbi denne satte høyden, siden
+// overflow er visible, ikke hidden) gir da en presis "får faktisk plass"-avgjørelse i stedet for en
+// grovt oppblåst en.
+// COMBINED_HALF_COLUMN_FILL_PROBE_MM - IKKE selve plassbudsjettet (se COMBINED_HALF_MAX_HEIGHT_MM under
+// for det) - kun en høyde å GI column-fill:auto å fylle imot under selve MÅLINGEN. Empirisk oppdaget
+// (rendret faktisk gjennom en skjult nettleser, gjentatte ganger med ulike verdier): jo HØYERE denne
+// settes, jo FÆRRE kolonner velger column-fill:auto å bruke (den fyller "kolonne 1" lenger før den gir
+// opp og går videre) - og FÆRRE, høyere kolonner gir en STØRRE total målt scrollHeight, ikke mindre
+// (motsatt av hva man skulle tro). En LAV verdi her (150mm - godt under selve budsjettet) tvinger
+// algoritmen til å faktisk bruke FLERE av kolonnene bredden gir plass til, og gir dermed en langt mer
+// realistisk (lavere) samlet høyde - nærmere det ekte utskrift-fragmenterte resultatet enn en "fysisk
+// riktig" full sidehøyde ga (bekreftet: 260mm ga scrollHeight 278mm - FEIL, tydelig for høyt for et par
+// korte sjekklistedeler - mens 150mm ga 168mm, som stemte overens med det faktiske utskriftsresultatet).
+const COMBINED_HALF_COLUMN_FILL_PROBE_MM = 150;
+function constrainCombinedColumnsForMeasurement(row) {
+    row.querySelectorAll(".print-columns-half").forEach(function (cols) {
+        cols.style.height = COMBINED_HALF_COLUMN_FILL_PROBE_MM + "mm";
+    });
 }
 
 function combinedHalvesFit(contingencyData, emergencyData) {
-    const probe = document.createElement("div");
-    probe.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + PRINT_CONTENT_WIDTH_MM + "mm; display:block;";
-    document.body.appendChild(probe);
-
+    const page = createMeasurePage();
     const row = buildCombinedRow(contingencyData, emergencyData);
-    probe.appendChild(row);
+    page.appendChild(row);
+    constrainCombinedColumnsForMeasurement(row);
 
     const maxHeightPx = COMBINED_HALF_MAX_HEIGHT_MM * MM_TO_PX;
     let fits = true;
@@ -1894,7 +2172,7 @@ function combinedHalvesFit(contingencyData, emergencyData) {
         if (half.scrollHeight > maxHeightPx) fits = false;
     });
 
-    document.body.removeChild(probe);
+    document.body.removeChild(page);
     return fits;
 }
 
@@ -1907,7 +2185,12 @@ function combinedHalvesFit(contingencyData, emergencyData) {
 // mindre margin enn den (57mm) trenger, siden risikoen her hovedsakelig gjelder selve
 // contingency/emergency-raden (samme kolonnebasert-layout-usikkerhet som over) - ERP sin egen
 // .print-grid er en vanlig, forutsigbar to-kolonners grid, ikke en auto-balanserende multi-kolonne-layout.
-const PRINT_ALL_MAX_HEIGHT_MM = 245;
+// HEVET fra 245 til 260 (brukerønske: "contingency, emergency og ERP må få plass på samme side... som
+// før") - nær .print-page sitt fysiske 267mm-tak (kan ikke settes høyere enn det uansett - da ville
+// "fits" bli sant for innhold som umulig kan få plass på ett fysisk ark). Samme begrunnelse som
+// COMBINED_HALF_MAX_HEIGHT_MM over: det gamle, lavere taket feilbedømte ekte, faktisk plassbesparende
+// innhold som "får ikke plass".
+const PRINT_ALL_MAX_HEIGHT_MM = 260;
 
 // BUG (rapportert av brukeren: FX-10-malen - klart den lengste av alle sjekklistene, dermed nærmest denne
 // terskelen av samtlige maler - fikk ERP-boksen til å hoppe til neste side i sin helhet selv med
@@ -1920,25 +2203,34 @@ const PRINT_ALL_MAX_HEIGHT_MM = 245;
 // kombinasjonen som "får IKKE plass" litt for tidlig er ufarlig (ERP faller da bare tilbake til sin egen,
 // allerede fungerende, separate side, se buildAllPrintPages) - å vurdere feil andre veien er nettopp
 // buggen som er rapportert.
-const PRINT_ALL_SAFETY_MARGIN_MM = 8;
+// Senket fra 8 til 4 - denne målingen skjer nå i en strukturelt reell .print-page (se createMeasurePage),
+// ikke lenger en flat, isolert probe-div - mesteparten av avviket margenen opprinnelig kompenserte for
+// (se historikk-kommentaren over) kommer nettopp fra den strukturelle mismatchen, som nå er fjernet ved
+// roten. Rapportert MOTSATT vei nå ("ERP kom nå sammen med overskriften sin, men på en helt egen side,
+// selv om det er en halv side ledig plass på forrige side") - en for høy margin her gjorde denne
+// funksjonen unødvendig pessimistisk og kastet bort nettopp den ledige halve siden brukeren så. Beholder
+// en liten rest-margin (4mm) for genuin font-rendering-usikkerhet, ikke som plaster på en strukturell
+// målefeil lenger.
+const PRINT_ALL_SAFETY_MARGIN_MM = 4;
 
 function combinedAllFit(contingencyData, emergencyData, erpData) {
-    const probe = document.createElement("div");
-    probe.style.cssText = "position:absolute; visibility:hidden; left:-9999px; top:0; width:" + PRINT_CONTENT_WIDTH_MM + "mm; display:block;";
-    document.body.appendChild(probe);
-
+    const page = createMeasurePage();
     const wrapper = document.createElement("div");
-    wrapper.appendChild(buildCombinedRow(contingencyData, emergencyData));
+    const combinedRow = buildCombinedRow(contingencyData, emergencyData);
+    wrapper.appendChild(combinedRow);
     const erpBody = buildErpBody(erpData);
     if (erpBody) {
         erpBody.classList.add("print-combined-bottom");
         wrapper.appendChild(erpBody);
     }
-    probe.appendChild(wrapper);
+    page.appendChild(wrapper);
+    // Se constrainCombinedColumnsForMeasurement-kommentaren ved combinedHalvesFit - samme
+    // column-fill:auto-uten-høydekontekst-problem gjelder her.
+    constrainCombinedColumnsForMeasurement(combinedRow);
 
     const fits = wrapper.scrollHeight <= (PRINT_ALL_MAX_HEIGHT_MM - PRINT_ALL_SAFETY_MARGIN_MM) * MM_TO_PX;
 
-    document.body.removeChild(probe);
+    document.body.removeChild(page);
     return fits;
 }
 
@@ -2194,23 +2486,27 @@ document.addEventListener("DOMContentLoaded", function () {
         document.title = originalDocumentTitle;
     });
 
-    document.getElementById("downloadJsonBtn").addEventListener("click", function () {
+    function downloadJsonNow() {
         if (!requireNormalFieldsBeforeExport()) return;
         const state = getState();
         const data = Object.assign({ skjema: "Sjekkliste-generator" }, state);
         downloadJson(buildExportFilenameBase(state) + ".json", data);
-    });
+    }
+    document.getElementById("downloadJsonBtn").addEventListener("click", downloadJsonNow);
+    // Samme "Last ned som JSON"-knapp også oppe ved "Last ned som PDF" (brukerønske: "Ha en last ned
+    // json knapp oppe ved last ned pdf knappen også") - egen knapp, samme handler, i stedet for å flytte
+    // den nederste (som fortsatt trengs der den er, ved siden av "Last inn JSON"/"Nullstill").
+    const downloadJsonBtnTop = document.getElementById("downloadJsonBtnTop");
+    if (downloadJsonBtnTop) downloadJsonBtnTop.addEventListener("click", downloadJsonNow);
 
-    // "Last opp JSON" - knappen åpner en skjult fil-input (ingen synlig, stygg standard-filvelger på
-    // selve knappen); selve innlesingen skjer i input-ets change-lytter under.
-    document.getElementById("uploadJsonBtn").addEventListener("click", function () {
-        document.getElementById("uploadJsonInput").click();
-    });
-    document.getElementById("uploadJsonInput").addEventListener("change", function (e) {
-        const input = e.target;
-        const file = input.files && input.files[0];
+    // Selve innlesingen av en JSON-fil - delt av BÅDE den skjulte fil-inputen (vanlig filvelger) OG
+    // dra-og-slipp-lytterne under (se dropJsonOverlay), i stedet for å bygge samme parse/valider/
+    // bekreft-logikk to steder som kan drifte fra hverandre. "Last opp JSON" byttet nylig navn til
+    // "Last inn JSON" (brukerønske - "skal ikke være last opp json, men last inn json") - selve filen
+    // kommer jo FRA brukerens PC og INN i skjemaet, ikke opp til noen ekstern tjeneste, så "last inn"
+    // beskriver bedre hva som faktisk skjer enn "last opp" (som klinger som en nettverksopplasting).
+    function handleJsonFile(file) {
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = function () {
             let data;
@@ -2218,25 +2514,75 @@ document.addEventListener("DOMContentLoaded", function () {
                 data = JSON.parse(reader.result);
             } catch (err) {
                 alert("Kunne ikke lese filen - dette ser ikke ut som en gyldig JSON-fil.");
-                input.value = "";
                 return;
             }
             const hasKnownTab = data && typeof data === "object" && TAB_KEYS.some(function (k) { return data[k]; });
             if (!hasKnownTab) {
                 alert("Fant ikke gjenkjennelig sjekklisteinnhold i filen. Bruk en JSON-fil lastet ned med \"Last ned som JSON\" herfra.");
-                input.value = "";
                 return;
             }
             if (confirm("Laste inn sjekklisten fra denne filen? Alt innhold i alle faner blir erstattet med innholdet i filen.")) {
                 importStateFromJson(data);
             }
-            input.value = "";
         };
         reader.onerror = function () {
             alert("Kunne ikke lese filen.");
-            input.value = "";
         };
         reader.readAsText(file);
+    }
+
+    // "Last inn JSON" - knappen åpner en skjult fil-input (ingen synlig, stygg standard-filvelger på
+    // selve knappen); selve innlesingen skjer via handleJsonFile over.
+    document.getElementById("uploadJsonBtn").addEventListener("click", function () {
+        document.getElementById("uploadJsonInput").click();
+    });
+    document.getElementById("uploadJsonInput").addEventListener("change", function (e) {
+        const input = e.target;
+        const file = input.files && input.files[0];
+        handleJsonFile(file);
+        input.value = ""; // samme fil kan velges på nytt senere uten at "change" uteblir
+    });
+
+    // Dra-og-slipp av en JSON-fil hvor som helst i vinduet (brukerønske: "må være mulig å dra json fil
+    // fra PC over i vinduet for å laste inn") - i stedet for å måtte omveien om "Last inn JSON"-knappen +
+    // den skjulte filvelgeren. dragCounter (ikke bare ett enkelt boolsk flagg) fordi dragenter/dragleave
+    // fyres for HVERT element musen krysser inn i/ut av mens man drar over siden (barn-elementer inni
+    // .container teller også) - uten telleren ville en dragleave på et INDRE element (mens man fortsatt
+    // er over vinduet som helhet) slukket overlayen for tidlig.
+    const dropJsonOverlay = document.getElementById("dropJsonOverlay");
+    let dragCounter = 0;
+    function dragHasFiles(e) {
+        return !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf("Files") !== -1);
+    }
+    window.addEventListener("dragenter", function (e) {
+        if (!dragHasFiles(e)) return;
+        e.preventDefault();
+        dragCounter++;
+        if (dropJsonOverlay) dropJsonOverlay.classList.add("active");
+    });
+    window.addEventListener("dragover", function (e) {
+        if (!dragHasFiles(e)) return;
+        // Uten preventDefault her tolker nettleseren dette som "ikke et gyldig droppmål", og selve
+        // "drop"-hendelsen ville aldri fyrt (i stedet ville filen bare åpnet seg i en ny fane).
+        e.preventDefault();
+    });
+    window.addEventListener("dragleave", function (e) {
+        if (!dragHasFiles(e)) return;
+        dragCounter = Math.max(0, dragCounter - 1);
+        if (dragCounter === 0 && dropJsonOverlay) dropJsonOverlay.classList.remove("active");
+    });
+    window.addEventListener("drop", function (e) {
+        if (!dragHasFiles(e)) return;
+        e.preventDefault();
+        dragCounter = 0;
+        if (dropJsonOverlay) dropJsonOverlay.classList.remove("active");
+        const file = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!file) return;
+        if (!/\.json$/i.test(file.name) && file.type !== "application/json") {
+            alert("Dra inn en JSON-fil (.json) - " + file.name + " ser ikke ut til å være det.");
+            return;
+        }
+        handleJsonFile(file);
     });
 
     document.getElementById("resetFormBtn").addEventListener("click", function () {

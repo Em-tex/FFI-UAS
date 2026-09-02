@@ -1694,6 +1694,37 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 .sim-exercise-back-btn:hover { text-decoration: underline; }
 
+/* "Kopier lenke" nederst i øvelsespanelet (brukerens krav: en liten, DISKRÉ knapp - se
+   exerciseCopyLinkBtn i simulator.html) - bevisst dempet (grå, liten skrift, ingen bakgrunn/kant) i
+   motsetning til .sim-btn-primary-knappene ellers i panelet, som en stille "ekstra mulighet" i stedet for
+   en fremtredende handling. border-top skiller den visuelt fra selve innholdet over. */
+.sim-exercise-copy-link-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0 2px;
+    margin-top: 6px;
+    border-top: 1px solid #eee;
+}
+.sim-exercise-copy-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-family: 'Overpass', sans-serif;
+    padding: 2px 0;
+}
+.sim-exercise-copy-link:hover { color: var(--ffi-blue); text-decoration: underline; }
+.sim-exercise-copy-link-status {
+    font-size: 0.78rem;
+    color: #2a8a4a;
+    font-style: italic;
+}
+
 /* Racingbanens ledertavle - vises der øvelsesmenyen ellers står (samme topp/høyre-plassering som
    .sim-panel) mens racingbanen flys, se startExercise/stopExercise. Bevisst mer gjennomsiktig enn de
    vanlige panelene (rgba med lavere alpha) - den skal kunne stå fremme hele flyturen uten å sperre
@@ -1881,6 +1912,34 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 .checklist-tab-btn[data-tab-btn="emergency"].active,
 .checklist-tab-btn[data-tab-btn="erp"]:hover,
 .checklist-tab-btn[data-tab-btn="erp"].active { color: #a01414; border-bottom-color: #a01414; }
+
+/* Full-vindu-overlay vist mens brukeren drar en JSON-fil inn over sjekkliste-byggeren (se
+   dragenter/dragleave/drop-lytterne i js/sjekkliste-bygger.js) - "må være mulig å dra json fil fra PC
+   over i vinduet for å laste inn". Skjult som standard (display:none, ikke bare visibility/opacity - en
+   usynlig full-skjerm-overlay ville likevel fanget klikk/dra-hendelser den ikke skal). ".active"-klassen
+   slås på/av av JS. */
+.drop-json-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(20, 91, 158, 0.88);
+    align-items: center;
+    justify-content: center;
+    /* pointer-events:none - overlayen skal kun VISE et hint, ikke stjele selve drop-hendelsen fra
+       window-lytterne (som allerede fanger dragover/drop uansett hvilket element som ligger øverst). */
+    pointer-events: none;
+}
+.drop-json-overlay.active { display: flex; }
+.drop-json-overlay-inner {
+    text-align: center;
+    color: white;
+    border: 3px dashed rgba(255, 255, 255, 0.8);
+    border-radius: 12px;
+    padding: 50px 70px;
+}
+.drop-json-overlay-inner i { font-size: 2.6rem; margin-bottom: 14px; display: block; }
+.drop-json-overlay-inner p { font-size: 1.15rem; font-weight: 600; margin: 0; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
@@ -2238,6 +2297,71 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     flex-shrink: 0;
 }
 .drag-section-handle:active { cursor: grabbing; }
+/* Ikonvelger for sjekklistedelen (brukerønske: "kan man også gjøre det mulig å endre på ikoner i
+   headerne til tabellene?") - se buildIconPicker/ICON_PICKER_CHOICES i js/sjekkliste-bygger.js. Samme
+   posisjonert-knapp-åpner-meny-mønster som .sim-dropdown/.sim-dropdown-menu ellers på nettstedet. */
+.icon-picker { position: relative; flex-shrink: 0; }
+.icon-picker-btn {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    border-radius: 5px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+.icon-picker-btn:hover { background: rgba(255,255,255,0.28); }
+.icon-picker-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 5;
+    width: 220px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    padding: 8px;
+}
+.icon-picker-menu.open { display: block; }
+.icon-picker-none {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ffi-dark);
+    cursor: pointer;
+    margin-bottom: 6px;
+    font-family: 'Overpass', sans-serif;
+}
+.icon-picker-none:hover { background: var(--ffi-light-bg); }
+.icon-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 6px;
+}
+.icon-picker-option {
+    background: none;
+    border: none;
+    border-radius: 5px;
+    padding: 7px 0;
+    color: var(--ffi-dark);
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.icon-picker-option:hover { background: var(--ffi-light-bg); color: var(--ffi-blue); }
 /* Boksen som faktisk dras - halvtransparent, slik at man ser hvor den "kommer fra" mens man ser
    resten av boksene omorganisere seg live rundt den (se dragover-lytteren, som flytter selve
    DOM-noden løpende under draget). */
@@ -2391,6 +2515,35 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
        paginering for alle overskrifter inni #printView - regelen over skal fortsatt gjelde resten av
        siden (f.eks. leksjonsskjema.html, som ikke bruker #printView i det hele tatt). */
     #printView h1, #printView h2, #printView h3 { break-after: auto; page-break-after: auto; }
+    /* BUG (rapportert av brukeren, med skjermbilde: ERP-banneret "Emergency Response Plan (ERP)" sto
+       helt alene øverst på en ellers nesten blank side, mens selve innholdet (Ulykke/Fly-away/
+       Kontaktliste) først startet på NESTE side - "overskriften kan jo ikke stå helt alene vekk fra
+       innholdet") - regelen rett over fjerner break-after:avoid fra #printView sine <h1>-er helt
+       generelt, og det gjenåpner nettopp den "nettleseren velger å bryte akkurat mellom banner og
+       innhold, selv med rikelig plass igjen"-oppførselen regelen over var ment å unngå for ANDRE sider.
+       ERP-sidens eget innhold er derimot ALLEREDE budsjettert (NORMAL_COLUMN_MAX_HEIGHT_MM i
+       layoutNormalColumns, js/sjekkliste-bygger.js) til å få plass RETT UNDER banneret på én hel,
+       fersk side - en overskrift som likevel havner løsrevet derfra er derfor aldri et reelt
+       plassproblem for AKKURAT denne sidetypen, kun en unødvendig nettleser-paginering. Legger
+       break-after:avoid TILBAKE, scopet til selve tittelbanner-DIV-en ([data-theme] .print-header,
+       IKKE h1-en - unngår dermed regelen over sin egen selektor).
+       FORSØK PÅ UTVIDELSE (rapportert av brukeren: nøyaktig samme "foreldreløs overskrift"-symptom
+       rammet siden OGSÅ Normal-sidens egen "Sjekkliste"-banner ved to anledninger - først med en reell
+       <table>-utskriftsbug involvert (se buildPrintRow i js/sjekkliste-bygger.js, siden rettet), deretter
+       IGJEN etter at NORMAL_COLUMN_MAX_HEIGHT_MM/PRINT_FIT_SAFETY_MARGIN_MM ble hevet for å bruke mer av
+       den nå presist målte sideplassen) - prøvde da å utvide denne regelen til [data-theme] (alle fire
+       temaer), men bekreftet EMPIRISK (rendret faktisk gjennom en skjult nettleser, sammenlignet PDF
+       byte-for-byte) at det IKKE hadde noen effekt i det hele tatt på det andre tilfellet: Chrome brøt
+       fortsatt akkurat der, break-after:avoid til tross. Konklusjonen er at DENNE spesifikke
+       "foreldreløs overskrift"-varianten på Normal-siden ikke er en ren CSS-brytningspreferanse Chrome
+       lar seg overstyre på - det er en dypere, ikke-dokumentert Chromium-pagineringssvakhet som dukker
+       opp når selve INNHOLDET (float-basert to-kolonne-grid) nærmer seg en viss høyde relativt til
+       resten av siden, og som heller unngås ved å HOLDE JS-budsjettet (NORMAL_COLUMN_MAX_HEIGHT_MM/
+       PRINT_FIT_SAFETY_MARGIN_MM i layoutNormalColumns, js/sjekkliste-bygger.js) bevisst konservativt
+       fremfor å presse mer innhold inn per side. Denne regelen er derfor scopet TILBAKE til KUN ERP -
+       den fungerer der fordi ERP sitt innhold alltid er forhåndsbudsjettert til å få god plass under
+       banneret på én side (se begrunnelsen over), ikke fordi selve CSS-regelen løser noe generelt. */
+    #printView [data-theme="erp"] .print-header { break-after: avoid; page-break-after: avoid; }
     /* Enkeltbokser skal ikke kappes midt i selv om Øvelser-seksjonen rundt tabellen nå TILLATES å
        brekke (se .section:has(...) over) - label på én side og verdien på neste, eller en signatur delt
        fra navnet sitt, ser like rart ut som overskrift-foreldreløshet. */
@@ -2668,6 +2821,12 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     page-break-inside: avoid;
     margin: 0 0 6mm;
 }
+/* Brukerønske ("er det plass i kolonnen så kan det være litt mer luft under siste sjekklistedelen...
+   siden disse delene ikke direkte er del av normale sjekklister") - satt av layoutNormalColumns
+   (js/sjekkliste-bygger.js) på den SISTE overflow-sjekklistedelen som havner rett over Utstyrsliste/
+   Begrensninger/Kontaktliste i samme kolonne - litt mer luft enn den vanlige 6mm markerer det semantiske
+   skillet mellom faktiske sjekklistepunkter og ren referanseinfo. */
+.print-box.print-box-checklist-end { margin-bottom: 14mm; }
 /* BUG (rapportert av brukeren: "litt rart at det går rundt hele tabellen. kanskje raden med overskrift
    ikke har striplet rundt seg?") - den stiplede kanten satt på HELE .print-box (header + innhold under ett)
    ga en dobbel kant akkurat rundt selve overskriftsraden: overskriften har allerede sin egen heldekkende,
@@ -2704,75 +2863,110 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
    filen) - ellers vinner temafargen på ERP-siden siden Kontaktliste ligger inni [data-theme="erp"]. */
 .print-box-header.print-box-header-reference { background: var(--section-header-bg); border-color: var(--section-header-bg); }
 
-.print-rows { width: 100%; border-collapse: collapse; }
-.print-rows tr { border-bottom: 1px solid #e5e5e5; }
-.print-rows tr:last-child { border-bottom: none; }
-/* vertical-align: middle - alle rader/kolonner i en linje skal stå midtstilt i høyden i forhold til
-   hverandre, ikke toppjustert (så en ettordslinje ikke henger øverst mens en lengre, flerlinjes
-   nabocelle strekker raden nedover).
-   BUG (rapportert av brukeren - se print-rows-situasjon-kommentaren ved buildSectionBox i js/sjekkliste-
-   bygger.js for selve breddefiksen der): den fiksen løste kun brekk VED MELLOMROM - ett eneste
-   sammenhengende ord/streng UTEN mellomrom (f.eks. en lang, mellomromsløs innskriving ved uhell) har
-   fortsatt ingen naturlig bruddplass, og rant derfor rett forbi cellen/boksen uansett hvor smal
-   kolonnebredden var satt. hyphens:auto orddeler med ekte bindestrek på gyldige stavelsesgrenser
-   (lang="no" på <html>, se sjekkliste-bygger.html, styrer hvilket språks orddelingsregler nettleseren
-   bruker) - naturlig utseende for ekte, lange ord. overflow-wrap:break-word er sikkerhetsnettet for de
-   sjeldne tilfellene der ordet ikke er et gyldig norsk ord i det hele tatt (som i brukerens test -
-   "NOTAMgdfg..." har ingen stavelsesgrenser en orddelingsordliste kjenner igjen) - da tvinges et brudd der
-   det er nødvendig, i stedet for at cellen bare lar teksten flyte videre ut. Satt på selve den generiske
-   .print-rows td (alle celletyper - sjekkpunkt, verdi, utstyrsliste, kontaktliste), ikke bare
-   situasjon-kolonnen, siden samme problem i prinsippet kan ramme enhver av dem. */
-.print-rows td { padding: 2px 8px; font-size: 8.5pt; vertical-align: middle; line-height: 1.4; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; }
-.print-rows td.print-check { width: 12px; padding-right: 2px; }
-.print-rows td.print-number { width: 14px; text-align: right; padding-right: 3px; font-weight: 700; white-space: nowrap; }
+/* CSS Grid-basert "tabell" i stedet for ekte <table>/<tr>/<td> (se BUG-kommentaren ved buildPrintRow i
+   js/sjekkliste-bygger.js - en ekte <table> her trigget en reell Chromium-utskriftsbug som hoppet HELE
+   resten av siden til neste fysiske side). .print-row (bygget av buildPrintRow) er display:contents - den
+   gir ingen egen boks, men BLIR VÆRENDE i DOM-treet slik at :last-child-baserte selektorer (se
+   .print-row:last-child under) fortsatt treffer riktig rad, og cellene inni den blir dermed direkte
+   grid-celler i .print-rows sin rutenettflyt, akkurat som <td>-ene var direkte tabell-celler før.
+   grid-template-columns settes av en egen modifikator-klasse per "tabellform" (se .print-rows-1col/
+   -contacts/-situasjon/-single/-checkbox under) - CSS Grid må, i motsetning til <table>, vite eksakt
+   antall/bredde på kolonnene på forhånd i stedet for å utlede det fra selve radene. */
+.print-rows { display: grid; width: 100%; }
+.print-row { display: contents; }
+.print-rows .print-row .print-cell { border-bottom: 1px solid #e5e5e5; }
+.print-rows .print-row:last-child .print-cell { border-bottom: none; }
+/* BUG (rapportert av brukeren, med skjermbilde: "UAS SITS"-raden i Kontaktliste fikk en rar, brutt kant
+   midt i raden der verditeksten pakket til to linjer) - med align-items:center på selve griddet fikk
+   hver .print-cell KUN sin egen INNHOLDS-høyde (sentrert i den ledige plassen i raden), ikke hele
+   radens høyde - border-bottom på en kort nabocelle (f.eks. "UAS SITS", én linje) havnet dermed midt
+   oppi raden, ikke nede ved den lengre nabocellens (to linjer) bunnkant, siden cellenes egne BOKSER
+   aldri strakk seg til å matche hverandre.
+   FORSØKT LØST med en indre flex-/align-content-sentrering av selve cellens innhold (så border-bottom
+   traff radens faktiske bunn, MEN innholdet fortsatt så sentrert ut) - MÅTTE REVERTERES: bekreftet
+   empirisk (rendret faktisk gjennom en skjult nettleser) at nettopp DEN endringen brakte tilbake den
+   udokumenterte "foreldreløs overskrift"-Chromium-svakheten på Normal-siden (se den store historikk-
+   kommentaren ved NORMAL_COLUMN_MAX_HEIGHT_MM i js/sjekkliste-bygger.js) - selv en tilsynelatende
+   uskyldig layout-endring i en helt ANNEN del av utskriften endret nok på beregnet totalhøyde til å
+   treffe akkurat den skjøre grensen på nytt. Løsningen er derfor bevisst enklere og tryggere: fjerner
+   KUN align-items:center fra griddet (grid-elementer STREKKES i høyden som standard uten det - border-
+   bottom treffer nå alltid radens faktiske bunn), UTEN å legge til noen egen layout-modus på selve
+   cellen for å sentrere innholdet i den - en kort nabocelle ved siden av en lang, flerlinjes en star da
+   toppjustert i stedet for midtjustert (en mindre kosmetisk detalj, og uansett sjelden synlig - de
+   fleste rader har lik linjehøyde på begge celler), fremfor å risikere samme skjøre bug på nytt. */
+.print-cell {
+    box-sizing: border-box;
+    padding: 2px 8px;
+    font-size: 8.5pt;
+    line-height: 1.4;
+    overflow-wrap: break-word;
+}
+.print-cell.print-check { padding-right: 2px; }
+.print-cell.print-number { text-align: right; padding-right: 3px; font-weight: 700; white-space: nowrap; }
 /* Se print-number-top-kommentaren ved buildSectionBox i js/sjekkliste-bygger.js - kun singleColumn-rader
-   (ERP sine nummererte prosedyretrinn) toppjusteres, resten av utskriften beholder den bevisste
-   midtjusteringen (se kommentaren ved .print-rows td over). */
-.print-rows td.print-number-top { vertical-align: top; padding-top: 3px; }
-.print-rows td.print-label.print-key { font-weight: 700; }
-/* print-rows-situasjon (se kommentaren ved buildSectionBox i js/sjekkliste-bygger.js) - BUG: ren
-   table-layout:auto fordeler kolonnebredde per HELE tabellen (ikke rad for rad), så et enkelt langt,
+   (ERP sine nummererte prosedyretrinn) får ekstra toppmarg. */
+.print-cell.print-number-top { padding-top: 3px; }
+.print-cell.print-label.print-key { font-weight: 700; }
+/* print-rows-1col (utstyrsliste - én kolonne per rad, se buildEquipmentBox). */
+.print-rows-1col { grid-template-columns: 1fr; }
+/* Generisk .print-rows uten modifikator (Begrensninger - to kolonner, nøkkel/verdi) - max-content på
+   nøkkel-kolonnen tilsvarer den gamle table-layout:auto (bredden følger innholdet), verdi tar resten. */
+.print-rows:not([class*="print-rows-"]) { grid-template-columns: max-content 1fr; }
+/* print-rows-situasjon/-single (se kommentaren ved buildSectionBox i js/sjekkliste-bygger.js) - BUG: den
+   gamle table-layout:auto fordelte kolonnebredde per HELE tabellen (ikke rad for rad), så et enkelt langt,
    egendefinert sjekkpunkt i situasjon/sjekkpunkt-kolonnen (normalt en kort, fast kategoribetegnelse som
    "Batteri"/"Vær", men INGENTING i datamodellen hindrer et langt sjekkpunkt) presset tidligere hele
    tabellen (og dermed .print-box sin stiplede kant, som følger tabellens egen bredde) bredere enn selve
-   boksen når kolonnen fikk white-space:nowrap. table-layout:fixed + en fast prosentbredde på nettopp
-   denne kolonnen løser dette permanent: bredden er nå den samme uansett innhold, så et uvanlig langt
-   sjekkpunkt brekker til flere linjer i stedet for å sprenge tabellen ut over kanten.
+   boksen når kolonnen fikk white-space:nowrap. En fast kolonnebredde (38%, satt direkte i grid-malen under
+   i stedet for via table-layout:fixed) løser dette permanent: bredden er nå den samme uansett innhold, så
+   et uvanlig langt sjekkpunkt brekker til flere linjer i stedet for å sprenge raden ut over kanten.
    BUG-runde 2 (rapportert av brukeren, med skjermbilde: "FFI-UAS merket liggende over sjekklisten. og det
    ble en tom side etterpå") - 62% til label-kolonnen var BAKVENDT: label-siden er normalt KORT (ett-to
    ord), mens verdi-siden (item.target) ofte er en hel setning (se kommentaren ved cells.push i
    buildSectionBox, js/sjekkliste-bygger.js - "Verdi-siden kan derimot være en hel setning - den skal
-   fortsatt kunne brekke"). Med 62% til label ble
-   verdikolonnen for smal til vanlige, lange verdier som "Rapportert landet / ikke relevant" - den brakk
-   unødvendig til 3-4 linjer i stedet for én, som la nok ekstra sidehøyde til at innholdet fløt over på en
-   ny, nesten blank side (og det faste hjørnestempelet - se buildAllPrintPages - kolliderte da rett oppi
-   den siste, nå unormalt høye boksen). Snudd til 38% (label) / resten til verdi - gir fortsatt god plass
-   til de vanlige, korte kategorinavnene (lengste reelle: "Synlige faremomenter"/"Batteri og radiolink",
-   begge under 38%-budsjettet), men mye mer albuerom til de normalt lengre verdiene, som dermed sjelden
-   trenger å brekke i det hele tatt. Kun denne tabellen (print-rows-situasjon, satt KUN i buildSectionBox) -
-   generisk .print-rows (uten -situasjon) brukes også av f.eks. utstyrsliste og kontaktliste, som beholder
-   table-layout:auto uendret. */
-.print-rows-situasjon { table-layout: fixed; }
-.print-rows-situasjon td.print-label-situation { width: 38%; white-space: normal; }
+   fortsatt kunne brekke"). Med 62% til label ble verdikolonnen for smal til vanlige, lange verdier som
+   "Rapportert landet / ikke relevant" - den brakk unødvendig til 3-4 linjer i stedet for én, som la nok
+   ekstra sidehøyde til at innholdet fløt over på en ny, nesten blank side (og det faste hjørnestempelet -
+   se buildAllPrintPages - kolliderte da rett oppi den siste, nå unormalt høye boksen). Snudd til 38%
+   (label) / resten til verdi - gir fortsatt god plass til de vanlige, korte kategorinavnene (lengste
+   reelle: "Synlige faremomenter"/"Batteri og radiolink", begge under 38%-budsjettet), men mye mer
+   albuerom til de normalt lengre verdiene, som dermed sjelden trenger å brekke i det hele tatt.
+   print-rows-checkbox (ny egen modifikator, kombineres med -situasjon eller -single) - selve
+   avkrysningsboks-kolonnen finnes bare når showCheckbox er sann (se buildSectionBox) - CSS Grid må vite
+   OM den kolonnen finnes i det hele tatt, i motsetning til <table> som bare kunne telle cellene i første
+   rad selv. print-rows-single (singleColumn-seksjoner, f.eks. ERP sine "Ulykke"/"Fly-away") mangler helt
+   situasjon/sjekkpunkt-kolonnen (kun nummer + selve tiltaket) - egen, enklere kolonnemal. */
+.print-rows-situasjon { grid-template-columns: 14px 38% 1fr; }
+.print-rows-situasjon.print-rows-checkbox { grid-template-columns: 12px 14px 38% 1fr; }
+.print-rows-single { grid-template-columns: 14px 1fr; }
+.print-rows-single.print-rows-checkbox { grid-template-columns: 12px 14px 1fr; }
+.print-cell.print-label-situation { white-space: normal; }
 /* Kontaktlisten (ERP) - brukerønske: første kolonne (kontaktnavnet, f.eks. "UAS Aut. telefon") litt
-   bredere enn auto-layout ga den, samme fixed-layout-teknikk som print-rows-situasjon over. Kun denne
-   tabellen (satt via isContactList i buildLimitsBox) - Begrensninger/Utstyrsliste beholder vanlig
-   table-layout:auto, uendret. */
-.print-rows-contacts { table-layout: fixed; }
-.print-rows-contacts td.print-key { width: 48%; white-space: normal; }
+   bredere enn auto-layout ga den, samme faste-bredde-teknikk som print-rows-situasjon over. Kun denne
+   tabellen (satt via isContactList i buildLimitsBox) - Begrensninger/Utstyrsliste beholder den
+   innholds-tilpassede generiske .print-rows-malen over, uendret. */
+.print-rows-contacts { grid-template-columns: 48% 1fr; }
+.print-cell.print-key { white-space: normal; }
 /* Nødnummer-fremheving i selve utskriften (Brann/Politi/Ambulanse - se ERP_EMERGENCY_CONTACTS,
    js/sjekkliste-bygger.js) - print-key gir allerede fet skrift til ALLE kontakter/begrensninger (regelen
    over), så her legges kun fargen til (samme røde ERP-temafarge som resten av fanen, ikke en ny/vilkårlig
    farge) - bevisst tilbakeholdent, se kommentaren ved .limit-row-emergency i samme fil for begrunnelsen. */
-.print-rows td.print-key-emergency { color: #a01414; }
-.print-rows td.print-key-emergency i { margin-right: 3px; width: 11px; text-align: center; }
-.print-rows td.print-value { text-align: right; color: #333; padding-left: 6px; }
+.print-cell.print-key-emergency { color: #a01414; }
+.print-cell.print-key-emergency i { margin-right: 3px; width: 11px; text-align: center; }
+.print-cell.print-value { text-align: right; color: #333; padding-left: 6px; }
 /* singleColumn-deler (se buildSectionBox/createItemRow, js/sjekkliste-bygger.js - f.eks. "Ulykke"/
    "Fly-away" på ERP-fanen) - ingen situasjon-kolonne ved siden av, så selve tiltaket skal stå
    VENSTREjustert (som normal løpende tekst), ikke høyrejustert som en vanlig "verdi" ved siden av en
    label. white-space: pre-line lar manuelle linjeskift (\n) i teksten (understreker under et trinn, se
-   DEFAULTS.erp) faktisk vises som egne linjer i stedet for å bli slått sammen til én lang linje. */
-.print-rows td.print-value.print-value-wide { text-align: left; padding-left: 3px; white-space: pre-line; }
+   DEFAULTS.erp) faktisk vises som egne linjer i stedet for å bli slått sammen til én lang linje.
+   BUG (rapportert av brukeren, med skjermbilde: "teksten i sjekklisten starter fortsatt mye tettere
+   etter nummereringen enn i de andre sjekklistene") - padding-left var satt til kun 3px her (fra en
+   tidligere <table>-basert utmåling, se BUG-kommentaren ved buildPrintRow i js/sjekkliste-bygger.js for
+   selve tabell->grid-ombyggingen), mot 8px (arvet fra selve .print-cell) for den vanlige situasjon-
+   kolonnen ved siden av - ga en synlig TRANGERE avstand fra nummeret på ERP sine singleColumn-rader enn
+   på resten av utskriften. Fjernet - faller nå tilbake til samme 8px venstrepadding som alt annet
+   innhold, for lik avstand fra nummeret uansett radtype. */
+.print-cell.print-value.print-value-wide { text-align: left; white-space: pre-line; }
 .print-checkbox-box {
     display: inline-block;
     width: 8px;

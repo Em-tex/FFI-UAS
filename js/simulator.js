@@ -915,6 +915,112 @@ const EXERCISES = {
         ]
     }
 };
+// ---------- Recurrent trening (RECURRENT_QUAD_ORDER/RECURRENT_ACRO_ORDER, se der) ----------
+// Egne øvelser, IKKE en gjenbruk av ex1/ex10/ex11/race1/race3 sine id-er - brukerens krav: recurrent
+// trening skal spores helt uavhengig (egen fremgang/bestetid/bestått-status), selv om selve
+// flyge-/kollisjonsmekanikken er identisk med de tilsvarende øvelsene i Quadcopter intro/Acro mode
+// (ingen ny stage-logikk her, kun nye EXERCISES-oppføringer med egne id-er - se Object.assign under).
+// Alle stage-id-er er prefikset ("rq1-"/"rq3-"/"ra1-" osv.) for å unngå enhver forveksling med de
+// tilsvarende initiell-øvelsenes stage-id-er, selv om ingen kode i dag faktisk gjør et globalt oppslag
+// på tvers av øvelser (stage-referanser skjer alltid via exercise.stages[stageIndex], aldri en flat
+// id->stage-tabell).
+Object.assign(EXERCISES, {
+    rq1: {
+        id: "rq1",
+        icon: "fa-wind",
+        label: "1. Hover i vind",
+        shortDescription: "Hold posisjonen med nesa ut, til sidene og inn mens vinden dytter på deg - " + HOVER_HOLD_SEC + " s per retning.",
+        startHint: "Hold posisjonen i den gule indikatoren og korriger jevnlig for vinden. Pila på bakken viser hvilken retning nesa skal peke.",
+        fullDescription: "Samme grunnøvelse som Hover i Quadcopter intro, men nå i vind: hold dronen i ro " +
+            "over det markerte punktet på " + HOVER_ALTITUDE + " m høyde mens vinden dytter på deg - først " +
+            "med nesa bort fra deg, så mot venstre, så mot høyre, og til slutt med nesa mot deg. Hver " +
+            "retning må holdes i minst " + HOVER_HOLD_SEC + " sekunder innenfor omtrent samme posisjon og " +
+            "høyde - driver du ut av området eller mister retningen, nullstilles tiden for gjeldende " +
+            "retning.\n\nVinden er " + HOVER_WIND_MIN_SPEED + "-" + HOVER_WIND_MAX_SPEED +
+            " m/s fra en ny, tilfeldig retning.\n\nDroneklassen settes automatisk til Middels, og du flyr " +
+            "fra VLOS-posisjonen. R restarter hele øvelsen med nullstilt klokke.",
+        wind: { speed: HOVER_WIND_MIN_SPEED, directionDeg: 0, gust: 0.3 },
+        randomizeWindDirection: true, // ny tilfeldig retning ved hver spawn (start/runde/R) - se spawnForExercise
+        randomizeWindSpeed: { min: HOVER_WIND_MIN_SPEED, max: HOVER_WIND_MAX_SPEED },
+        stages: [
+            { id: "rq1-hover-out", label: "Hover - nese ut", type: "hover", headingYaw: LOCKED_HEADING, holdSec: HOVER_HOLD_SEC },
+            { id: "rq1-hover-left", label: "Hover - nese mot venstre", type: "hover", headingYaw: HEADING_LEFT, holdSec: HOVER_HOLD_SEC },
+            { id: "rq1-hover-right", label: "Hover - nese mot høyre", type: "hover", headingYaw: HEADING_RIGHT, holdSec: HOVER_HOLD_SEC },
+            { id: "rq1-hover-in", label: "Hover - nese inn", type: "hover", headingYaw: HEADING_IN, holdSec: HOVER_HOLD_SEC }
+        ]
+    },
+    rq2: {
+        id: "rq2",
+        icon: "fa-house",
+        label: "2. Returner hjem i vind",
+        shortDescription: "Ta over en drone langt hjemmefra og fly den trygt hjem - " + REQUIRED_RETURN_REPS + " ganger, 6 m/s vind fra tilfeldig retning.",
+        startHint: "Vent til nedtellingen er ferdig og gassen er ved ca. 50 %. Finn nese- og vindretning, fly trygt hjem og land.",
+        fullDescription: "Samme øvelse som Returner hjem i vind i Quadcopter intro. Dronen henger i lufta " +
+            "langt hjemmefra - bare synlig som en prikk - med tilfeldig nese-retning og 6 m/s vind fra en " +
+            "ny, tilfeldig retning hver gang. Etter nedtellingen overtar du kontrollen, men først når du " +
+            "har lagt gassen rundt 50 % (hover) - akkurat som en ekte overtakelse.\n\nFinn ut hvilken vei " +
+            "nesa peker og hvor vinden kommer fra, fly dronen trygt hjem og land på landingsplassen (H). " +
+            "Du må gjennomføre dette " + REQUIRED_RETURN_REPS + " ganger (ny tilfeldig posisjon, " +
+            "nese-retning og vindretning hver gang) for å bestå - totaltiden for alle " +
+            REQUIRED_RETURN_REPS + " forsøkene lagres i menyen.\n\nR gir nytt forsøk fra runde 1 med " +
+            "nullstilt klokke.",
+        wind: { speed: 6, directionDeg: 0, gust: 0.3 },
+        randomizeWindDirection: true,
+        randomizeCloudCoverage: true,
+        spawn: "far",
+        stages: [{ id: "rq2-return-home", label: "Returner hjem", type: "return" }]
+    },
+    rq3: {
+        id: "rq3",
+        icon: "fa-triangle-exclamation",
+        label: "3. Nødprosedyrer",
+        shortDescription: "Fly noen øvelser - underveis kan det skje noe uforutsett. 4 scenarier må bestås.",
+        fullDescription: "Samme øvelse som Uforutsette hendelser i Quadcopter intro. Du skal fly noen " +
+            "øvelser - underveis kan det skje noe uforutsett. Riktig reaksjon kan være å fly unna, lande, " +
+            "eller stoppe motorene i lufta. Det er 4 scenarier som må bestås, ett om gangen.\n\nHusk å " +
+            "sette killswitchen på fjernkontrollen din i Fjernkontroll-kalibrering.",
+        requiresGamepadKill: true,
+        skipLanding: true,
+        noTiming: true,
+        stages: [
+            { id: "rq3-crowd", label: "Rømning mot folkemengden", type: "killswitch", variant: "crowd", runawaySec: CROWD_RUNAWAY_DURATION_SEC },
+            { id: "rq3-heli", label: "Helikopter i lav innflyging", type: "killswitch", variant: "heli", patrolAltitude: HELI_ALTITUDE, patrolWaypoints: HELI_PATROL_WAYPOINTS },
+            { id: "rq3-traffic", label: "Rømning mot lufttrafikk", type: "killswitch", variant: "traffic", runawaySec: TRAFFIC_CLIMB_DURATION_SEC },
+            { id: "rq3-pedestrians", label: "Fotgjengere nærmer seg", type: "killswitch", variant: "pedestrians" }
+        ]
+    },
+    ra1: {
+        id: "ra1",
+        icon: "fa-flag-checkered",
+        label: "1. Racingbane - enkeltrunde",
+        droneClass: "racing",
+        forceCameraMode: "fpv",
+        forceFlightMode: "acro",
+        freeCameraToggle: true,
+        shortDescription: "Fly gjennom alle portene på racingbanen så fort du kan - klokken starter når du krysser start/mål.",
+        startHint: "Fly gjennom porten for å starte tiden.",
+        fullDescription: "Den vanlige racingbanen fra Acro mode, én runde. Klokken starter automatisk idet " +
+            "du krysser start/mål-porten (svart/hvitt rutemønster med en gul pil som viser flyretningen), " +
+            "og stopper når du har fløyet gjennom alle de andre portene i rekkefølge og kommer tilbake til " +
+            "samme port. Du kan fly så mange runder du vil - hver fullførte runde havner i ledertavlen " +
+            "(lagres lokalt i nettleseren), med beste tid øverst.",
+        stages: [{ id: "ra1-race-lap", label: "Racingbane", type: "racing", lapsRequired: 1 }]
+    },
+    ra2: {
+        id: "ra2",
+        icon: "fa-flag-checkered",
+        label: "2. Racingbane - 3 runder",
+        droneClass: "racing",
+        forceCameraMode: "fpv",
+        forceFlightMode: "acro",
+        freeCameraToggle: true,
+        shortDescription: "Fullfør 3 sammenhengende runder så fort du kan - totaltiden (og hver rundetid) telles.",
+        startHint: "Fly gjennom porten for å starte tiden. 3 runder på rad.",
+        fullDescription: "Samme racingbane som enkeltrunde-øvelsen over, men her teller totaltiden for TRE " +
+            "sammenhengende runder i stedet for én.",
+        stages: [{ id: "ra2-race-3lap", label: "Racingbane - 3 runder", type: "racing", lapsRequired: 3 }]
+    }
+});
 const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", "ex9", "exHoverWind", "ex10", "ex11"];
 // Kategorisering for øvelsesmenyens undermenyer (Stabilized/Acro) - se showExerciseCategoryView. Disse
 // fire er bevisst IKKE i EXERCISE_ORDER (som styrer den STABILISERTE bekreftelsen/diplomet) - de er åpne
@@ -924,11 +1030,20 @@ const EXERCISE_ORDER = ["ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8", 
 // tidsaktivitetene i stedet for nye hover/firkant-drills (brukeren: "'øvelsene' er de racingbanene vi har
 // fra før + den nye + den øvelsen med å treffe bevegelige mål").
 const ACRO_EXERCISE_ORDER = ["race1", "race3", "raceTunnel", "targetStrike"];
+// Recurrent trening - samme "order-array + egen bekreftelse"-mønster som EXERCISE_ORDER/
+// ACRO_EXERCISE_ORDER over, men EGNE øvelser/id-er (se Object.assign(EXERCISES, {...}) over) - brukerens
+// krav: recurrent trening skal spores helt uavhengig av de tilsvarende initiell-øvelsene. Rekkefølgen
+// (vind+retning FØRST, deretter returner hjem, så nødprosedyrer) følger brukerens egen formulering.
+const RECURRENT_QUAD_ORDER = ["rq1", "rq2", "rq3"];
+// Bevisst ingen medaljegradering her (se ACRO_MEDAL_THRESHOLDS lenger ned, som IKKE har oppføringer for
+// disse to) - recurrent Acro-bekreftelsen krever bare at et forsøk er fullført, ikke en bestemt tid
+// ("noe... som ikke er like omfattende", brukerens krav).
+const RECURRENT_ACRO_ORDER = ["ra1", "ra2"];
 
 // Kun sluttresultat (bestått + beste tid) lagres - all fremdrift underveis (steg/runde/tid/varsler)
 // lever kun i minnet og forsvinner ved sideinnlasting, se exerciseState lenger ned.
 const DEFAULT_EXERCISE_PROGRESS = {};
-EXERCISE_ORDER.forEach(function (id) {
+EXERCISE_ORDER.concat(RECURRENT_QUAD_ORDER).forEach(function (id) {
     DEFAULT_EXERCISE_PROGRESS[id] = { passed: false, bestTimeSec: null };
 });
 
@@ -1140,22 +1255,27 @@ function buildGround() {
     // over hele kartet. Sjakkbrett-teksturen (Sim.buildGroundTexture over) gir fortsatt avstandsreferanse
     // uten dette problemet, så griden er fjernet i stedet for justert.
 
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0xff5533 });
-    for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2;
-        const r = 30;
-        if (i === 6) {
-            // Rett foran (-Z) avgangsplassen sett fra spawn - stolpe med vindpølse i stedet for vanlig stolpe.
-            windsockHandle = Sim.buildWindsockPole();
-            windsockHandle.group.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
-            group.add(windsockHandle.group);
-            continue;
-        }
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 8), poleMat);
-        pole.position.set(Math.cos(angle) * r, 3, Math.sin(angle) * r);
-        pole.castShadow = true;
-        group.add(pole);
-    }
+    // De sju vanlige, rent dekorative oransje stolpene rundt avgangsplassen er fjernet (brukerens krav:
+    // "alle de oransje stolpene rundt avgangsplassen i free flight kan fjernes. bortsett fra den som har
+    // vindpølsa på seg") - KUN vindpølse-stolpen (den gamle i===6) står igjen. Samme vinkel/radius som før
+    // (i=6 av 8, r=30) beholdt uendret, så vindpølsen fortsatt står nøyaktig der den alltid har stått, rett
+    // foran (-Z) avgangsplassen sett fra spawn.
+    const windsockAngle = (6 / 8) * Math.PI * 2, windsockR = 30;
+    windsockHandle = Sim.buildWindsockPole();
+    const windsockX = Math.cos(windsockAngle) * windsockR, windsockZ = Math.sin(windsockAngle) * windsockR;
+    windsockHandle.group.position.set(windsockX, 0, windsockZ);
+    group.add(windsockHandle.group);
+    // Ekte kollisjonsdeteksjon mot drona (brukerens krav: "stolpen må ha kollisjonsdeteksjon mot drona") -
+    // den sto tidligere som en av mange rent visuelle stolper uten noen SOLID_COLLIDERS-oppføring i det
+    // hele tatt (samme "ukolliderende rekvisitt"-skjebne som resten av dem). Tynn (0.15 m radius, samme
+    // som selve polen i buildWindsockPole) - akse-rettet boks er godt nok for en så smal, sirkulær søyle,
+    // ingen egen yaw-orientert kollider trengs. topY=7 matcher polens fulle høyde (Sim.buildWindsockPole).
+    const windsockPoleRadius = 0.15;
+    SOLID_COLLIDERS.push({
+        minX: windsockX - windsockPoleRadius, maxX: windsockX + windsockPoleRadius,
+        minZ: windsockZ - windsockPoleRadius, maxZ: windsockZ + windsockPoleRadius,
+        topY: 7
+    });
     return group;
 }
 
@@ -2023,6 +2143,49 @@ function updateInCloudFog() {
     scene.background = inside ? new THREE.Color(CLOUD_FOG_COLOR) : null;
 }
 
+// Prosedural "steinsprut"-sprekk (radielle linjer + noen konsentriske ringer nær sentrum) tegnet på et
+// gjennomsiktig canvas - kun selve sprekk-linjene er ugjennomsiktige, resten av kartet er helt
+// gjennomsiktig slik at glasset (cabinMat) fortsatt skinner igjennom rundt selve sprekken (se
+// buildCar/applyTargetCarDamageAt sin crackDecal-bruk). Bygget/cachet KUN én gang (samme
+// "hwFoamTextureBase"-mønster som buildHwFoamTexture) - selve mønsteret er tilfeldig, men trenger ikke
+// være FORSKJELLIG for hvert eneste krasj, kun plassert/orientert ulikt via selve decal-meshet.
+let carCrackTextureBase = null;
+function buildCarCrackTexture() {
+    if (carCrackTextureBase) return carCrackTextureBase;
+    const size = 160;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const cx = size / 2, cy = size / 2;
+    ctx.strokeStyle = "rgba(230,236,242,0.9)";
+    ctx.lineWidth = 1.6;
+    const spokeCount = 10;
+    for (let i = 0; i < spokeCount; i++) {
+        const angle = (i / spokeCount) * Math.PI * 2 + Math.random() * 0.35;
+        let x = cx, y = cy;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        const segs = 3 + Math.floor(Math.random() * 3);
+        for (let s = 0; s < segs; s++) {
+            const len = (size * 0.46) / segs;
+            x += Math.cos(angle + (Math.random() - 0.5) * 0.7) * len;
+            y += Math.sin(angle + (Math.random() - 0.5) * 0.7) * len;
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(230,236,242,0.55)";
+    ctx.lineWidth = 1;
+    [0.1, 0.19, 0.29].forEach(function (rFrac) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, size * rFrac, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    carCrackTextureBase = new THREE.CanvasTexture(canvas);
+    return carCrackTextureBase;
+}
+
 // Enkel bil, bygg med flatt tak og trær - prosedurale former i realistisk skala mot droneen.
 // Lengdeaksen er lokal Z (IKKE X, som en tidligere versjon hadde) - samme "forover er lokal Z, bredde er
 // lokal X"-konvensjon som orientTowardTravel/buildHelicopter/buildAirplane forutsetter. Målets bil
@@ -2047,15 +2210,26 @@ function buildCar(bodyColor, cabinColor) {
     const wheelRadius = 0.32;
     const bodyHeight = 0.8;
     const bodyCenterY = wheelRadius + bodyHeight / 2;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, bodyHeight, 4.3), bodyMat);
+    // Segmentert (IKKE standard 1x1x1-boksen som før) - brukerens rapport: skadeboksen fra forrige
+    // løsning "lager en rar blokk", i stedet skal selve KAROSSERIET få en ekte bulk (se
+    // applyTargetCarDamageAt/dentCarBodyAt). En udelt boks har bare 4 hjørnevertekser per side - altfor
+    // grovt til at en bulk midt på en flate i det hele tatt hadde noen vertekser å dytte inn. Fortsatt en
+    // beskjeden vertekstetthet (billig å bygge/deformere for én enkelt bil).
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, bodyHeight, 4.3, 6, 4, 14), bodyMat);
     body.position.y = bodyCenterY;
     body.castShadow = true;
     body.receiveShadow = true;
     group.add(body);
+    // Original, uskadet form - tatt vare på FØR noen bulk noensinne påføres, slik at en respawn kan
+    // reise karosseriet helt rett igjen (se resetTargetCarCrash) i stedet for at bulker hoper seg opp
+    // over flere krasj gjennom et helt forsøk.
+    body.geometry.userData.restPositions = Float32Array.from(body.geometry.attributes.position.array);
 
     const cabinHeight = 0.55;
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, cabinHeight, 2.2), cabinMat);
-    cabin.position.set(0, bodyCenterY + bodyHeight / 2 + cabinHeight / 2, -0.2);
+    const cabinWidth = 1.6, cabinLength = 2.2, cabinCenterZ = -0.2;
+    const cabinCenterY = bodyCenterY + bodyHeight / 2 + cabinHeight / 2;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(cabinWidth, cabinHeight, cabinLength), cabinMat);
+    cabin.position.set(0, cabinCenterY, cabinCenterZ);
     cabin.castShadow = true;
     group.add(cabin);
 
@@ -2066,6 +2240,30 @@ function buildCar(bodyColor, cabinColor) {
         wheel.castShadow = true;
         group.add(wheel);
     });
+
+    // Sprekk-dekal for RUTENE (cabinMat/cabin-boksen representerer glasset) - vist/orientert idet et
+    // treff faktisk lander innenfor selve kabinboksens grenser (se applyTargetCarDamageAt/
+    // dentCarBodyAt sin cabin-sjekk). Bulker gir ingen mening på glass (det sprekker, det bulker ikke) -
+    // brukerens krav: "gjør heller at bilmodellen får bulker / ruter som sprekker" (i stedet for den
+    // forrige, løse "skadeboksen" som fløt utenpå karosseriet uansett hvor treffet faktisk skjedde).
+    const crackMat = new THREE.MeshBasicMaterial({
+        map: buildCarCrackTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide
+    });
+    const crackDecal = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), crackMat);
+    crackDecal.visible = false;
+    group.add(crackDecal);
+
+    // Delt mellom applyTargetCarDamageAt (skal treffet bulke karosseriet, eller sprekke en rute?) og
+    // resetTargetCarCrash (reis bulker/skjul sprekker igjen ved respawn) - én kilde til sannhet for
+    // begge, i stedet for å regne ut kabinens grenser/bodyCenterY på nytt flere steder.
+    group.userData.bodyMesh = body;
+    group.userData.bodyCenterY = bodyCenterY;
+    group.userData.crackDecal = crackDecal;
+    group.userData.cabinBounds = {
+        minX: -cabinWidth / 2, maxX: cabinWidth / 2,
+        minY: cabinCenterY - cabinHeight / 2, maxY: cabinCenterY + cabinHeight / 2,
+        minZ: cabinCenterZ - cabinLength / 2, maxZ: cabinCenterZ + cabinLength / 2
+    };
 
     return group;
 }
@@ -2079,7 +2277,8 @@ function buildTargetDrone() {
     const armMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
     const bladeMat = new THREE.MeshStandardMaterial({ color: 0xdd3333, transparent: true, opacity: 0.85 });
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.34), bodyMat);
+    const bodyHalfH = 0.06;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, bodyHalfH * 2, 0.34), bodyMat);
     group.add(body);
 
     const armLen = 0.55;
@@ -2094,9 +2293,82 @@ function buildTargetDrone() {
         blade.position.set(p[0] * armLen, 0.06, p[1] * armLen);
         group.add(blade);
     });
+
+    // Batteripakke oppå og en større artillerigranat strappet fast langs buken under - dette målet er
+    // bevisst bygget for å ligne en improvisert FPV-angrepsdrone (batteri på toppen, en granat liggende
+    // VANNRETT under - nese fremover, strappet fast langs de nedre armene), samme type droner mye omtalt
+    // fra Ukraina-krigen (brukerens krav, presisert med et referansebilde: granaten skal ligge langs
+    // buken - IKKE henge loddrett under - og sitte tett inntil rammen uten synlige mellomrom, se
+    // strap-ringene under). Ren, statisk VISUELL silhuett - ingen funksjon/detonasjon, samme "kun et
+    // scenario-rekvisitt"-prinsipp som resten av denne modellen.
+    const batteryMat = new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.75 }); // svart teip/krympeplast - samme farge som på referansebildet
+    const batteryH = 0.07;
+    const battery = new THREE.Mesh(new THREE.BoxGeometry(0.16, batteryH, 0.11), batteryMat);
+    battery.position.y = bodyHalfH + batteryH / 2;
+    battery.castShadow = true;
+    group.add(battery);
+
+    // Messing/oliven granathylse-farge (IKKE samme militær-oliven som den kamuflasjefargede målbilen -
+    // en ekte artillerigranat er typisk messing/lakkert stål, ikke feltmalt kamuflasje) - EGEN
+    // materialforekomst (deler ALDRI et THREE.Material på tvers av objekter i denne fila).
+    const payloadMat = new THREE.MeshStandardMaterial({ color: 0xa8894f, roughness: 0.55, metalness: 0.25 });
+    const strapMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.8 });
+    // "Granaten må være enda større" (brukerens krav, GJENTATT to ganger på rad - denne tredje
+    // forstørrelsen er derfor et solid hopp, ikke nok en liten justering) - radius og lengde skalert videre
+    // opp igjen.
+    const shellRadius = 0.15, shellY = -bodyHalfH - shellRadius; // toppen av granaten tangerer kroppens underside - INGEN loddrett mellomrom
+    // Z-inndeling (lokal -Z er nesa/forover, se orientTowardTravel) - HELE granaten (nese+midtdel+hale)
+    // sentrert rundt z=0, RETT UNDER dronens eget senter (brukerens krav: "granaten må være montert rett
+    // under dronen så tyngdepunktet blir riktig" - forrige versjon forankret halen nær z=0 og lot nesa
+    // stikke langt fram derfra, en tydelig forover-forskjøvet last i stedet for en sentrert en).
+    const noseLen = 0.50, midLen = 0.52, tailLen = 0.17;
+    const shellTotalLen = noseLen + midLen + tailLen;
+    const noseTipZ = -shellTotalLen / 2, tailEndZ = shellTotalLen / 2;
+    const midFrontZ = noseTipZ + noseLen, midRearZ = tailEndZ - tailLen;
+
+    const midBody = new THREE.Mesh(new THREE.CylinderGeometry(shellRadius, shellRadius, midLen, 12), payloadMat);
+    midBody.rotation.x = Math.PI / 2; // sylinderaksen (default lokal Y) -> lokal Z, langs flygeretningen
+    midBody.position.set(0, shellY, (midFrontZ + midRearZ) / 2);
+    midBody.castShadow = true;
+    group.add(midBody);
+
+    // Kjegle med spissen FOROVER (lokal -Z) - roterer -90° om X slik at kjeglens standard-spiss (lokal
+    // +Y) havner mot -Z i stedet, basen (lokal -Y, samme radius som midtseksjonen) flukter mot midtdelen
+    // - se kommentaren over konstantene for selve utledningen.
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(shellRadius, noseLen, 12), payloadMat);
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.set(0, shellY, midFrontZ - noseLen / 2);
+    nose.castShadow = true;
+    group.add(nose);
+
+    // Liten, lys "tennsats"-tupp helt fremst - samme lyse spiss som er synlig ytterst på nesa på
+    // referansebildet, IKKE bare en skarp metallspiss i samme farge som resten.
+    const fuzeTip = new THREE.Mesh(new THREE.SphereGeometry(shellRadius * 0.16, 8, 6), new THREE.MeshStandardMaterial({ color: 0xe8ddc0 }));
+    fuzeTip.position.set(0, shellY, noseTipZ);
+    group.add(fuzeTip);
+
+    // "Boat tail" bakerst - avsmalnende (IKKE spiss) hylsebunn, samme avrundede avslutning som
+    // referansebildet viser i motsatt ende av spissen.
+    const tailTaper = new THREE.Mesh(new THREE.CylinderGeometry(shellRadius * 0.45, shellRadius, tailLen, 12), payloadMat);
+    tailTaper.rotation.x = Math.PI / 2;
+    tailTaper.position.set(0, shellY, (midRearZ + tailEndZ) / 2);
+    tailTaper.castShadow = true;
+    group.add(tailTaper);
+
+    // To stropper i kryss rundt midtseksjonen - den synlige "festet til dronen"-detaljen (brukerens krav:
+    // "festet til dronen så pass på at det ikke er noen rare mellomrom") - en enkel ring (TorusGeometry
+    // ligger allerede i XY-planet med ringaksen langs Z, akkurat granatens egen lengdeakse - ingen egen
+    // rotasjon trengs) rundt granatkroppen på to punkter, i stedet for en løs holder med luft mellom.
+    [midFrontZ + midLen * 0.28, midFrontZ + midLen * 0.72].forEach(function (strapZ) {
+        const strap = new THREE.Mesh(new THREE.TorusGeometry(shellRadius + 0.006, 0.012, 6, 16), strapMat);
+        strap.position.set(0, shellY, strapZ);
+        group.add(strap);
+    });
+
     // "Dronen man skal krasje i kan være litt større" (brukeren) - hele modellen skalert opp 40% i ett,
-    // i stedet for å regne om hver enkelt dimensjon over - TARGET_HIT_RADIUS.drone er økt tilsvarende
-    // (se der), så selve treffsonen fortsatt matcher den nå litt større, synlige modellen.
+    // i stedet for å regne om hver enkelt dimensjon over - TARGET_COLLIDER_HALF.drone er satt tilsvarende
+    // (se der), så selve treff-boksen fortsatt matcher den nå litt større, synlige modellen (batteri +
+    // granat inkludert).
     group.scale.setScalar(1.4);
     group.visible = false;
     return group;
@@ -6265,6 +6537,8 @@ function resetDrone() {
     droneState.loiterCmdRollAngle = null;
     groundContactBlend = 0;
     resetPersonFalls(); // "de kan falle over ende og bli liggende" - reis dem opp igjen ved reset, samme prinsipp som VTOL-simulatorens resetPlane()
+    resetTargetAirborneFalls(); // targetStrike-drone-/fastvinge-målet - reis det opp igjen (samme prinsipp som resetPersonFalls) om det lå falt etter et treff
+    resetTargetCarCrash(); // targetStrike-bilmålet - slutt å bremse og skjul skaden igjen
     repairAllProps(); // reset er også "propellbytte"
     // Sett direkte i ro på avgangsplassen (samme utregning som settleDroneOnGround) - tidligere ble
     // den plassert 1 m over bakken og falt ned dit den skulle stå, synlig som et lite "hopp" ved hver
@@ -7074,6 +7348,23 @@ function enterLandingPhase(message) {
 function allExercisesPassed() {
     return EXERCISE_ORDER.every(function (id) {
         return exerciseProgress[id] && exerciseProgress[id].passed;
+    });
+}
+// Recurrent trening - Quadcopter (RECURRENT_QUAD_ORDER) - samme "bestått i exerciseProgress"-sjekk som
+// allExercisesPassed over, bare mot den EGNE, uavhengige order-arrayen (se RECURRENT_QUAD_ORDER sin egen
+// kommentar for hvorfor dette IKKE bare er allExercisesPassed gjenbrukt på EXERCISE_ORDER).
+function allRecurrentQuadPassed() {
+    return RECURRENT_QUAD_ORDER.every(function (id) {
+        return exerciseProgress[id] && exerciseProgress[id].passed;
+    });
+}
+// Recurrent trening - Acro (RECURRENT_ACRO_ORDER) - racingBestTimeSec (IKKE exerciseProgress, se
+// DEFAULT_EXERCISE_PROGRESS sin egen kommentar: ra1/ra2 er "racing"-stages uten noen
+// exerciseProgress-oppføring i det hele tatt) - bare "fullført minst én gang", ingen tidsterskel/medalje
+// (brukerens krav: recurrent Acro skal ikke være like omfattende som den gradert Acro-bekreftelsen).
+function allRecurrentAcroPassed() {
+    return RECURRENT_ACRO_ORDER.every(function (id) {
+        return racingBestTimeSec(id) !== null;
     });
 }
 
@@ -8219,6 +8510,37 @@ const TARGET_DRONE_BOB_FREQ2 = 0.47, TARGET_DRONE_BOB_AMPLITUDE2 = 0.35;
 const TARGET_RUNNER_STRIDE_FREQ = 7.5, TARGET_RUNNER_STRIDE_AMPLITUDE = 0.85;
 const TARGET_DRONE_BANK_GAIN = 9; // enhetsløs forsterkning (radian krengning per radian retningsendring i den korte kurve-prøven, se bruken)
 const TARGET_DRONE_MAX_BANK = THREE.MathUtils.degToRad(28); // klemmetak i radianer, samme enhet som selve krengningsutregningen
+// Brukerens krav: "unngå at dronen som skal treffes stopper opp og bråsnur så unaturlig. heller snu rundt
+// med litt mer fart for å gjøre det vanskeligere og mer naturlig". Den rene "Heiset cosinus"-S-kurven
+// (uCosine i u/phase-utregningen) gir NØYAKTIG null fart nøyaktig ved hver rutepunkt-ende - matematisk
+// uunngåelig for en ekte fram-og-tilbake-ping-pong langs SAMME linje (farten MÅ krysse null idet
+// retningen reverserer, ellers ville den teleportert forbi enden). I stedet for å bytte hele
+// bevegelsesmodellen (en ekte løkke, slik fastvinge-flyet bruker) blandes S-kurven med en LINEÆR
+// trekant-rampe (uLinear - konstant fart heleveien, samme 0/1-endepunkter) - blandingsvekten under er
+// selve fartsGULVET: ved MIX=0.4 er farten aldri under ~30% av toppfarten, selv i selve
+// reverseringsøyeblikket, mens S-kurvens myke inn/ut-akselerasjon midt i hvert bein beholdes uendret.
+// Brukt BÅDE i selve u-utregningen og i speedAt (pitch-beregningen) - se begge.
+const TARGET_DRONE_PATROL_SPEED_FLOOR = 0.4;
+// Brukerens OPPFØLGING etter fartsgulvet over: "fortsatt bråsnur helt unaturlig på et punkt. skal helst
+// ikke stoppe opp" - farten alene løste ikke det unaturlige, siden selve RETNINGEN uansett reverserer
+// momentant idet ruta når enden (se droneTurnSwoop-bruken i updateTargetHitVisuals). WINDOW: hvor bred
+// (i samme fase-enheter som u/phase, 0..2) sløyfa er - hvor lenge før/etter selve snupunktet posisjonen
+// begynner å bule ut til siden. AMPLITUDE: hvor langt til siden bulen når på det meste, i meter - holdt
+// beskjeden med vilje (banens endepunkter fikk tidligere egne, ganske trange klaringsjusteringer mot
+// bygningen, se TARGET_PATH_POINTS.drone sin kommentar - en for stor sløyfe her kunne re-introdusert akkurat
+// det problemet).
+const TARGET_DRONE_TURN_SWOOP_WINDOW = 0.16, TARGET_DRONE_TURN_SWOOP_AMPLITUDE = 5;
+// Nese-tilt fra selve FARTSENDRINGEN langs ruta (IKKE svingkurvatur, det er bank-konstantene over) - se
+// bruken i updateTargetHitVisuals. Brukerens krav: "pass på at måldronen oppfører seg realistisk.
+// fartsretning i den retningen den tilter" - en ekte drone tilter nesa NED for å akselerere fremover og
+// OPP/bakover for å bremse, den flyr aldri perfekt flatt gjennom en fart-opp/fart-ned som ping-pong-
+// easingen (se u/phase-utregningen) uunngåelig gir ved hver rutepunkt-ende.
+const TARGET_DRONE_PITCH_SAMPLE_DT = 0.05; // sekunder - kort nok til en god numerisk akselerasjons-tilnærming, se speedAt-bruken
+// Kalibrert mot patrol.drone sin egen, typiske toppakselerasjon (se speedAt-utregningen i
+// updateTargetHitVisuals) - ikke eksakt (ruta/farten kan endres senere), men klemmetaket (MAX_PITCH under)
+// hindrer uansett urealistisk store utslag selv om anslaget bommer noe.
+const TARGET_DRONE_PITCH_GAIN = 0.12;
+const TARGET_DRONE_MAX_PITCH = THREE.MathUtils.degToRad(35);
 // Fastvinge-flyet: "litt tilfeldige men naturlige endringer i høyde og bank" (brukeren, om FBWA-modusen) -
 // IKKE ett rent, periodisk sinussvev som dronens bob (som ville sett for regelmessig/mekanisk ut for et
 // fly), men SUMMEN av to sinusledd med ulik (og innbyrdes urelatert) frekvens/fase - fortsatt en helt
@@ -8230,15 +8552,95 @@ const TARGET_FW_ALT_FREQ1 = 0.22, TARGET_FW_ALT_AMP1 = 1.3;
 const TARGET_FW_ALT_FREQ2 = 0.53, TARGET_FW_ALT_AMP2 = 0.6;
 const TARGET_FW_BANK_GAIN = 13;
 const TARGET_FW_MAX_BANK = THREE.MathUtils.degToRad(38);
-// TARGET_HIT_RADIUS.drone økt fra 2.2 til 3.0 - matcher modellen som nå er 40% større (se buildTargetDrone,
-// brukerens krav: "Dronen man skal krasje i kan være litt større").
-// fixedwing: 3.0 var satt ut fra DEN OPPRINNELIGE, enkle stand-in-modellens vingespenn (2.2 m, se
-// git-historikken) - men den ble senere byttet ut med den ekte, portable Heewing-geometrien (buildHwPlane),
-// som er MYE mindre (spec.wingSpan=1.2 m, se HEEWING_TARGET_SPEC) - 3.0 sto uendret igjen etter byttet,
-// og ga dermed en treffsone godt over dobbelt så stor som selve den synlige modellen (brukerens rapport:
-// "hadde en krasj som ble detektert litt for langt fra flyet"). Satt ned til 1.5 - fortsatt en komfortabel
-// margin over selve kroppen (~1 m lang, 1.2 m vingespenn), men ikke lenger grovt overdrevet.
-const TARGET_HIT_RADIUS = { drone: 3.0, car: 2.6, person: 1.6, fixedwing: 1.5 };
+// Erstatter den forrige, generiske kule-radiusen (TARGET_HIT_RADIUS, samme tall PÅ ALLE FIRE VARIANTER
+// uansett faktisk kroppsform) - brukerens krav: "må ha bedre beregning av kollisjon. at det ikke bare er
+// en generisk radius rundt objektet". Halv-utstrekning for en boks i MÅLETS EGEN, orienterte lokale ramme
+// (se targetBoxLocalPoint/pointHitsTargetBox) - matcher selve den synlige modellens faktiske form/
+// størrelse langt tettere enn én enkelt kule kunne. offY: boksens SENTER i lokal Y relativt til
+// handle.position - for bil/person (der group-origo er BAKKENIVÅ, se buildCar/buildTargetRunner) er
+// dette halve kroppshøyden; for drone/fastvinge-fly (der group-origo ALLEREDE er selve flyhøyde-senteret)
+// er det 0.
+// drone: kroppen + de fire armene/bladene (buildTargetDrone, skalert 1.4x) rekker til ~0.85 m fra senter
+// i BÅDE X og Z - granaten (VANNRETT langs buken, nese fremover, se buildTargetDrone) er nå SENTRERT
+// rundt z=0 (brukerens krav: "granaten må være montert rett under dronen så tyngdepunktet blir riktig",
+// IKKE lenger forankret med halen nær origo og nesa stikkende langt fram derfra) og rekker uansett bare
+// ~0.83 m til hver side langs Z selv ved sin nåværende, forstørrede lengde - fortsatt godt innenfor det
+// armene/bladene alt dekker, så halvD er UENDRET symmetrisk (ingen offZ trengs lenger her, i motsetning
+// til en periode tidligere da granaten var forover-forskjøvet). IKKE symmetrisk i HØYDEN derimot (offY<0):
+// batteriet oppå rekker bare ~0.18 m over origo, mens granatens underside (den ligger tangert inntil
+// kroppens underside, se shellY) rekker ~0.50 m under - offY senterer boksen midt i den faktiske
+// utstrekningen på DEN aksen, samme "offZ virker som offY"-idé som fixedwing-boksen under.
+// car: kroppen er 1.8x0.8x4.3 (buildCar) pluss kabintak opp til ~1.7 m - halvW/halvD/toppen matcher det
+// (litt margin for speil/støtfanger), offY = halve totalhøyden.
+// person: buildTargetRunner er ~1.5 m høy, smal (torso 0.34 bred/0.2 dyp + utsvingte armer/bein).
+// fixedwing: HEEWING_TARGET_SPEC (wingSpan 1.2 m, fuselage ~1.0 m) - liten margin for haleflate/propell.
+// fixedwing sin boks er UTLEDET, ikke anslått - regnet ut fra de faktiske build-tallene i buildHwPlane
+// (HW_FUSELAGE_LENGTH_BUILD/HW_NOSE_LEN_RATIO/HW_CABIN_LEN_RATIO/HW_TAIL_LEN_RATIO, finHeight/finBaseY,
+// wingMountYVisual osv.), ganget med HEEWING_TARGET_SPEC.visualScale (0.75, samme skalering
+// buildHwPlane selv gjør til slutt via group.scale). Modellens LOKALE origo (group-senteret) ligger midt
+// i KABIN-seksjonen, IKKE midt mellom nesetupp og halefinne - halen (hale-bom + hekk-finne, se
+// FIN_RAKE_AFT) rekker vesentlig lenger bak (~+0.57 m) enn nesa rekker fram (~-0.34 m), og fin-toppen
+// (~+0.15 m) ligger godt over skrogets underside (~-0.05 m). En boks SENTRERT i origo (offZ/offY begge 0,
+// slik den forrige, generiske gjetningen var) ville derfor enten vært for liten bak eller unødig stor
+// foran/under - offZ/offY dytter boks-SENTERET til midten av den faktiske, asymmetriske utstrekningen i
+// stedet (se targetBoxLocalPoint/pointHitsTargetBox - offZ virker akkurat som offY, bare langs Z).
+const TARGET_COLLIDER_HALF = {
+    drone: { halfW: 0.85, halfH: 0.35, halfD: 0.85, offY: -0.16 },
+    car: { halfW: 1.05, halfH: 0.85, halfD: 2.25, offY: 0.85 },
+    person: { halfW: 0.32, halfH: 0.75, halfD: 0.32, offY: 0.75 },
+    fixedwing: { halfW: 0.65, halfH: 0.13, halfD: 0.51, offY: 0.06, offZ: 0.12 }
+};
+// Ekstra margin lagt til halv-utstrekningen KUN ved selve treff-TESTEN (pointHitsTargetBox), ikke ved den
+// synlige/fysiske boksen ellers (closestPointOnTargetBox) - representerer droneens EGEN fysiske størrelse
+// (den er selv ikke et matematisk punkt uten utstrekning), samme idé som en Minkowski-sum av to former.
+// Uten denne måtte droneens (usynlige) senterpunkt presist inn i selve mål-boksen for at et treff skulle
+// telle - med den registreres et treff så snart droneens egen kropp faktisk kunne berørt mål-boksens
+// overflate.
+const TARGET_HIT_MARGIN = 0.28;
+// Hvor langt UTENFOR selve treffpunktet (se closestPointOnTargetBox) droneen dyttes til idet et treff
+// registreres - "skal ikke ... glitche gjennom objektet" (brukerens krav): uten denne dyttingen kunne
+// droneens EGEN posisjon dette bildet allerede stå et stykke inni/forbi selve mål-modellen (fysikken har
+// jo alt flyttet den dit FØR selve treffsjekken kjører), synlig som at den "spøkelses-glir" inn i den et
+// par bilder før krasj-fysikken (fritt fall, se updatePhysics) tar over. Litt mindre enn TARGET_HIT_MARGIN
+// - nok til å sitte synlig UTENPÅ overflaten, ikke midt oppi selve treff-margin-sonen.
+const TARGET_IMPACT_STANDOFF = 0.16;
+// Hvor mye av droneens EGEN fart (etter at selve inn-i-overflaten-komponenten er fjernet, se outward i
+// updateTargetHitStage) som beholdes idet et treff registreres - brukerens rapport: "drona man flyr selv
+// skal ikke bare stoppe opp og falle rett ned hvis man har fart fremover. det er alt for unaturlig". 0.35
+// = en kraftig, troverdig kollisjonsdemping (ikke en myk sammenstøt-følelse), men langt fra den
+// forrige, totale nullstillingen - resten av farten driver droneen naturlig videre (og angulærfarten
+// tumler den) mens tyngdekraften tar over, i stedet for at den stopper momentant midt i lufta.
+const TARGET_HIT_VELOCITY_RETENTION = 0.35;
+// Lokalt punkt (verdensrom -> målets EGEN orienterte ramme) - bruker HELE handle.quaternion (ikke bare
+// yaw/patruljeretning), siden drone-/fastvinge-målet også krenger/stiger i farten (se
+// updateTargetHitVisuals sin bank-utregning) - en boks som kun fulgte yaw ville stått feil vei akkurat i
+// svingene.
+function targetBoxLocalPoint(handle, worldPoint) {
+    return worldPoint.clone().sub(handle.position).applyQuaternion(handle.quaternion.clone().invert());
+}
+// Er worldPoint (droneens senter) innenfor mål-boksen + TARGET_HIT_MARGIN i alle tre akser samtidig -
+// selve treff-testen, se updateTargetHitStage.
+function pointHitsTargetBox(variant, handle, worldPoint) {
+    const c = TARGET_COLLIDER_HALF[variant];
+    const local = targetBoxLocalPoint(handle, worldPoint);
+    return Math.abs(local.x) <= c.halfW + TARGET_HIT_MARGIN &&
+        Math.abs(local.y - c.offY) <= c.halfH + TARGET_HIT_MARGIN &&
+        Math.abs(local.z - (c.offZ || 0)) <= c.halfD + TARGET_HIT_MARGIN;
+}
+// Nærmeste punkt PÅ selve boks-OVERFLATEN (uten margin) til worldPoint, i verdensrom - det faktiske
+// treffpunktet. Brukt BÅDE til å dytte droneen ut dit (se TARGET_IMPACT_STANDOFF over) og til å plassere
+// bil-skaden presist der kollisjonen skjedde (se applyTargetCarDamageAt).
+function closestPointOnTargetBox(variant, handle, worldPoint) {
+    const c = TARGET_COLLIDER_HALF[variant];
+    const local = targetBoxLocalPoint(handle, worldPoint);
+    const offZ = c.offZ || 0;
+    const clamped = new THREE.Vector3(
+        clamp(local.x, -c.halfW, c.halfW),
+        clamp(local.y - c.offY, -c.halfH, c.halfH) + c.offY,
+        clamp(local.z - offZ, -c.halfD, c.halfD) + offZ
+    );
+    return clamped.applyQuaternion(handle.quaternion).add(handle.position);
+}
 const TARGET_CENTER = { drone: TARGET_DRONE_CENTER, car: TARGET_CAR_CENTER, person: TARGET_RUNNER_CENTER, fixedwing: TARGET_FIXEDWING_CENTER };
 const TARGET_HIT_LABEL = { drone: "dronen", car: "bilen", person: "personen", fixedwing: "modellflyet" };
 // Antall treff PÅ SAMME mål som kreves før banen går videre til neste måltype (brukerens krav: "husk to
@@ -8305,32 +8707,65 @@ function updateTargetLivesHud() {
         targetLivesIcons.children[i].classList.toggle("sim-target-life-used", i < used);
     }
 }
-// Hvor lenge "Truffet!"-popupen (og selve ventetiden før målet faktisk respawner/steget avanserer) varer
-// etter et treff - brukerens krav: "når man har truffet må man få opp en liten popup om treff. vent i 2
-// sekunder før resett." Se updateTargetHitStage/exerciseState.targetHitPendingUntil.
+// Hvor lenge "Truffet!"-popupen varer etter et treff - brukerens krav: "når man har truffet må man få
+// opp en liten popup om treff. vent i 2 sekunder før resett." Se updateTargetHitStage. Selve
+// RESPAWN-ventetiden (exerciseState.targetHitPendingUntil) bruker VANLIGVIS også nøyaktig denne - UNNTATT
+// for et luftbårent mål (drone/fastvinge-fly) som falt fritt fra stor høyde (se
+// estimateAirborneFallDelayMs): fastvinge-flyets marsjhøyde (32 m) rekker ikke å falle helt ned til bakken
+// på bare 2 sekunder, og målet skal jo faktisk LANDE (brukerens krav: "dronene som treffes i lufta må
+// falle ned"), ikke bare hoppe rett til usynlig midt i fallet.
 const TARGET_HIT_POPUP_DELAY_MS = 2000;
+// Fritt-fall-tid (samme TARGET_FALL_GRAVITY som selve fallanimasjonen, se updateTargetAirborneFalls) fra
+// målets nåværende høyde ned til bakken under, pluss litt margin til å faktisk bli LIGGENDE synlig et
+// øyeblikk før respawn - aldri kortere enn den vanlige popup-varigheten (et lavt drone-mål som treffes
+// nær bakken skal fortsatt bruke minst de vanlige 2 sekundene, samme følelse som før).
+function estimateAirborneFallDelayMs(handle) {
+    // Samme bottomOffset-korreksjon som updateTargetAirborneFalls (se dens egen kommentar) - uten den ville
+    // anslaget her vært litt for KORT for dronemålet (falltiden regnes til origo når bakken, ikke til der
+    // den hengende nyttelasten faktisk lander).
+    const c = TARGET_COLLIDER_HALF[handle === targetDroneHandle ? "drone" : "fixedwing"];
+    const bottomOffset = c.offY - c.halfH;
+    const groundY = solidSurfaceHeightAt(handle.position.x, handle.position.z, handle.position.y) - bottomOffset;
+    const dropHeight = Math.max(0, handle.position.y - groundY);
+    const fallSec = Math.sqrt(2 * dropHeight / TARGET_FALL_GRAVITY);
+    return Math.max(TARGET_HIT_POPUP_DELAY_MS, (fallSec + 0.4) * 1000);
+}
 
 function targetHitHandleFor(variant) {
     return variant === "drone" ? targetDroneHandle : variant === "car" ? targetCarHandle :
         variant === "fixedwing" ? targetFixedWingHandle : targetRunnerHandle;
 }
-// Klokkeretning fra dronens NÅVÆRENDE posisjon/nese til et gitt punkt, sett fra cockpiten (FPV,
-// tvunget for hele targetStrike-øvelsen - se EXERCISES.targetStrike.forceCameraMode) - 12 = rett fram
-// (langs droneState.quaternion sin lokale -Z, samme "nesa"-konvensjon som resten av fila, f.eks.
-// applyKillswitchInputOverride), 3 = rett til høyre, 6 = rett bak, 9 = rett til venstre, medurs derimellom.
-// Brukerens krav: "gi brukeren et lite hint i popupen om ca. hvor flyet er (retning kl.11?)" -
-// modellflyet (fixedwing) er MYE fortere og går i en stor, åpen løkke langt unna de tre andre målene
-// (se TARGET_PATH_POINTS.fixedwing), og er dermed betydelig vanskeligere å få øye på i tide enn de tre
-// andre - derfor kun brukt for den varianten (targetClockHint under), ikke drone/bil/person.
-function clockHourFromDrone(point) {
+// Retning fra dronens NÅVÆRENDE posisjon/nese til et gitt punkt, sett fra cockpiten (FPV, tvunget for
+// hele targetStrike-øvelsen - se EXERCISES.targetStrike.forceCameraMode) - 0° = rett fram (langs
+// droneState.quaternion sin lokale -Z, samme "nesa"-konvensjon som resten av fila, f.eks.
+// applyKillswitchInputOverride), positiv = til høyre, negativ = til venstre. Brukerens krav: "gi brukeren
+// et lite hint i popupen om ca. hvor flyet er" - modellflyet (fixedwing) er MYE fortere og går i en stor,
+// åpen løkke langt unna de tre andre målene (se TARGET_PATH_POINTS.fixedwing), og er dermed betydelig
+// vanskeligere å få øye på i tide enn de tre andre - derfor kun brukt for den varianten
+// (targetDirectionHintPhrase/targetClockHint under), ikke drone/bil/person.
+function directionAngleDegFromDrone(point) {
     const toTarget = new THREE.Vector3().subVectors(point, droneState.position);
     toTarget.y = 0;
-    if (toTarget.lengthSq() < 1e-6) return 12;
+    if (toTarget.lengthSq() < 1e-6) return 0;
     const local = toTarget.normalize().applyQuaternion(droneState.quaternion.clone().invert());
-    const angleDeg = Math.atan2(local.x, -local.z) * (180 / Math.PI); // lokal -Z er forover
-    let hour = Math.round(angleDeg / 30) % 12;
-    if (hour <= 0) hour += 12;
-    return hour;
+    return Math.atan2(local.x, -local.z) * (180 / Math.PI); // lokal -Z er forover
+}
+// Klokkeslett ("kl. 11") ble erstattet med ren tekst - brukerens rapport: "kan være forvirrende med
+// klokkeslett. kanskje fjerne det. si (rett fram og litt til venstre)?" Samme "grovt anslag, ikke en
+// presis peker"-idé som før, bare beskrevet i ord i stedet for en urskive - antar piloten oppfatter et
+// klokkeslett-tall som en presis vinkel, mens de faktisk brukte klokke-bøttene (30° hver) alltid var
+// omtrentlige. Terskelverdiene under gir omtrent samme oppløsning som de gamle 30°-klokke-bøttene, bare
+// i vanlig, entydig norsk.
+function targetDirectionHintPhrase(angleDeg) {
+    const abs = Math.abs(angleDeg);
+    if (abs < 12) return "rett fram";
+    const side = angleDeg > 0 ? "høyre" : "venstre";
+    if (abs < 40) return "rett fram og litt til " + side;
+    if (abs < 80) return "fram og til " + side;
+    if (abs < 100) return "rett til " + side;
+    if (abs < 145) return "bak og til " + side;
+    if (abs < 168) return "rett bak og litt til " + side;
+    return "rett bak";
 }
 // Kun et GROVT, ett-blikks anslag idet popupen vises (målets posisjon i selve trefføyeblikket, ikke
 // live-oppdatert mens popupen står) - modellflyet rekker uansett å bevege seg videre langs løkka i
@@ -8339,7 +8774,7 @@ function targetClockHint(variant) {
     if (variant !== "fixedwing") return "";
     const handle = targetHitHandleFor(variant);
     if (!handle.visible) return "";
-    return " Omtrent i retning kl. " + clockHourFromDrone(handle.position) + ".";
+    return " (" + targetDirectionHintPhrase(directionAngleDegFromDrone(handle.position)) + ")";
 }
 // Klargjør/(re)starter ett måls patrulje - kalt fra spawnForExercise (steg 0, øvelsesstart/full R-restart),
 // advanceExerciseStage (neste måltype etter to treff) OG updateTargetHitStage (samme mål på nytt etter
@@ -8444,10 +8879,13 @@ function updateTargetHitVisuals(now) {
     // patruljebevegelsen mens han faller/blir liggende, i stedet for å fortsette å gli videre langs banen
     // med beina fortsatt i gang under (brukerens krav: "han skal falle over ende når man krasjer i han").
     // updatePersonFalls (kalt UBETINGET fra animate()) styrer selve fallanimasjonen uavhengig av dette.
-    if (handle.userData.fallen) return;
+    // Samme prinsipp for drone/fastvinge-fly (crashFalling - faller fritt, se updateTargetAirborneFalls)
+    // og bilen (braking - bremser til stopp, se updateTargetCarBraking): patruljebevegelsen fryses idet et
+    // treff registreres (updateTargetHitStage), egne fysikk-funksjoner tar over derfra.
+    if (handle.userData.fallen || handle.userData.crashFalling || handle.userData.braking) return;
     const patrol = getTargetPatrol(variant);
     const elapsedSec = (now - exerciseState.targetPatrolStartTime) / 1000;
-    let u, forward;
+    let u, forward, droneTurnSwoop = 0;
     if (variant === "fixedwing") {
         // LUKKET løkke, alltid samme retning - IKKE ping-pong (se TARGET_PATROL_CLOSED/
         // TARGET_PATH_POINTS.fixedwing sin egen kommentar). Et ekte modellfly kan ikke stoppe midt i lufta
@@ -8460,7 +8898,28 @@ function updateTargetHitVisuals(now) {
     } else {
         const cycleSec = (2 * patrol.length) / TARGET_SPEED[variant];
         const phase = ((elapsedSec % cycleSec) / cycleSec) * 2; // 0..2 (0/2 = rutestart, 1 = ruteslutt)
-        u = clamp((1 - Math.cos(Math.PI * phase)) / 2, 0, 1); // 0..1, easet kurveposisjon
+        const uCosine = (1 - Math.cos(Math.PI * phase)) / 2; // 0..1, easet kurveposisjon - null fart nøyaktig ved hver ende
+        if (variant === "drone") {
+            // Fartsgulv i selve reverseringen - se TARGET_DRONE_PATROL_SPEED_FLOOR sin egen kommentar for
+            // hele utledningen. uLinear er en trekantbølge (0->1->0 over samme fase-intervall som uCosine),
+            // begge når NØYAKTIG 0/1 ved akkurat de samme fasepunktene - blandingen (uansett vekt) treffer
+            // derfor alltid u=0/1 nøyaktig idet ruta faktisk starter/slutter, kun selve FARTSPROFILEN
+            // mellom dem endres.
+            const uLinear = 1 - Math.abs(phase - 1);
+            u = clamp(TARGET_DRONE_PATROL_SPEED_FLOOR * uLinear + (1 - TARGET_DRONE_PATROL_SPEED_FLOOR) * uCosine, 0, 1);
+            // Brukerens rapport ETTER fartsgulvet over: "fortsatt bråsnur helt unaturlig på et punkt. skal
+            // helst ikke stoppe opp" - fartsgulvet alene løser bare halve problemet (farten går aldri helt
+            // til 0), men selve RETNINGEN reverserer likevel MOMENTANT idet den når enden av ruta, uansett
+            // hvor mye fart den har igjen. distToTurn/turnProximity måler hvor nærme (i fase) man er en av
+            // de to reverseringspunktene (0/1/2) - se droneTurnSwoop sin bruk lenger ned, som buler
+            // POSISJONEN til siden nær akkurat disse punktene, slik at selve svingen blir en synlig,
+            // avrundet sløyfe i stedet for et rett linjestykke som snur på stedet.
+            const distToTurn = Math.min(phase, Math.abs(phase - 1), Math.abs(phase - 2));
+            const turnProximity = clamp(1 - distToTurn / TARGET_DRONE_TURN_SWOOP_WINDOW, 0, 1);
+            droneTurnSwoop = turnProximity * turnProximity * (3 - 2 * turnProximity); // smoothstep - myk inn/ut av sløyfa
+        } else {
+            u = clamp(uCosine, 0, 1);
+        }
         forward = phase < 1;
     }
     const pos = patrol.curve.getPointAt(u);
@@ -8468,6 +8927,16 @@ function updateTargetHitVisuals(now) {
     if (variant === "drone") {
         pos.y += Math.sin(elapsedSec * TARGET_DRONE_BOB_FREQ) * TARGET_DRONE_BOB_AMPLITUDE +
             Math.sin(elapsedSec * TARGET_DRONE_BOB_FREQ2 + 2.3) * TARGET_DRONE_BOB_AMPLITUDE2;
+        if (droneTurnSwoop > 0) {
+            // Buler posisjonen ut til siden, vinkelrett på selve kurve-tangenten - IKKE reisretningen
+            // (som reverserer akkurat her, se forward), men den RÅ tangenten (kurvens egen, alltid økende-u
+            // retning), som er kontinuerlig gjennom hele reverseringen (ingen brått fortegnsskifte idet
+            // "forward" flipper). Uten det ville selve sløyfa buttet ut til ÉN side inn mot punktet og til
+            // MOTSATT side ut igjen - et vinklet "V" i stedet for en jevn, avrundet krok/sløyfe rundt selve
+            // snupunktet.
+            const perp = new THREE.Vector3(-tangent.z, 0, tangent.x);
+            pos.addScaledVector(perp, TARGET_DRONE_TURN_SWOOP_AMPLITUDE * droneTurnSwoop);
+        }
     }
     // Fastvinge-flyets "litt tilfeldige men naturlige" høydevandring (brukeren, om FBWA) - se
     // TARGET_FW_ALT_*-konstantenes egen kommentar for hvorfor summen av to sinusledd i stedet for ett.
@@ -8523,10 +8992,204 @@ function updateTargetHitVisuals(now) {
         const bank = clamp(turnAmount * bankGain, 0, maxBank) * bankSign;
         handle.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bank));
     }
+    // Nese-tilt fra fartsENDRING (IKKE svingkurvatur, det er bank-koden over) - KUN dronemålet, se
+    // TARGET_DRONE_PITCH_GAIN sin egen kommentar for hvorfor (fastvinge-flyet holder konstant fart i sin
+    // lukkede løkke og har derfor ingen fart-endring å tilte for). speedAt(t) er den DERIVERTE av SAMME
+    // u/phase-blanding (uLinear+uCosine, se TARGET_DRONE_PATROL_SPEED_FLOOR) som selve u-utregningen over
+    // allerede bruker - IKKE en ny bevegelsesmodell, bare samme fart lest av på to nære tidspunkt for å
+    // anslå akselerasjonen numerisk (samme "kort steg fremover langs samme, etablerte formel"-prinsipp som
+    // uAhead-krengningen over bruker for kurvatur). uLinear sin egen deriverte (±1, med et brått
+    // fortegnsskifte nøyaktig ved hver rutepunkt-ende) gir bevisst et skarpt (men ENDELIG, aldri
+    // uendelig/NaN) hopp i selve akselerasjons-anslaget der - klemmetaket (TARGET_DRONE_MAX_PITCH) fanger
+    // opp dette helt trygt, og et skarpt nese-opp-utslag akkurat i selve snupunktet passer for øvrig godt
+    // med en rask, "flikkete" snumanøver (brukerens krav: "snu rundt med litt mer fart").
+    if (variant === "drone") {
+        const droneCycleSec = (2 * patrol.length) / TARGET_SPEED.drone;
+        const speedAt = function (t) {
+            const ph = ((t % droneCycleSec) / droneCycleSec) * 2;
+            const linearDeriv = ph < 1 ? 1 : -1;
+            const cosineDeriv = (Math.PI / 2) * Math.sin(Math.PI * ph);
+            const duDphase = TARGET_DRONE_PATROL_SPEED_FLOOR * linearDeriv + (1 - TARGET_DRONE_PATROL_SPEED_FLOOR) * cosineDeriv;
+            return Math.abs(patrol.length * duDphase * (2 / droneCycleSec));
+        };
+        const tangentialAccel = (speedAt(elapsedSec + TARGET_DRONE_PITCH_SAMPLE_DT) - speedAt(elapsedSec)) / TARGET_DRONE_PITCH_SAMPLE_DT;
+        // Negativt fortegn: positiv akselerasjon (farten øker) skal tilte NESA NED (mot -Y) for å
+        // akselerere fremover - en rotasjon om lokal +X med NEGATIV vinkel gjør nettopp det (lokal -Z,
+        // "nesa", svinger mot -Y for θ<0 - se kommentaren ved konstantene for selve utledningen).
+        // Retardasjon (farten avtar, negativ akselerasjon) gir da et POSITIVT utslag - nesa opp/bakover,
+        // som en ekte drone som bremser.
+        const pitch = -clamp(tangentialAccel * TARGET_DRONE_PITCH_GAIN, -TARGET_DRONE_MAX_PITCH, TARGET_DRONE_MAX_PITCH);
+        handle.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch));
+    }
 }
-// Selve treffsjekken - ren 3D-avstand (i motsetning til de fleste andre steg-typenes horisontale sjekker,
-// se f.eks. HELI_SAFE_HORIZ_DISTANCE-kommentaren for hvorfor DE bevisst er horisontale - her skal en
-// treffende kollisjon telle uansett retning/vinkel, akkurat som et ekte sammenstøt ville gjort).
+
+/* ---------- Konsekvenser av et faktisk treff - "må ha kollisjonsdeteksjon ... så det blir et krasj",
+   "bilen må bremse og få skader på seg på treffpunktet", "dronene som treffes i lufta må falle ned"
+   (brukerens krav). Målet blir IKKE usynlig i selve trefføyeblikket lenger (se updateTargetHitStage) -
+   det reagerer synlig i stedet, helt til den vanlige respawn-forsinkelsen (TARGET_HIT_POPUP_DELAY_MS) er
+   over. ---------- */
+const TARGET_FALL_GRAVITY = 9.8; // m/s^2 - rent fritt fall, samme tyngdekraft som resten av fila
+// Tilfeldig, men troverdig tumle-hastighet for et luftbårent mål som mister oppdriften idet det treffes -
+// ren VISUELL rotasjon (ikke en ekte stivlegeme-fysikksimulering), samme "godt nok for et scenario-prop"-
+// prinsipp som resten av targetStrike-visualiseringen.
+const TARGET_FALL_SPIN_MIN = 2.0, TARGET_FALL_SPIN_MAX = 5.5;
+// Faller fritt til bakken i stedet for å bare forsvinne (brukerens krav: "dronene som treffes i lufta må
+// falle ned") - kalt fra updateTargetHitStage sin treff-gren for BÅDE drone- og fastvinge-målet (begge er
+// luftbårne mål som mister oppdriften idet de "krasjer" - se updateTargetAirborneFalls).
+function startTargetAirborneFall(handle) {
+    if (!handle || handle.userData.crashFalling) return;
+    handle.userData.crashFalling = true;
+    handle.userData.fallLanded = false;
+    handle.userData.fallVelY = 0;
+    handle.userData.fallSpinAxis = new THREE.Vector3(
+        Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5
+    ).normalize();
+    handle.userData.fallSpinSpeed = TARGET_FALL_SPIN_MIN + Math.random() * (TARGET_FALL_SPIN_MAX - TARGET_FALL_SPIN_MIN);
+}
+// Kalt UBETINGET hvert bilde fra animate() (samme mønster som updatePersonFalls) - de to luftbårne
+// målenes egne håndtak er alltid trygge å sjekke her selv når targetStrike-øvelsen ikke er aktiv i det
+// hele tatt (crashFalling er da alltid usann, funksjonen blir da bare to raske no-op-sjekker).
+function updateTargetAirborneFalls(dt) {
+    [targetDroneHandle, targetFixedWingHandle].forEach(function (handle) {
+        if (!handle || !handle.userData.crashFalling || handle.userData.fallLanded) return;
+        handle.userData.fallVelY -= TARGET_FALL_GRAVITY * dt;
+        handle.position.y += handle.userData.fallVelY * dt;
+        handle.rotateOnWorldAxis(handle.userData.fallSpinAxis, handle.userData.fallSpinSpeed * dt);
+        // solidSurfaceHeightAt (IKKE bare 0) - målet lander troverdig oppå bakkeformene/fjellene der det
+        // faktisk faller, samme bakkehøyde-oppslag som droneens egen fysikk bruker. bottomOffset: dronens
+        // group-ORIGO er ikke selve modellens laveste punkt (se TARGET_COLLIDER_HALF.drone sin kommentar -
+        // den hengende "granat"-nyttelasten stikker et godt stykke under origo) - uten denne korreksjonen
+        // ville origo landet PÅ bakken mens selve nyttelastens nesekjegle sto synlig nedgravd i terrenget.
+        // En tilnærming (IKKE eksakt, siden tumlingen over kan ha rotert "laveste punkt" til å peke en helt
+        // annen vei idet den lander) - godt nok for en ren visuell fallanimasjon.
+        const c = TARGET_COLLIDER_HALF[handle === targetDroneHandle ? "drone" : "fixedwing"];
+        const bottomOffset = c.offY - c.halfH;
+        const groundY = solidSurfaceHeightAt(handle.position.x, handle.position.z, handle.position.y) - bottomOffset;
+        if (handle.position.y <= groundY) {
+            handle.position.y = groundY;
+            handle.userData.fallLanded = true;
+        }
+    });
+}
+function resetTargetAirborneFalls() {
+    [targetDroneHandle, targetFixedWingHandle].forEach(function (handle) {
+        if (!handle) return;
+        handle.userData.crashFalling = false;
+        handle.userData.fallLanded = false;
+        handle.rotation.set(0, 0, 0); // spawnTargetHitStage/updateTargetHitVisuals setter riktig retning igjen ved neste spawn
+    });
+}
+
+const TARGET_CAR_BRAKE_DECEL = 8.5; // m/s^2 - en troverdig kraftig nødbrems, stopper fra TARGET_SPEED.car (13.3 m/s) på under 2 sekunder
+// Hvor langt inn/dypt selve bulken dyttes, og hvor bredt "nedslagsfeltet" (vertekser innenfor denne
+// radiusen fra treffpunktet flyttes) er - se dentCarBodyAt. Kvadratisk (IKKE lineær) falloff mot randen
+// gir en avrundet krater-form (bratt nær sentrum, glatt ut mot kanten) i stedet for en skarp, konisk spiss.
+const CAR_DENT_RADIUS = 0.42, CAR_DENT_DEPTH = 0.075;
+// Ekte geometrisk bulk i selve karosseri-meshet (IKKE en løs boks flytende utenpå, som ga brukerens
+// rapport "skade på bilen lager en rar blokk") - dytter hver vertex INNENFOR CAR_DENT_RADIUS fra
+// treffpunktet innover mot boksens eget senter, proporsjonalt med hvor nærme sentrum av bulken den er.
+// localOnBody: impactPoint konvertert til body-MESHETS egen lokale rom (IKKE gruppens - body er selv
+// forskjøvet bodyCenterY opp i gruppa, se buildCar), siden geometri-vertekser alltid er i meshets eget rom.
+function dentCarBodyAt(handle, localImpactPoint) {
+    const body = handle.userData.bodyMesh;
+    if (!body) return;
+    const localOnBody = localImpactPoint.clone();
+    localOnBody.y -= handle.userData.bodyCenterY;
+    const posAttr = body.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < posAttr.count; i++) {
+        v.fromBufferAttribute(posAttr, i);
+        const dist = v.distanceTo(localOnBody);
+        if (dist >= CAR_DENT_RADIUS) continue;
+        const falloff = 1 - dist / CAR_DENT_RADIUS;
+        const push = CAR_DENT_DEPTH * falloff * falloff;
+        // v sin egen retning FRA boksens senter (0,0,0 i meshets lokale rom) - dytter verten i MOTSATT
+        // retning (inn mot senteret), akkurat som en ekte innbulking av platen der den ble truffet.
+        v.addScaledVector(v.clone().normalize(), -push);
+        posAttr.setXYZ(i, v.x, v.y, v.z);
+    }
+    posAttr.needsUpdate = true;
+    body.geometry.computeVertexNormals();
+}
+// Sprekker RUTEN i stedet for å bulke karosseriet - glass sprekker, det bulker ikke (brukerens krav:
+// "ruter som sprekker"). Kalt i stedet for dentCarBodyAt når treffpunktet faktisk lander INNENFOR
+// kabinboksens grenser (se applyTargetCarDamageAt) - orienterer den flate sprekk-dekalen (crackDecal, se
+// buildCar) mot den nærmeste rute-flaten (front/bak/side) ut fra hvilken akse treffpunktet avviker mest
+// fra kabinens eget senter langs.
+function crackCarWindowAt(handle, localImpactPoint) {
+    const decal = handle.userData.crackDecal;
+    const bounds = handle.userData.cabinBounds;
+    if (!decal || !bounds) return;
+    const cx = (bounds.minX + bounds.maxX) / 2, cz = (bounds.minZ + bounds.maxZ) / 2;
+    const dx = localImpactPoint.x - cx, dz = localImpactPoint.z - cz;
+    decal.position.copy(localImpactPoint);
+    if (Math.abs(dx) > Math.abs(dz)) {
+        // Sidevindu - PlaneGeometry sin standard-normal (lokal +Z) dreies mot +X/-X (høyre/venstre side).
+        decal.rotation.set(0, dx > 0 ? Math.PI / 2 : -Math.PI / 2, 0);
+        decal.position.x += dx > 0 ? 0.01 : -0.01; // løfter dekalen en anelse UT fra selve glasset - unngår z-fighting
+    } else {
+        // Frontrute (lokal -Z, "nesa") eller bakrute (lokal +Z) - standard-normalen peker allerede mot +Z
+        // (bakrute), kun frontruten trenger en 180°-dreining.
+        decal.rotation.set(0, dz > 0 ? 0 : Math.PI, 0);
+        decal.position.z += dz > 0 ? 0.01 : -0.01;
+    }
+    decal.visible = true;
+}
+// Skaden plasseres PRESIST der treffet skjedde (brukerens krav: "få skader på seg på treffpunktet"),
+// IKKE en generell fargeendring et sted uavhengig av selve kollisjonspunktet. worldImpactPoint kommer fra
+// closestPointOnTargetBox - selve boks-overflatepunktet nærmest droneen idet treffet ble registrert.
+// Ruter for glass (crackCarWindowAt), karosseri for alt annet (dentCarBodyAt) - se begges egen kommentar.
+function applyTargetCarDamageAt(handle, worldImpactPoint) {
+    const local = worldImpactPoint.clone().sub(handle.position).applyQuaternion(handle.quaternion.clone().invert());
+    const b = handle.userData.cabinBounds;
+    const CABIN_MARGIN = 0.05; // liten toleranse - et treff RETT ved kabinkanten skal fortsatt telle som "traff ruten"
+    const hitCabin = b && local.x >= b.minX - CABIN_MARGIN && local.x <= b.maxX + CABIN_MARGIN &&
+        local.y >= b.minY - CABIN_MARGIN && local.y <= b.maxY + CABIN_MARGIN &&
+        local.z >= b.minZ - CABIN_MARGIN && local.z <= b.maxZ + CABIN_MARGIN;
+    if (hitCabin) crackCarWindowAt(handle, local); else dentCarBodyAt(handle, local);
+}
+// Bremser ned til stopp langs egen kjøreretning i stedet for å bare forsvinne (brukerens krav: "bilen må
+// bremse") - EGEN, enkel kinematisk glidning (fart avtar lineært mot 0), IKKE patruljekurven sin
+// tid-baserte posisjonsformel (updateTargetHitVisuals), som ikke har noe fartsbegrep å bremse ned fra.
+// forward: bilens EGEN, nåværende kjøreretning i verdensrom idet treffet skjedde - lokal -Z, samme
+// konvensjon som orientTowardTravel selv brukte til å rette den dit i utgangspunktet.
+function startTargetCarCrash(handle, worldImpactPoint) {
+    handle.userData.braking = true;
+    handle.userData.brakeSpeed = TARGET_SPEED.car;
+    handle.userData.brakeDir = new THREE.Vector3(0, 0, -1).applyQuaternion(handle.quaternion);
+    applyTargetCarDamageAt(handle, worldImpactPoint);
+}
+// Kalt UBETINGET hvert bilde fra animate() (samme mønster som updateTargetAirborneFalls over).
+function updateTargetCarBraking(dt) {
+    const handle = targetCarHandle;
+    if (!handle || !handle.userData.braking || handle.userData.brakeSpeed <= 0) return;
+    handle.userData.brakeSpeed = Math.max(0, handle.userData.brakeSpeed - TARGET_CAR_BRAKE_DECEL * dt);
+    handle.position.addScaledVector(handle.userData.brakeDir, handle.userData.brakeSpeed * dt);
+}
+function resetTargetCarCrash() {
+    const handle = targetCarHandle;
+    if (!handle) return;
+    handle.userData.braking = false;
+    handle.userData.brakeSpeed = 0;
+    if (handle.userData.crackDecal) handle.userData.crackDecal.visible = false;
+    // Retter opp eventuelle bulker fra forrige krasj (se dentCarBodyAt) - uten dette hoper bulkene seg
+    // opp over flere krasj gjennom ett forsøk i stedet for at bilen respawner uskadet, slik "en 'ny' bil"-
+    // idéen (samme prinsipp som spillerens egen drone, se resetDrone) egentlig tilsier.
+    const body = handle.userData.bodyMesh;
+    const rest = body && body.geometry.userData.restPositions;
+    if (rest) {
+        body.geometry.attributes.position.array.set(rest);
+        body.geometry.attributes.position.needsUpdate = true;
+        body.geometry.computeVertexNormals();
+    }
+}
+
+// Selve treffsjekken - full 3D (i motsetning til de fleste andre steg-typenes horisontale sjekker, se
+// f.eks. HELI_SAFE_HORIZ_DISTANCE-kommentaren for hvorfor DE bevisst er horisontale - her skal en
+// treffende kollisjon telle uansett retning/vinkel, akkurat som et ekte sammenstøt ville gjort), og en
+// EKTE, orientert boks per mål (pointHitsTargetBox) i stedet for én generisk kule-radius rundt senteret
+// (brukerens krav: "må ha bedre beregning av kollisjon. at det ikke bare er en generisk radius rundt
+// objektet").
 function updateTargetHitStage(stage, dt, now) {
     // Hele forsøket (alle fire mål) er akkurat fullført og venter på resultatpopup-en sin egen ventetid
     // (se finishTimedLoopRun) - IKKE start et nytt forsøk med det samme (brukerens krav: "når alle
@@ -8557,12 +9220,16 @@ function updateTargetHitStage(stage, dt, now) {
             // resetDrone() reiser også en eventuelt falt person opp igjen (se resetPersonFalls) - personen
             // skjules derfor FØRST rett under, mens han fortsatt (midlertidig) står oppreist igjen.
             resetDrone();
-            // Personen har ligget nede og blitt vist frem helt til nå (se knockPersonOver/
-            // updateTargetHitVisuals sin fallen-sjekk) - skjules først idet selve respawnen/steg-
-            // avgjørelsen faktisk skjer, IKKE i samme øyeblikk han ble truffet (brukerens krav: "han skal
-            // falle over ende når man krasjer i han"). De tre andre målene ble allerede skjult med det
-            // samme treffet ble registrert (se treffsjekken under).
-            if (stage.variant === "person") targetHitHandleFor("person").visible = false;
+            // Målet har stått synlig og reagert på treffet helt til nå - personen ligger nede (se
+            // knockPersonOver), drone-/fastvinge-målet har falt til bakken (se startTargetAirborneFall) og
+            // bilen har bremset ned og fått synlig skade (se startTargetCarCrash) - IKKE lenger usynlig i
+            // samme øyeblikk selve treffet ble registrert (brukerens krav: "skal ikke despawne ... skal
+            // falle over ende når man krasjer i han"/"dronene som treffes i lufta må falle ned"). Skjules
+            // FØRST nå, idet selve respawnen/steg-avgjørelsen faktisk skjer - gjelder nå ALLE fire
+            // varianter (tidligere kun person). resetDrone() reiser/nullstiller allerede alle fire målenes
+            // egne krasj-tilstander (resetPersonFalls/resetTargetAirborneFalls/resetTargetCarCrash) - denne
+            // linja skjuler bare selve håndtaket for det STEGET som faktisk gjaldt her.
+            targetHitHandleFor(stage.variant).visible = false;
             const exercise = EXERCISES[exerciseState.exerciseId];
             // Er DETTE hitet også selve det siste, avgjørende treffet i hele forsøket (siste mål i
             // rekkefølgen, andre av to påkrevde treff der) - fullfør uansett, selv om det brukte opp den
@@ -8603,7 +9270,7 @@ function updateTargetHitStage(stage, dt, now) {
     }
     const handle = targetHitHandleFor(stage.variant);
     if (!handle.visible) return; // målet venter på neste spawn (nettopp truffet) - ingenting å sjekke akkurat nå
-    if (droneState.position.distanceTo(handle.position) <= TARGET_HIT_RADIUS[stage.variant]) {
+    if (pointHitsTargetBox(stage.variant, handle, droneState.position)) {
         exerciseState.targetHitCount++;
         exerciseState.targetCrashesUsed++;
         // Ekte krasj (brukerens krav: "må ha kollisjonsdeteksjon på objektene så det blir et krasj") - SAMME
@@ -8615,25 +9282,51 @@ function updateTargetHitStage(stage, dt, now) {
         // noe selv her, se TARGET_HIT_POPUP_DELAY_MS.
         droneState.crashed = true;
         droneState.armed = false;
+        // Selve treffpunktet PÅ mål-boksens overflate (IKKE bare målets senter) - brukt BÅDE til å dytte
+        // droneen ut dit rett under OG (for bilen) til å plassere skaden presist der (se
+        // applyTargetCarDamageAt).
+        const impactPoint = closestPointOnTargetBox(stage.variant, handle, droneState.position);
         // "Legg til ordentlig kollisjonsdeteksjon i objektene det skal krasjes inn i slik at man ikke bare
-        // glitcher gjennom" (brukerens krav) - nullstiller farten UMIDDELBART ved selve treffet, i stedet
-        // for å la den (nå motorløse, men fortsatt i fart) droneen seile videre gjennom/forbi målets
-        // synlige modell i det korte øyeblikket før tyngdekraften alene tar over. Samme prinsipp som en
-        // ekte, solid veggkollisjon (se pushOutOfSolidWalls, som nullstiller hastighetskomponenten INN i
-        // veggen) - her nullstilles hele farten, siden et sammenstøt med et bevegelig mål ikke har noen
-        // entydig, fast "veggretning" å dempe langs.
-        droneState.velocity.set(0, 0, 0);
-        droneState.angularVelocity.pitch = 0;
-        droneState.angularVelocity.roll = 0;
-        droneState.angularVelocity.yaw = 0;
+        // glitcher gjennom" (brukerens krav) - dytter droneen sin EGEN posisjon tilbake til akkurat
+        // treffpunktet FØR farten nullstilles, i stedet for å la den (nå motorløse, men fysikken har jo
+        // alt flyttet den for dette bildet) stå et stykke inni/forbi målets synlige modell i det korte
+        // øyeblikket før tyngdekraften alene tar over. outward: retningen FRA treffpunktet MOT droneens
+        // faktiske posisjon - degenererer (nær null) kun når droneens senter falt nesten nøyaktig på selve
+        // boks-overflaten, da brukes rett opp som en trygg standardretning i stedet.
+        const outward = droneState.position.clone().sub(impactPoint);
+        if (outward.lengthSq() < 1e-6) outward.set(0, 1, 0); else outward.normalize();
+        droneState.position.copy(impactPoint).addScaledVector(outward, TARGET_IMPACT_STANDOFF);
+        // Dempet, IKKE nullstilt - brukerens rapport: "drona man flyr selv skal ikke bare stoppe opp og
+        // falle rett ned hvis man har fart fremover. det er alt for unaturlig". Selve treffpunktet gir nå
+        // en ekte, entydig kollisjonsretning (outward, se over) - samme prinsipp som pushOutOfSolidWalls
+        // (nullstiller kun hastighetskomponenten INN i overflaten, langs outward), PLUSS en kraftig, men
+        // ikke total, demping av resten (TARGET_HIT_VELOCITY_RETENTION) - en ekte kollisjon bremser brått,
+        // men en drone i fart fortsetter å drive/tumle videre et stykke i den retningen den allerede hadde,
+        // den stopper ikke momentant til null og faller rett ned som en stein.
+        const speedIntoSurface = droneState.velocity.dot(outward);
+        if (speedIntoSurface < 0) droneState.velocity.addScaledVector(outward, -speedIntoSurface);
+        droneState.velocity.multiplyScalar(TARGET_HIT_VELOCITY_RETENTION);
+        // Vinkelfarten dempes (IKKE nullstilles) av samme grunn - en brå kollisjon starter typisk en
+        // tumling (nesa kastes ned/til siden av selve støtet), en umiddelbart frosset orientering ville sett
+        // like unaturlig ut som den rettlinjede fallet dette avsnittet retter opp.
+        droneState.angularVelocity.pitch *= TARGET_HIT_VELOCITY_RETENTION;
+        droneState.angularVelocity.roll *= TARGET_HIT_VELOCITY_RETENTION;
+        droneState.angularVelocity.yaw *= TARGET_HIT_VELOCITY_RETENTION;
         if (stage.variant === "person") {
             // Faller over ende i stedet for å bare forsvinne med det samme (brukerens krav: "han skal
-            // falle over ende når man krasjer i han") - forblir SYNLIG (IKKE handle.visible=false her, i
-            // motsetning til de tre andre målene under) helt til selve respawnen i pending-grenen over.
-            // Samme knockPersonOver-mekanikk som updateBystanderCollision/VTOL-simulatoren.
+            // falle over ende når man krasjer i han") - forblir synlig helt til selve respawnen i
+            // pending-grenen over. Samme knockPersonOver-mekanikk som updateBystanderCollision/
+            // VTOL-simulatoren.
             knockPersonOver(handle);
+        } else if (stage.variant === "drone" || stage.variant === "fixedwing") {
+            // Faller fritt til bakken i stedet for å bare forsvinne (brukerens krav: "dronene som treffes
+            // i lufta må falle ned") - forblir synlig helt til respawnen, se updateTargetAirborneFalls.
+            startTargetAirborneFall(handle);
         } else {
-            handle.visible = false;
+            // Bilen: bremser ned til stopp i stedet for å bare forsvinne (brukerens krav: "bilen må
+            // bremse"), og får en synlig skade presist der treffet skjedde (brukerens krav: "få skader på
+            // seg på treffpunktet") - se startTargetCarCrash/updateTargetCarBraking.
+            startTargetCarCrash(handle, impactPoint);
         }
         // Liten popup med selve treff-fremdriften (X/2) - egen fra advanceExerciseStage sin "Fullført!
         // Neste: ..."-melding (som først vises idet steget FAKTISK avanserer, se over). IKKE lenger noe om
@@ -8643,7 +9336,14 @@ function updateTargetHitStage(stage, dt, now) {
             exerciseState.targetHitCount + "/" + TARGET_HITS_REQUIRED + ")";
         exerciseState.warningUntil = now + TARGET_HIT_POPUP_DELAY_MS;
         exerciseState.warningIsSuccess = true;
-        exerciseState.targetHitPendingUntil = now + TARGET_HIT_POPUP_DELAY_MS;
+        // Selve respawn-ventetiden - se estimateAirborneFallDelayMs sin egen kommentar for hvorfor et
+        // luftbårent mål (drone/fastvinge-fly) kan trenge lenger enn popup-teksten selv (2 sekunder) til å
+        // faktisk falle helt ned til bakken.
+        exerciseState.targetHitPendingUntil = now + (
+            (stage.variant === "drone" || stage.variant === "fixedwing")
+                ? estimateAirborneFallDelayMs(handle)
+                : TARGET_HIT_POPUP_DELAY_MS
+        );
     }
 }
 // Alle dronene brukt opp (se exerciseState.targetCrashesUsed/TARGET_STRIKE_DRONE_LIVES) - hele forsøket
@@ -9080,7 +9780,14 @@ const RACING_LEADERBOARD_RENAME_WINDOW_MS = 60 * 60 * 1000;
 // inn manglende felt fra denne default-strukturen, se defaults-merge-mønsteret, samme prinsipp som da
 // entries3 selv ble lagt til - et EKSISTERENDE v2-lagret objekt uten disse to fra før raceTunnel/
 // targetStrike fantes får dem tomme i stedet for undefined, uten behov for en ny nøkkel/versjon).
-const DEFAULT_RACING_LEADERBOARD = { playerName: "Pilot", entries: [], entries3: [], entriesTunnel: [], entriesTargets: [] };
+// entriesRecurrent1/entriesRecurrent3 (ra1/ra2, recurrent Acro) - samme "legg til nytt felt i default-
+// strukturen"-mønster som entriesTunnel/entriesTargets sin egen kommentar over beskriver. EGNE lister,
+// ikke delt med entries/entries3 (race1/race3) - recurrent-øvelsene skal spores helt uavhengig (brukerens
+// krav), selv om det er bokstavelig talt samme bane.
+const DEFAULT_RACING_LEADERBOARD = {
+    playerName: "Pilot", entries: [], entries3: [], entriesTunnel: [], entriesTargets: [],
+    entriesRecurrent1: [], entriesRecurrent3: []
+};
 function loadRacingLeaderboard() {
     return Sim.loadJSON(RACING_LEADERBOARD_KEY, DEFAULT_RACING_LEADERBOARD);
 }
@@ -9091,7 +9798,10 @@ const racingLeaderboard = loadRacingLeaderboard();
 
 // Hver av de fire tidsaktivitetene har SIN EGEN liste - tidene er ikke sammenlignbare på tvers (ulik bane/
 // oppgave). id (default: den aktive øvelsen) avgjør hvilken.
-const RACING_ENTRIES_FIELD = { race1: "entries", race3: "entries3", raceTunnel: "entriesTunnel", targetStrike: "entriesTargets" };
+const RACING_ENTRIES_FIELD = {
+    race1: "entries", race3: "entries3", raceTunnel: "entriesTunnel", targetStrike: "entriesTargets",
+    ra1: "entriesRecurrent1", ra2: "entriesRecurrent3"
+};
 function racingEntriesFor(id) {
     const field = RACING_ENTRIES_FIELD[id || exerciseState.exerciseId] || "entries";
     return racingLeaderboard[field];
@@ -9228,40 +9938,111 @@ function racingBestTimeSec(id) {
     return entries.length > 0 ? entries[0].timeSec : null;
 }
 
-/* ---------- Øvelser: panel-UI (liste + detaljvisning) ---------- */
-function renderExerciseList(category) {
+/* ---------- Øvelser: panel-UI (liste + detaljvisning) ----------
+   Fire kategorier (initialQuad/initialAcro/recurrentQuad/recurrentAcro, se
+   showExerciseCategoryView/showExerciseProgramView) - én konfig-tabell i stedet for å firedoble
+   rad-bygge-koden under. "medal"-stilen (kun initialAcro) viser medalje-ikon per rad og krever minst
+   bronse på ALLE for bekreftelse; "plain"-stilen (de tre andre) viser et enkelt bestått-hakk + bestetid.
+   recurrentAcro er "plain" men leser tiden fra racingBestTimeSec (useRacingTime) i stedet for
+   exerciseProgress - ra1/ra2 er "racing"-stages uten noen exerciseProgress-oppføring (se
+   DEFAULT_EXERCISE_PROGRESS, som bevisst KUN seeder EXERCISE_ORDER+RECURRENT_QUAD_ORDER), samme kilde
+   racingBestTimeSec allerede bruker for de fire Acro-tidsaktivitetene. */
+const EXERCISE_CATEGORY_CONFIG = {
+    initialQuad: {
+        order: EXERCISE_ORDER, style: "plain",
+        allPassedFn: allExercisesPassed, openDiplomaFn: openDiploma,
+        diplomaTitle: "Bekreftelse",
+        diplomaDesc: "Alle øvelser bestått! Fyll ut navnet ditt og skriv ut bekreftelsen."
+    },
+    initialAcro: {
+        order: ACRO_EXERCISE_ORDER, style: "medal",
+        allPassedFn: allAcroActivitiesGraded, openDiplomaFn: openAcroDiploma,
+        diplomaTitle: "Acro-bekreftelse",
+        hintText: "Fullfør alle øvelsene med minimum bronsegradering for å få bekreftelse på simulatorutsjekk for acro."
+    },
+    recurrentQuad: {
+        order: RECURRENT_QUAD_ORDER, style: "plain",
+        allPassedFn: allRecurrentQuadPassed, openDiplomaFn: openRecurrentQuadDiploma,
+        diplomaTitle: "Recurrent-bekreftelse",
+        diplomaDesc: "Alle øvelser bestått! Fyll ut navnet ditt og skriv ut bekreftelsen."
+    },
+    recurrentAcro: {
+        order: RECURRENT_ACRO_ORDER, style: "plain", useRacingTime: true,
+        allPassedFn: allRecurrentAcroPassed, openDiplomaFn: openRecurrentAcroDiploma,
+        diplomaTitle: "Recurrent-bekreftelse",
+        diplomaDesc: "Begge runder fullført! Fyll ut navnet ditt og skriv ut bekreftelsen."
+    }
+};
+// Delt av "plain"-grenen (renderExerciseList) - id-en sin egen rad, med bestått-hakk+tid fra enten
+// exerciseProgress (vanlige øvelser) eller racingBestTimeSec (useRacingTime - racing-baserte øvelser uten
+// noen exerciseProgress-oppføring, se recurrentAcro over).
+function buildExerciseRow(id, useRacingTime) {
+    const exercise = EXERCISES[id];
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "sim-exercise-row";
+    let checkHtml = "";
+    if (useRacingTime) {
+        const bestSec = racingBestTimeSec(id);
+        if (bestSec !== null) {
+            checkHtml = '<span class="sim-exercise-check"><i class="fa-solid fa-circle-check"></i> ' +
+                formatExerciseTime(bestSec) + "</span>";
+        }
+    } else {
+        const progress = exerciseProgress[id] || { passed: false, bestTimeSec: null };
+        if (progress.passed) {
+            checkHtml = '<span class="sim-exercise-check"><i class="fa-solid fa-circle-check"></i>' +
+                (exercise.noTiming ? "" : " " + formatExerciseTime(progress.bestTimeSec)) + "</span>";
+        }
+    }
+    row.innerHTML =
+        '<span class="sim-exercise-row-icon"><i class="fa-solid ' + exercise.icon + '"></i></span>' +
+        '<span class="sim-exercise-row-main">' +
+        '<span class="sim-exercise-row-title">' + exercise.label + "</span>" +
+        '<span class="sim-exercise-row-desc">' + exercise.shortDescription + "</span>" +
+        "</span>" + checkHtml;
+    row.addEventListener("click", function () { showExerciseDetail(id); });
+    return row;
+}
+// Diplom-raden ØVERST i lista (mest fremtredende plassen) - klikk åpner selve bekreftelsen. Delt av alle
+// fire "plain"-kategoriene (medal-grenen bygger sin egen, litt annerledes ordlagte rad, se under).
+function buildDiplomaRow(title, desc, onClick) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "sim-exercise-row sim-exercise-row-diploma";
+    row.innerHTML =
+        '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
+        '<span class="sim-exercise-row-main">' +
+        '<span class="sim-exercise-row-title">' + title + "</span>" +
+        '<span class="sim-exercise-row-desc">' + desc + "</span>" +
+        "</span>";
+    row.addEventListener("click", onClick);
+    return row;
+}
+function renderExerciseList(categoryKey) {
     const container = document.getElementById("exerciseListItems");
     container.innerHTML = "";
+    const config = EXERCISE_CATEGORY_CONFIG[categoryKey];
+    if (!config) return;
 
-    if (category === "acro") {
-        // Acro-bekreftelse-rad ØVERST, samme "mest fremtredende plassen"-begrunnelse som den stabiliserte
-        // diplom-raden under - vises først når alle fire aktivitetene har nådd minst bronse (se
-        // allAcroActivitiesGraded/acroMedalProgress, medaljeseksjonen).
-        if (allAcroActivitiesGraded()) {
-            const acroDiplomaRow = document.createElement("button");
-            acroDiplomaRow.type = "button";
-            acroDiplomaRow.className = "sim-exercise-row sim-exercise-row-diploma";
-            acroDiplomaRow.innerHTML =
-                '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
-                '<span class="sim-exercise-row-main">' +
-                '<span class="sim-exercise-row-title">Acro-bekreftelse</span>' +
-                '<span class="sim-exercise-row-desc">Alle fire aktivitetene graderte! Samlet gradering: ' +
-                acroMedalLabel(overallAcroGrade()) + ".</span>" +
-                "</span>";
-            acroDiplomaRow.addEventListener("click", openAcroDiploma);
-            container.appendChild(acroDiplomaRow);
+    if (config.style === "medal") {
+        // Bekreftelse-rad ØVERST når alle fire aktivitetene har nådd minst bronse (se
+        // allAcroActivitiesGraded/acroMedalProgress, medaljeseksjonen) - ellers et hint ØVERST i stedet
+        // (brukerens krav: "Før man får en bekreftelse kan det stå øverst.") - samme diskré
+        // .sim-panel-hint-stil som resten av panelet bruker for korte hint, IKKE en klikkbar rad.
+        if (config.allPassedFn()) {
+            container.appendChild(buildDiplomaRow(
+                config.diplomaTitle,
+                "Alle fire aktivitetene graderte! Samlet gradering: " + acroMedalLabel(overallAcroGrade()) + ".",
+                config.openDiplomaFn
+            ));
         } else {
-            // Hint ØVERST før bekreftelsen faktisk er innen rekkevidde - brukerens krav: "Før man får en
-            // bekreftelse kan det stå øverst. Fullfør alle øvelsene med minimum bronsegradering for å få
-            // bekreftelse på simulatorutsjekk for acro." Samme diskré .sim-panel-hint-stil som resten av
-            // panelet bruker for korte hint (se f.eks. exerciseDetailProgress), IKKE en klikkbar rad -
-            // ingenting å trykke på her ennå.
             const hint = document.createElement("p");
             hint.className = "sim-panel-hint sim-exercise-list-hint";
-            hint.textContent = "Fullfør alle øvelsene med minimum bronsegradering for å få bekreftelse på simulatorutsjekk for acro.";
+            hint.textContent = config.hintText;
             container.appendChild(hint);
         }
-        ACRO_EXERCISE_ORDER.forEach(function (id) {
+        config.order.forEach(function (id) {
             const exercise = EXERCISES[id];
             const bestSec = racingBestTimeSec(id);
             const medal = currentAcroMedal(id);
@@ -9275,14 +10056,12 @@ function renderExerciseList(category) {
                 '<span class="sim-exercise-row-desc">' + exercise.shortDescription + "</span>" +
                 "</span>" +
                 (bestSec !== null
-                    // Medaljen (IKKE en generisk grønn pokal, brukerens krav: "nå er det en grønn pokal ved
-                    // siden av tiden som vises der. kan heller medaljen vises? og tiden i svart skrift.") -
-                    // sim-medal-X sitter nå på selve IKONET (ikke den ytre spannen, som tidligere lot
-                    // fargen "lekke" ned til tidsteksten også via CSS-arv) - se .sim-exercise-check-icon i
-                    // sim-medal-X (css/style.css). Uten medalje (logget tid, men ikke raskt nok for bronse
-                    // ennå) - nøytralt grå pokal-ikon i stedet for den misvisende "suksess"-grønne, siden
-                    // ingenting faktisk er oppnådd ennå. Tiden i egen span med eksplisitt svart farge -
-                    // uavhengig av ikonets farge uansett.
+                    // Medaljen (IKKE en generisk grønn pokal) - sim-medal-X sitter på selve IKONET (ikke
+                    // den ytre spannen, som tidligere lot fargen "lekke" ned til tidsteksten også via
+                    // CSS-arv) - se .sim-exercise-check-icon i sim-medal-X (css/style.css). Uten medalje
+                    // (logget tid, men ikke raskt nok for bronse ennå) - nøytralt grå pokal-ikon i stedet
+                    // for den misvisende "suksess"-grønne, siden ingenting faktisk er oppnådd ennå. Tiden i
+                    // egen span med eksplisitt svart farge - uavhengig av ikonets farge uansett.
                     ? '<span class="sim-exercise-check"><i class="fa-solid ' +
                         (medal ? "fa-award sim-exercise-check-icon sim-medal-" + medal : "fa-trophy sim-exercise-check-icon") +
                         '"></i> <span class="sim-exercise-check-time">' + formatExerciseTime(bestSec, 2) + "</span></span>"
@@ -9293,41 +10072,13 @@ function renderExerciseList(category) {
         return;
     }
 
-    // Alle øvelser bestått: diplom-rad ØVERST (mest fremtredende plassen - se etterspurt om å flytte
-    // den opp fra bunnen) - klikk for å fylle ut navn og skrive ut/lagre som PDF. (Diplomet dukker i
-    // tillegg automatisk opp første gang dette blir sant, se completeExercise.)
-    if (allExercisesPassed()) {
-        const diplomaRow = document.createElement("button");
-        diplomaRow.type = "button";
-        diplomaRow.className = "sim-exercise-row sim-exercise-row-diploma";
-        diplomaRow.innerHTML =
-            '<span class="sim-exercise-row-icon"><i class="fa-solid fa-award"></i></span>' +
-            '<span class="sim-exercise-row-main">' +
-            '<span class="sim-exercise-row-title">Bekreftelse</span>' +
-            '<span class="sim-exercise-row-desc">Alle øvelser bestått! Fyll ut navnet ditt og skriv ut bekreftelsen.</span>' +
-            "</span>";
-        diplomaRow.addEventListener("click", openDiploma);
-        container.appendChild(diplomaRow);
+    // "plain"-stilen: diplom-rad ØVERST når alt er bestått (dukker i tillegg automatisk opp første gang
+    // dette blir sant for initialQuad, se completeExercise), ellers ingenting spesielt øverst.
+    if (config.allPassedFn()) {
+        container.appendChild(buildDiplomaRow(config.diplomaTitle, config.diplomaDesc, config.openDiplomaFn));
     }
-
-    EXERCISE_ORDER.forEach(function (id) {
-        const exercise = EXERCISES[id];
-        const progress = exerciseProgress[id] || { passed: false, bestTimeSec: null };
-        const row = document.createElement("button");
-        row.type = "button";
-        row.className = "sim-exercise-row";
-        row.innerHTML =
-            '<span class="sim-exercise-row-icon"><i class="fa-solid ' + exercise.icon + '"></i></span>' +
-            '<span class="sim-exercise-row-main">' +
-            '<span class="sim-exercise-row-title">' + exercise.label + "</span>" +
-            '<span class="sim-exercise-row-desc">' + exercise.shortDescription + "</span>" +
-            "</span>" +
-            (progress.passed
-                ? '<span class="sim-exercise-check"><i class="fa-solid fa-circle-check"></i>' +
-                    (exercise.noTiming ? "" : " " + formatExerciseTime(progress.bestTimeSec)) + "</span>"
-                : "");
-        row.addEventListener("click", function () { showExerciseDetail(id); });
-        container.appendChild(row);
+    config.order.forEach(function (id) {
+        container.appendChild(buildExerciseRow(id, !!config.useRacingTime));
     });
 }
 
@@ -9466,28 +10217,176 @@ function openAcroDiploma() {
     overlay.style.display = "";
 }
 
-// Hvilken undermeny (Stabilized/Acro) som sist var åpen - husker valget slik at "Tilbake" fra
-// detaljvisningen og gjenåpning av panelet (M/knapp) havner samme sted, se showExerciseDetail/
-// toggleExercisesBtn-lytteren.
-let currentExerciseCategory = "stabilized";
-function showExerciseCategoryView() {
-    document.getElementById("exerciseCategoryView").style.display = "";
-    document.getElementById("exerciseListView").style.display = "none";
-    document.getElementById("exerciseDetailView").style.display = "none";
+// Recurrent-bekreftelsen for Quadcopter - HELT separat fra openDiploma over (den initielle,
+// EXERCISE_ORDER-baserte bekreftelsen) - egen fremgang/id-er (RECURRENT_QUAD_ORDER, se dens egen
+// kommentar for hvorfor), men samme enkle mal (bestått/tid per rad + totaltid nederst), se
+// #recurrentQuadDiplomaOverlay i simulator.html.
+function openRecurrentQuadDiploma() {
+    const overlay = document.getElementById("recurrentQuadDiplomaOverlay");
+    const timesEl = document.getElementById("recurrentQuadDiplomaTimes");
+    timesEl.innerHTML = "";
+    let totalTimedSec = 0;
+    RECURRENT_QUAD_ORDER.forEach(function (id) {
+        const rowEl = document.createElement("div");
+        rowEl.className = "sim-diploma-time-row";
+        const nameEl = document.createElement("span");
+        nameEl.textContent = EXERCISES[id].label;
+        const timeEl = document.createElement("span");
+        if (EXERCISES[id].noTiming) {
+            timeEl.textContent = "Bestått";
+        } else {
+            timeEl.textContent = formatExerciseTime(exerciseProgress[id].bestTimeSec);
+            totalTimedSec += exerciseProgress[id].bestTimeSec || 0;
+        }
+        rowEl.appendChild(nameEl);
+        rowEl.appendChild(timeEl);
+        timesEl.appendChild(rowEl);
+    });
+    const totalRowEl = document.createElement("div");
+    totalRowEl.className = "sim-diploma-time-row sim-diploma-time-total";
+    const totalNameEl = document.createElement("span");
+    totalNameEl.textContent = "Total tid";
+    const totalTimeEl = document.createElement("span");
+    totalTimeEl.textContent = formatExerciseTime(totalTimedSec);
+    totalRowEl.appendChild(totalNameEl);
+    totalRowEl.appendChild(totalTimeEl);
+    timesEl.appendChild(totalRowEl);
+    document.getElementById("recurrentQuadDiplomaDate").textContent =
+        "Dato: " + new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "2-digit", day: "2-digit" });
+    document.getElementById("recurrentQuadDiplomaPrintBtn").onclick = function () {
+        document.body.classList.add("printing-diploma");
+        window.print();
+        document.body.classList.remove("printing-diploma");
+    };
+    document.getElementById("recurrentQuadDiplomaCloseBtn").onclick = function () {
+        overlay.style.display = "none";
+    };
+    overlay.style.display = "";
+}
+
+// Recurrent-bekreftelsen for Acro - HELT separat fra openAcroDiploma over. Ingen medaljer/drone-spek-
+// blokk her (brukerens krav: recurrent skal ikke være like omfattende som den initielle Acro-
+// bekreftelsen) - bare bestått/bestetid per runde (racingBestTimeSec, se allRecurrentAcroPassed sin egen
+// kommentar for hvorfor - ra1/ra2 har ingen exerciseProgress-oppføring), samme enkle mal som
+// openRecurrentQuadDiploma over.
+function openRecurrentAcroDiploma() {
+    const overlay = document.getElementById("recurrentAcroDiplomaOverlay");
+    const timesEl = document.getElementById("recurrentAcroDiplomaTimes");
+    timesEl.innerHTML = "";
+    RECURRENT_ACRO_ORDER.forEach(function (id) {
+        const rowEl = document.createElement("div");
+        rowEl.className = "sim-diploma-time-row";
+        const nameEl = document.createElement("span");
+        nameEl.textContent = EXERCISES[id].label;
+        const timeEl = document.createElement("span");
+        const bestSec = racingBestTimeSec(id);
+        timeEl.textContent = bestSec !== null ? formatExerciseTime(bestSec) : "-";
+        rowEl.appendChild(nameEl);
+        rowEl.appendChild(timeEl);
+        timesEl.appendChild(rowEl);
+    });
+    document.getElementById("recurrentAcroDiplomaDate").textContent =
+        "Dato: " + new Date().toLocaleDateString("nb-NO", { year: "numeric", month: "2-digit", day: "2-digit" });
+    document.getElementById("recurrentAcroDiplomaPrintBtn").onclick = function () {
+        document.body.classList.add("printing-diploma");
+        window.print();
+        document.body.classList.remove("printing-diploma");
+    };
+    document.getElementById("recurrentAcroDiplomaCloseBtn").onclick = function () {
+        overlay.style.display = "none";
+    };
+    overlay.style.display = "";
+}
+
+// "Kopier lenke" - liten, diskré knapp nederst i #exercisesPanel (brukerens krav: "må være mulig å lenke
+// til åpen meny for initiell trening og recurrent trening. Gjerne med en liten 'kopier lenke' diskre nede
+// på menyvinduet") - kopierer en lenke til nettopp det ÅPNE PROGRAMMET (?exercises=initial/recurrent, se
+// deep-link-oppslaget nederst i fila), samme spørrestreng-mønster som js/simulator-vtol-exercises.js sin
+// ?exercises=1 (VTOL-simmen har bare én kategori og trenger derfor ingen verdi å skille på). Skjult på
+// selve programvalg-toppskjermen (updateExerciseCopyLinkVisibility, kalt fra hver show*View-funksjon) -
+// ingenting spesifikt å lenke til der ennå, kun to like store valg.
+function updateExerciseCopyLinkVisibility() {
+    const btn = document.getElementById("exerciseCopyLinkBtn");
+    if (!btn) return;
+    const onProgramScreen = document.getElementById("exerciseProgramView").style.display !== "none";
+    btn.style.display = onProgramScreen ? "none" : "";
+}
+// Samme klipbord-mønster som flightLogCopyBtn (js/simulator-flightlog.js: navigator.clipboard.writeText
+// med en execCommand("copy")-reserveløsning for nettlesere uten - HTTPS/localhost-krav), men uten noen
+// eksisterende <textarea> å gjenbruke her - lager en midlertidig, usynlig én kun for selve
+// markering+kopiering, fjernet igjen med det samme.
+function copyExerciseMenuLink() {
+    const url = location.origin + location.pathname + "?exercises=" + currentExerciseProgram;
+    const statusEl = document.getElementById("exerciseCopyLinkStatus");
+    function showStatus(msg) {
+        if (!statusEl) return;
+        statusEl.textContent = msg;
+        setTimeout(function () { statusEl.textContent = ""; }, 2500);
+    }
+    function fallbackCopy() {
+        const tempEl = document.createElement("textarea");
+        tempEl.value = url;
+        tempEl.style.cssText = "position:fixed; left:-9999px; top:0;";
+        document.body.appendChild(tempEl);
+        tempEl.focus();
+        tempEl.select();
+        try {
+            document.execCommand("copy");
+            showStatus("Kopiert");
+        } catch (e) {
+            showStatus("Kunne ikke kopiere automatisk - kopier lenken manuelt");
+        }
+        document.body.removeChild(tempEl);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function () { showStatus("Lenke kopiert"); }, fallbackCopy);
+    } else {
+        fallbackCopy();
+    }
+}
+// Fire søsken-visninger inni #exercisesPanel (programvalg -> kategorivalg, ETT PAR per program -> liste
+// -> detalj, se simulator.html) - hideAllExercisePanelViews skjuler ALLE, hver show*-funksjon under viser
+// deretter nøyaktig sin egen. Færre steder å glemme å oppdatere enn å liste alle fem i hver funksjon for
+// seg (brukerens krav: "øvelser skal deles opp i initiell trening og recurrent trening" la til
+// exerciseProgramView + et eget kategorivalg-par for recurrent - ETT nytt nivå FØR det eksisterende
+// kategorivalget, se exerciseCategoryViewInitial/exerciseCategoryViewRecurrent i simulator.html).
+function hideAllExercisePanelViews() {
+    ["exerciseProgramView", "exerciseCategoryViewInitial", "exerciseCategoryViewRecurrent",
+        "exerciseListView", "exerciseDetailView"].forEach(function (id) {
+        document.getElementById(id).style.display = "none";
+    });
+}
+// Husker sist åpne program ("initial"/"recurrent") og kategori (nøkkel i EXERCISE_CATEGORY_CONFIG) slik
+// at "Tilbake" fra detaljvisningen og gjenåpning av panelet (M/knapp) havner samme sted, se
+// showExerciseDetail/toggleExercisesBtn-lytteren. currentExerciseCategory sin default ("initialQuad")
+// brukes kun før brukeren faktisk har åpnet en kategori i det hele tatt denne økten.
+let currentExerciseProgram = "initial";
+let currentExerciseCategory = "initialQuad";
+function showExerciseProgramView() {
+    hideAllExercisePanelViews();
+    document.getElementById("exerciseProgramView").style.display = "";
+    updateExerciseCopyLinkVisibility();
+}
+function showExerciseCategoryView(program) {
+    if (program) currentExerciseProgram = program;
+    hideAllExercisePanelViews();
+    document.getElementById(currentExerciseProgram === "recurrent" ? "exerciseCategoryViewRecurrent" : "exerciseCategoryViewInitial")
+        .style.display = "";
+    updateExerciseCopyLinkVisibility();
 }
 function showExerciseListView(category) {
     if (category) currentExerciseCategory = category;
     renderExerciseList(currentExerciseCategory);
-    document.getElementById("exerciseCategoryView").style.display = "none";
+    hideAllExercisePanelViews();
     document.getElementById("exerciseListView").style.display = "";
-    document.getElementById("exerciseDetailView").style.display = "none";
+    updateExerciseCopyLinkVisibility();
 }
 function showExerciseDetail(id) {
     const exercise = EXERCISES[id];
     if (!exercise) return;
-    document.getElementById("exerciseCategoryView").style.display = "none";
-    document.getElementById("exerciseListView").style.display = "none";
+    hideAllExercisePanelViews();
     document.getElementById("exerciseDetailView").style.display = "";
+    updateExerciseCopyLinkVisibility();
     document.getElementById("exerciseDetailTitle").innerHTML =
         '<i class="fa-solid ' + exercise.icon + ' sim-exercise-icon"></i>' + exercise.label;
     document.getElementById("exerciseDetailDescription").textContent = exercise.fullDescription;
@@ -9597,6 +10496,8 @@ function animate(now) {
     updateClouds(frameDt);
     updateInput(frameDt);
     updatePersonFalls(frameDt); // ubetinget, samme mønster som VTOL-simulatoren - folkemengden er alltid til stede
+    updateTargetAirborneFalls(frameDt); // ubetinget (samme mønster) - targetStrike-drone-/fastvinge-målet faller fritt etter et treff
+    updateTargetCarBraking(frameDt); // ubetinget (samme mønster) - targetStrike-bilmålet bremser ned etter et treff
     while (accumulator >= FIXED_DT) {
         stepPhysics(FIXED_DT);
         accumulator -= FIXED_DT;
@@ -9730,39 +10631,65 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("clearExerciseTimesBtn").addEventListener("click", function () {
         closeSettingsMenu();
         if (!window.confirm("Nullstille alle øvelsestider og bestått-status? Dette kan ikke angres.")) return;
-        EXERCISE_ORDER.forEach(function (id) {
+        // RECURRENT_QUAD_ORDER inkludert (IKKE bare EXERCISE_ORDER som før) - samme
+        // pass/bestått-mekanisme (exerciseProgress), "alle øvelsestider" bør derfor bety ALLE, ikke bare
+        // de initielle. RECURRENT_ACRO_ORDER (racing-baserte, som ACRO_EXERCISE_ORDER) er bevisst
+        // UTENFOR - de nullstilles av den egne ledertavle-reset-knappen (racingLeaderboardResetBtn),
+        // samme skille som allerede gjaldt mellom EXERCISE_ORDER og ACRO_EXERCISE_ORDER her.
+        EXERCISE_ORDER.concat(RECURRENT_QUAD_ORDER).forEach(function (id) {
             exerciseProgress[id].passed = false;
             exerciseProgress[id].bestTimeSec = null;
         });
         saveExerciseProgress();
         renderExerciseList();
         document.getElementById("diplomaOverlay").style.display = "none";
+        document.getElementById("recurrentQuadDiplomaOverlay").style.display = "none";
     });
     document.getElementById("toggleHelpBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("helpPanel"));
     });
     document.getElementById("toggleExercisesBtn").addEventListener("click", function () {
         togglePanel(document.getElementById("exercisesPanel"));
-        // Vis fremgangen for en øvelse som allerede er i gang, ellers øverste nivå (kategorivalget) -
+        // Vis fremgangen for en øvelse som allerede er i gang, ellers øverste nivå (programvalget) -
         // samme oppførsel som M-snarveien under (var tidligere showExerciseListView() her, som hoppet
         // rett forbi kategorivalget og inn i den sist viste listen).
         if (exerciseState.active) showExerciseDetail(exerciseState.exerciseId);
-        else showExerciseCategoryView();
+        else showExerciseProgramView();
     });
     document.getElementById("exerciseBackToListBtn").addEventListener("click", function () {
         showExerciseListView(currentExerciseCategory);
     });
-    document.getElementById("exerciseBackToCategoryBtn").addEventListener("click", showExerciseCategoryView);
+    document.getElementById("exerciseBackToCategoryBtn").addEventListener("click", function () { showExerciseCategoryView(); });
+    // Tilbake-knappen finnes i BEGGE kategorivalg-under-visningene (initial/recurrent, se simulator.html)
+    // - samme mål uansett hvilken som er synlig akkurat nå.
+    ["exerciseBackToProgramBtnInitial", "exerciseBackToProgramBtnRecurrent"].forEach(function (id) {
+        document.getElementById(id).addEventListener("click", showExerciseProgramView);
+    });
+    document.getElementById("programInitialBtn").addEventListener("click", function () {
+        showExerciseCategoryView("initial");
+    });
+    document.getElementById("programRecurrentBtn").addEventListener("click", function () {
+        showExerciseCategoryView("recurrent");
+    });
     document.getElementById("categoryStabilizedBtn").addEventListener("click", function () {
-        showExerciseListView("stabilized");
+        showExerciseListView("initialQuad");
     });
     document.getElementById("categoryAcroBtn").addEventListener("click", function () {
-        showExerciseListView("acro");
+        showExerciseListView("initialAcro");
     });
+    document.getElementById("categoryRecurrentQuadBtn").addEventListener("click", function () {
+        showExerciseListView("recurrentQuad");
+    });
+    document.getElementById("categoryRecurrentAcroBtn").addEventListener("click", function () {
+        showExerciseListView("recurrentAcro");
+    });
+    document.getElementById("exerciseCopyLinkBtn").addEventListener("click", copyExerciseMenuLink);
     // "Fri flyging" - eneste veien ut av en aktiv øvelse/racingbane tilbake til vanlig flyging UTEN å gå
     // via en spesifikk øvelses "Avbryt"-knapp (som krever at man først vet/husker hvilken øvelse som er
     // aktiv og åpner nettopp DEN sin detaljvisning) - viktigst for racing, som overstyrer kamera/
-    // dronemodus/spawn helt til man aktivt avslutter den.
+    // dronemodus/spawn helt til man aktivt avslutter den. Flyttet opp til selve programvalg-toppskjermen
+    // (exerciseProgramView, se simulator.html) - den er program-uavhengig, ga ikke mening å duplisere
+    // knappen under BÅDE Initiell og Recurrent trening.
     document.getElementById("categoryFreeFlightBtn").addEventListener("click", function () {
         if (exerciseState.active) stopExercise();
         // stopExercise() teleporterer bevisst IKKE droneen tilbake (se kommentaren der - respekterer det
@@ -9939,7 +10866,7 @@ document.addEventListener("DOMContentLoaded", function () {
             case "KeyM":
                 togglePanel(document.getElementById("exercisesPanel"));
                 if (exerciseState.active) showExerciseDetail(exerciseState.exerciseId);
-                else showExerciseCategoryView();
+                else showExerciseProgramView();
                 break;
         }
     });
@@ -9953,6 +10880,19 @@ document.addEventListener("DOMContentLoaded", function () {
     document.addEventListener("visibilitychange", function () {
         if (document.hidden) keys.clear();
     });
+
+    // Deep-lenke til øvelsesmenyen (brukerens krav: "må være mulig å lenke til åpen meny for initiell
+    // trening og recurrent trening") - samme rene spørrestreng-konvensjon som
+    // js/simulator-vtol-exercises.js sin ?exercises=1 (ingen ruting/historikk-endring, deles som en helt
+    // vanlig lenke - VTOL-simmen har bare én kategori og trenger derfor ingen verdi å skille på, her har
+    // vi to). ?exercises=initial/recurrent åpner panelet direkte på kategorivalget for det programmet
+    // (hopper forbi selve programvalg-toppskjermen) - se copyExerciseMenuLink for "kopier lenke"-
+    // knappen som genererer nøyaktig disse lenkene.
+    const deepLinkProgram = new URLSearchParams(location.search).get("exercises");
+    if (deepLinkProgram === "initial" || deepLinkProgram === "recurrent") {
+        document.getElementById("exercisesPanel").style.display = "";
+        showExerciseCategoryView(deepLinkProgram);
+    }
 
     requestAnimationFrame(animate);
 });
