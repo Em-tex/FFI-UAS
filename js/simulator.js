@@ -1037,8 +1037,26 @@ const ACRO_EXERCISE_ORDER = ["race1", "race3", "raceTunnel", "targetStrike"];
 const RECURRENT_QUAD_ORDER = ["rq1", "rq2", "rq3"];
 // Bevisst ingen medaljegradering her (se ACRO_MEDAL_THRESHOLDS lenger ned, som IKKE har oppføringer for
 // disse to) - recurrent Acro-bekreftelsen krever bare at et forsøk er fullført, ikke en bestemt tid
-// ("noe... som ikke er like omfattende", brukerens krav).
+// ("noe... som ikke er like omfattende", brukerens krav). ra1/ra2 er BEVISST identiske baner/mekanikk til
+// race1/race3 (samme løype, bare nådd via en annen meny) - DELER derfor samme ledertavle-liste som
+// race1/race3 (se RACING_ENTRIES_FIELD lenger ned: ra1->"entries", ra2->"entries3", ikke egne lister)
+// - brukerens presisering: "de ledertavlene kan godt være delt mellom de samme øvelsene. Har ikke noe å
+// si om det er recurrent eller initial hvis det er samme oppgave/løype". Det betyr i praksis at en tid
+// satt i race1 automatisk også teller som "fullført" for ra1 i recurrent-bekreftelsen (racingBestTimeSec
+// leser fra nøyaktig samme liste) - tilsiktet, ikke en glipp, gitt samme presisering. rq1/rq2 (Quadcopter)
+// er IKKE kloner av noen ENKELT initiell øvelse på samme måte (rq1 er en sammenslåing av to, se sin egen
+// kommentar) og beholder derfor sine egne, uavhengige ledertavler.
 const RECURRENT_ACRO_ORDER = ["ra1", "ra2"];
+// Delt av startExercise (vise/skjule den live ledertavle-overlayen, se racingLeaderboardOverlay) - ALLE
+// øvelser som får en egen ledertavle (racingEntriesFor/RACING_ENTRIES_FIELD lenger ned), ikke bare de fire
+// opprinnelige Acro-tidsaktivitetene. Brukerens krav: "recurrent trening. må ha tidtakertavle på de
+// øvelsene også. må ha litt konkurranse" - BÅDE recurrent Quadcopter (rq1/rq2, tidtatt via
+// completeExercise som race-øvelsene, se der - EGNE lister) og recurrent Acro (ra1/ra2 - DELER
+// race1/race3 sine lister, se RECURRENT_ACRO_ORDER sin egen kommentar) er nå med. rq3 ("Nødprosedyrer")
+// er bevisst UTELATT - den har noTiming:true (riktig respons på et uforutsett scenario, ikke fart, samme
+// prinsipp som ex11 i
+// EXERCISE_ORDER) og logger derfor aldri noen tid - en ledertavle-overlay ville bare stått tom der.
+const LEADERBOARD_EXERCISE_ORDER = ACRO_EXERCISE_ORDER.concat(["rq1", "rq2"], RECURRENT_ACRO_ORDER);
 
 // Kun sluttresultat (bestått + beste tid) lagres - all fremdrift underveis (steg/runde/tid/varsler)
 // lever kun i minnet og forsvinner ved sideinnlasting, se exerciseState lenger ned.
@@ -7382,6 +7400,16 @@ function completeExercise() {
     progress.passed = true;
     if (isNewBest) progress.bestTimeSec = elapsedSec;
     saveExerciseProgress();
+    // Recurrent Quadcopter (rq1/rq2 - rq3 er allerede utelatt av !noTiming-sjekken, se
+    // LEADERBOARD_EXERCISE_ORDER sin egen kommentar) får i tillegg fullføringstiden logget i en EGEN,
+    // navngitt ledertavle (samme finishTimedAcroRun/RACING_ENTRIES_FIELD-mekanisme som race-øvelsene
+    // bruker, se der) - IKKE for de tilsvarende initielle øvelsene (EXERCISE_ORDER), kun recurrent-settet
+    // (brukerens krav: "må ha tidtakertavle på de øvelsene også. må ha litt konkurranse" - personlig
+    // bestetid over var allerede fanget opp, men en delt, navngitt ledertavle med flere forsøk/spillere
+    // etter hverandre er noe annet, og var savnet).
+    if (!noTiming && RECURRENT_QUAD_ORDER.indexOf(exerciseId) !== -1) {
+        finishTimedAcroRun(exerciseId, elapsedSec, null);
+    }
     // Fryser droneen akkurat der den landet, i samme klasse/kamera den ble flydd i - stopExercise()
     // (som ville byttet klasse/kamera tilbake til brukerens vanlige valg) kalles bevisst IKKE her,
     // først når "Neste"/"Lukk" trykkes (se showExerciseSummary). Disarmet: ikke mulig å fly videre.
@@ -8002,7 +8030,7 @@ function startExercise(id) {
     // gjort. Generalisert fra det opprinnelige "id === race1 || id === race3" til ALLE fire aktivitetene
     // i ACRO_EXERCISE_ORDER (raceTunnel/targetStrike lagt til, se acroMedalProgress-seksjonen) - hver har
     // sin egen liste (racingEntriesFor/RACING_ENTRIES_FIELD), ikke sammenlignbare med hverandre.
-    const isTimedAcroActivity = ACRO_EXERCISE_ORDER.indexOf(id) !== -1;
+    const isTimedAcroActivity = LEADERBOARD_EXERCISE_ORDER.indexOf(id) !== -1;
     document.getElementById("racingLeaderboardOverlay").style.display = isTimedAcroActivity ? "" : "none";
     // Må tegnes på nytt her, ikke bare når en ny tid legges til, ellers ville man se forrige øvelses liste
     // et øyeblikk før man i det hele tatt har fullført et forsøk i DENNE.
@@ -9796,27 +9824,59 @@ const RACING_LEADERBOARD_RENAME_WINDOW_MS = 60 * 60 * 1000;
 // inn manglende felt fra denne default-strukturen, se defaults-merge-mønsteret, samme prinsipp som da
 // entries3 selv ble lagt til - et EKSISTERENDE v2-lagret objekt uten disse to fra før raceTunnel/
 // targetStrike fantes får dem tomme i stedet for undefined, uten behov for en ny nøkkel/versjon).
-// entriesRecurrent1/entriesRecurrent3 (ra1/ra2, recurrent Acro) - samme "legg til nytt felt i default-
-// strukturen"-mønster som entriesTunnel/entriesTargets sin egen kommentar over beskriver. EGNE lister,
-// ikke delt med entries/entries3 (race1/race3) - recurrent-øvelsene skal spores helt uavhengig (brukerens
-// krav), selv om det er bokstavelig talt samme bane.
+// entriesRecurrent1/entriesRecurrent3 (ra1/ra2, recurrent Acro) - stod HER en kort periode som EGNE
+// lister, adskilt fra entries/entries3 (race1/race3), ut fra et tidligere krav om at recurrent-øvelsene
+// skulle spores helt uavhengig selv om det er bokstavelig talt samme bane. Brukeren presiserte rett
+// etterpå at ledertavler GODT kan deles når det faktisk er samme oppgave/løype ("har ikke noe å si om det
+// er recurrent eller initial hvis det er samme oppgave/løype") - ra1/ra2 leser og skriver derfor nå rett
+// til entries/entries3 (se RACING_ENTRIES_FIELD lenger ned). Feltene her er BEHOLDT (ikke fjernet) kun
+// som mål for én-gangs migrering i loadRacingLeaderboard - dekker de(t) korte vinduet noen kan ha rukket å
+// lagre en tid i den nå-forlatte, separate lista før denne endringen.
+// entriesRecurrentQuad1/2 (rq1/rq2, recurrent Quadcopter) - samme "legg til nytt felt i default-
+// strukturen"-mønster som entriesTunnel/entriesTargets over. EGNE, fortsatt UDELTE lister (brukerens krav:
+// "recurrent trening. må ha tidtakertavle på de øvelsene også. må ha litt konkurranse" - disse to er
+// hover-/retur-øvelser uten noen egen "racing"-bane, tidtatt via completeExercise, se finishTimedAcroRun-
+// kallet der) - rq1/rq2 er IKKE kloner av noen enkelt initiell øvelse (se RECURRENT_ACRO_ORDER sin egen
+// kommentar), så det finnes ingen naturlig initiell liste å dele med. Ingen entriesRecurrentQuad3 - rq3
+// ("Nødprosedyrer") har noTiming:true og får aldri noen tid å logge.
 const DEFAULT_RACING_LEADERBOARD = {
     playerName: "Pilot", entries: [], entries3: [], entriesTunnel: [], entriesTargets: [],
-    entriesRecurrent1: [], entriesRecurrent3: []
+    entriesRecurrent1: [], entriesRecurrent3: [],
+    entriesRecurrentQuad1: [], entriesRecurrentQuad2: []
 };
 function loadRacingLeaderboard() {
-    return Sim.loadJSON(RACING_LEADERBOARD_KEY, DEFAULT_RACING_LEADERBOARD);
+    const lb = Sim.loadJSON(RACING_LEADERBOARD_KEY, DEFAULT_RACING_LEADERBOARD);
+    // Én-gangs migrering (se entriesRecurrent1/entriesRecurrent3 sin egen kommentar over) - flytt alt som
+    // eventuelt rakk å bli lagret i de nå-forlatte, separate ra1/ra2-listene inn i de delte
+    // entries/entries3-listene i stedet for å bare la dem forsvinne, så flyttes de tomme igjen (skrives
+    // tilbake ved neste saveRacingLeaderboard, se finishTimedAcroRun).
+    if (lb.entriesRecurrent1 && lb.entriesRecurrent1.length > 0) {
+        lb.entries = lb.entries.concat(lb.entriesRecurrent1);
+        lb.entries.sort(function (a, b) { return a.timeSec - b.timeSec; });
+        if (lb.entries.length > RACING_LEADERBOARD_MAX_ENTRIES) lb.entries.length = RACING_LEADERBOARD_MAX_ENTRIES;
+        lb.entriesRecurrent1 = [];
+    }
+    if (lb.entriesRecurrent3 && lb.entriesRecurrent3.length > 0) {
+        lb.entries3 = lb.entries3.concat(lb.entriesRecurrent3);
+        lb.entries3.sort(function (a, b) { return a.timeSec - b.timeSec; });
+        if (lb.entries3.length > RACING_LEADERBOARD_MAX_ENTRIES) lb.entries3.length = RACING_LEADERBOARD_MAX_ENTRIES;
+        lb.entriesRecurrent3 = [];
+    }
+    return lb;
 }
 function saveRacingLeaderboard() {
     Sim.saveJSON(RACING_LEADERBOARD_KEY, racingLeaderboard);
 }
 const racingLeaderboard = loadRacingLeaderboard();
 
-// Hver av de fire tidsaktivitetene har SIN EGEN liste - tidene er ikke sammenlignbare på tvers (ulik bane/
-// oppgave). id (default: den aktive øvelsen) avgjør hvilken.
+// Hver aktivitet har sin egen liste - tidene er ikke sammenlignbare på tvers (ulik bane/oppgave). id
+// (default: den aktive øvelsen) avgjør hvilken. ra1/ra2 peker BEVISST til SAMME felt som race1/race3
+// (ikke egne entriesRecurrent1/3-lister lenger) - se RECURRENT_ACRO_ORDER sin egen kommentar: samme
+// løype, delt ledertavle, uansett om den flys via Initiell- eller Recurrent-menyen.
 const RACING_ENTRIES_FIELD = {
     race1: "entries", race3: "entries3", raceTunnel: "entriesTunnel", targetStrike: "entriesTargets",
-    ra1: "entriesRecurrent1", ra2: "entriesRecurrent3"
+    ra1: "entries", ra2: "entries3",
+    rq1: "entriesRecurrentQuad1", rq2: "entriesRecurrentQuad2"
 };
 function racingEntriesFor(id) {
     const field = RACING_ENTRIES_FIELD[id || exerciseState.exerciseId] || "entries";
