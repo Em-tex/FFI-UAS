@@ -7813,7 +7813,14 @@ function updateExerciseHud() {
     // se stage.type === "racing" i updateRacingStage.
     const isRacing = stage && stage.type === "racing";
     exerciseHudViolationsItemEl.style.display = isRacing ? "none" : "";
-    exerciseHudHeadingErrorItemEl.style.display = isRacing ? "none" : "";
+    // Nese-feil-feltet skjules for racing, krasj-øvelser (targetHit, "Krasj i bevegelige mål") og dermed
+    // ALLE acro-øvelsene (ACRO_EXERCISE_ORDER = race1/race3/raceTunnel [racing] + targetStrike [targetHit]
+    // - de to typene under dekker derfor automatisk hele acro-kategorien) - headingErrorDeg settes
+    // allerede til null for begge (se "ingen nese-krav" ved stage.type === "racing"/"targetHit" i
+    // updateExercise), men feltet ble likevel stående synlig og bare vist "-" i stedet for å forsvinne
+    // helt (brukerens rapport: "ikke vis nese-feil feltet i HUD. er ikke relevant").
+    const isHeadingIrrelevant = stage && (stage.type === "racing" || stage.type === "targetHit");
+    exerciseHudHeadingErrorItemEl.style.display = isHeadingIrrelevant ? "none" : "";
 
     // Avviks-status: tydelig, vedvarende indikator på hvor nær steget er å bli nullstilt - banneret
     // alene forsvinner etter noen sekunder og etterlot ingen synlig "du har brukt opp advarselen".
@@ -8987,8 +8994,16 @@ function updateTargetHitVisuals(now) {
     const tangentAhead = patrol.curve.getTangentAt(uAhead);
     const turnAmount = tangent.angleTo(tangentAhead);
     if (turnAmount > 1e-4) {
+        // BUG (rapportert av brukeren: "noen ganger tilter den dronen feil vei i forhold til hvilken vei
+        // den svinger") - turnCross her er kryssproduktet av to tangenter som ALLEREDE er hentet i riktig
+        // reiseretning (uAhead-forskyvningen over er jo selv fortegns-korrigert med forward). Krysningens
+        // fortegn snur derfor NATURLIG mellom frem- og returtur gjennom samme kurvepunkt (den fysiske
+        // svingens rotasjonsretning, sett langs nesa sin faktiske bevegelse over tid, ER motsatt når samme
+        // kurve flys baklengs). Den ekstra "* (forward ? 1 : -1)" under tvang derimot fortegnet til å bli
+        // LIKT på begge turer - dermed krenget dronen feil vei på nøyaktig halve patruljen (returturen).
+        // Fjernet - turnCross sitt eget fortegn er allerede riktig, ingen ekstra flipp trengs.
         const turnCross = new THREE.Vector3().crossVectors(tangent, tangentAhead);
-        const bankSign = (turnCross.y >= 0 ? 1 : -1) * (forward ? 1 : -1);
+        const bankSign = turnCross.y >= 0 ? 1 : -1;
         const bank = clamp(turnAmount * bankGain, 0, maxBank) * bankSign;
         handle.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bank));
     }
@@ -9670,8 +9685,9 @@ const ACRO_MEDAL_THRESHOLDS = {
     race3: { gold: 105, silver: 130, bronze: 180 },
     raceTunnel: { gold: 55, silver: 75, bronze: 110 },
     // Gull justert til brukerens eget, eksplisitte tall ("krasj i bevegelige mål kan gi gull under 1:30")
-    // - opp fra 80 (1:20.0). Silver/bronse uendret (fortsatt god avstand oppover fra det nye gull-taket).
-    targetStrike: { gold: 90, silver: 120, bronze: 200 }
+    // - opp fra 80 (1:20.0). Senere lagt til ETT MINUTT på alle tre nivåene (brukerens krav: "må sette opp
+    // tidene. legg til et minutt på alle nivåene") - gull 1:30->2:30, sølv 2:00->3:00, bronse 3:20->4:20.
+    targetStrike: { gold: 150, silver: 180, bronze: 260 }
 };
 // Platinum: KUN for de to eksisterende banene, der en ekte, kjent rekord finnes å slå - operativ leder
 // UAS sine egne rekorder (0:26.12 på enkeltrundebanen, 1:24.05 på tre runder-banen), IKKE en vanlig
@@ -10842,6 +10858,17 @@ document.addEventListener("DOMContentLoaded", function () {
         const active = document.activeElement;
         if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
             return;
+        }
+        // Ctrl+C med markert tekst i en av menyene (øvelsespanelet, hjelp, osv.) skal kopiere teksten som
+        // vanlig - IKKE tolkes som spillets egen "C" (bytt kameravinkel)-hurtigtast. Uten denne sjekken
+        // fanget ControlLeft/Right + KeyC (begge i GAME_KEY_CODES under, for hhv. "gass ned" og
+        // kameraskift) opp HELE kombinasjonen med preventDefault() og byttet kamera i tillegg - nettleseren
+        // fikk aldri sjansen til å utføre selve kopieringen (brukerens rapport: "når man markerer tekst i
+        // menyene og trykker ctrl+c må man få kopiert teksten. ikke bytte kameravnkel da"). Kun aktuelt når
+        // det faktisk FINNES en tekstmarkering - ellers skal Ctrl+C fortsatt fungere som vanlig i spillet.
+        if ((e.ctrlKey || e.metaKey) && e.code === "KeyC") {
+            const selection = window.getSelection();
+            if (selection && selection.toString().length > 0) return;
         }
         // MÅ preventDefault() alle spillets taster (ikke bare Shift/Ctrl/Space) - ellers kan
         // nettleseren tolke kombinasjonen som sin egen hurtigtast midt i flyging, f.eks.
