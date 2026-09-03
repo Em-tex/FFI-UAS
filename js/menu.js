@@ -4,9 +4,16 @@ document.addEventListener("DOMContentLoaded", function() {
     const menuItems = [
         { name: "Hjem", link: "index.html", icon: "fa-house" },
         {
+            // "UAS Intro" og "Leksjonsskjema" var to flate lenker rett under Trening - slått sammen i en
+            // egen nestet "Skjema"-undermeny (brukerens krav), samme mønster som Simulator-undermenyen
+            // rett under (renderDropdownChild/renderItem håndterer nøstede "children" generisk allerede).
             name: "Trening", icon: "fa-graduation-cap", children: [
-                { name: "UAS Intro", link: "uas-intro.html", icon: "fa-list-check" },
-                { name: "Leksjonsskjema", link: "leksjonsskjema.html", icon: "fa-clipboard-user" },
+                {
+                    name: "Skjema", icon: "fa-clipboard-list", children: [
+                        { name: "UAS Intro", link: "uas-intro.html", icon: "fa-list-check" },
+                        { name: "Leksjonsskjema", link: "leksjonsskjema.html", icon: "fa-clipboard-user" }
+                    ]
+                },
                 {
                     name: "Simulator", icon: "fa-gamepad", children: [
                         { name: "Quadcopter", link: "simulator.html", icon: "fa-helicopter" },
