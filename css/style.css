@@ -2145,8 +2145,9 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .limits-table td.limit-value { padding-left: 28px; }
 /* BUG-historikk (rapportert av brukeren, tre runder på rad - skjermbilder bekreftet begge de forrige
    var feil):
-   Runde 1: input-boksene ikke pent på linje, "Oppvisning for publikum" (lengste standard-parameter, se
-   DEFAULTS.normal.limits) havnet utenfor boksen sin. Uten eksplisitte kolonnebredder fordelte
+   Runde 1: input-boksene ikke pent på linje, "Oppvisning foran folkemengder" (den gang "Oppvisning for
+   publikum" - lengste standard-parameter, se DEFAULTS.normal.limits) havnet utenfor boksen sin. Uten
+   eksplisitte kolonnebredder fordelte
    table-layout:auto bredden tilnærmet LIKT mellom parameter-navn og verdi (begge cellene inneholder bare
    et umerket input width:100%, ingen naturlig breddeforskjell å styre etter) - løst med table-layout:fixed
    (over) + en fast 58%-bredde på parameter-kolonnen.

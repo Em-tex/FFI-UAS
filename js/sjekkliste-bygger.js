@@ -35,7 +35,9 @@ const STORAGE_KEY = "ffi-uas:sjekkliste-generator";
 // Bumpet til 34: FX-10 sin "Heading/roll/pitch" korttet ned fra "Riktig ved tilting av farkosten" til
 // "Korrekte indikasjoner". "Lavt batterinivå varsel" på contingency-fanen merket aircraft:"generisk" og
 // vises dermed ikke lenger for FX-10-malene.
-const SCHEMA_VERSION = 34;
+// Bumpet til 35: begrensningen "Oppvisning for publikum" omdøpt til "Oppvisning foran folkemengder"
+// (brukerønske) i både generisk og FX-10 normal-mal.
+const SCHEMA_VERSION = 35;
 
 // Kolonneoverskrifter i sjekkpunkt-tabellen er ulike for normal- vs. contingency/emergency/erp-
 // sjekklister: en normal preflight-sjekk sammenligner mot en forventet status, mens de andre beskriver
@@ -80,7 +82,7 @@ const AIRCRAFT_CONTENT = {
             { key: "Maks rekkevidde", value: "VLOS" },
             { key: "Vær", value: "Ingen nedbør" },
             // "RTH-batterinivå" fjernet - brukerønske ("kan variere med operasjonen").
-            { key: "Oppvisning for publikum", value: "Forbudt" }
+            { key: "Oppvisning foran folkemengder", value: "Forbudt" }
         ],
         sections: [
             {
@@ -151,7 +153,7 @@ const AIRCRAFT_CONTENT = {
             { key: "Maks hastighet", value: "" },
             { key: "Maks rekkevidde", value: "VLOS" },
             { key: "Vær", value: "Ingen nedbør" },
-            { key: "Oppvisning for publikum", value: "Forbudt" }
+            { key: "Oppvisning foran folkemengder", value: "Forbudt" }
         ],
         sections: [
             {
@@ -435,7 +437,7 @@ function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal, 
     // enten gikk verdikolonnen tom for plass, eller (ved en for grådig kolonnebredde) ble bitteliten.
     // Strukturell fiks i stedet for et nytt gjettet tall: parameter-feltet er nå en auto-voksende
     // textarea (rows=1), akkurat samme teknikk som item-text/item-target allerede bruker i
-    // createItemRow/autoGrowTextarea - en uvanlig lang parametertekst ("Oppvisning for publikum") får
+    // createItemRow/autoGrowTextarea - en uvanlig lang parametertekst ("Oppvisning foran folkemengder") får
     // dermed lov til å BREKKE TIL TO LINJER i stedet for enten å kreve en bred, fast kolonne (som stjeler
     // plass fra verdikolonnen) eller å klippes. Kolonnebredden (se .limit-key i css/style.css) kan dermed
     // settes betydelig smalere/mer rimelig uten risiko for at teksten forsvinner.
