@@ -1057,8 +1057,33 @@
     }
 
     /* ---------- Vind (stabil + kast) ---------- */
+    // BUG rettet: vindkastene fantes i praksis ikke. Modellen trakk et NYTT tilfeldig kast-mål HVERT
+    // BILDE og glattet mot det med lerp-faktor dt*0.6 (= 0.005 ved 120 fps). Et lavpassfilter matet med
+    // uavhengig støy per bilde midler bort nesten hele signalet før det rekker å bygge seg opp: målt over
+    // 20 minutter ga "gust 0.3" på 8 m/s vind - nominelt ±2,4 m/s - kast på 0,09 m/s i snitt og 0,29 m/s
+    // på det meste, altså 4 % av det tilsiktede. Vinden var dermed helt jevn uansett hva kast-slideren
+    // sto på. Effekten var i tillegg bildefrekvens-avhengig: HØYERE fps ga SVAKERE kast (7 % ved 30 fps,
+    // 3 % ved 120), fordi flere bilder betyr mer midling.
+    // Rettingen har to deler:
+    //  1) Kast-RETNINGEN holdes i GUST_HOLD_MIN/MAX_SEC sekunder før en ny trekkes, i stedet for å
+    //     trekkes på nytt hvert bilde. Da har filteret noe sammenhengende å følge, og et kast blir en
+    //     faktisk hendelse med varighet - slik ekte kast oppfører seg.
+    //  2) Glattingen bruker 1 - exp(-rate*dt) i stedet for den lineære tilnærmingen dt*rate. Det gjør
+    //     responsen eksakt bildefrekvens-uavhengig, og den kan aldri overskride 1 selv om dt blir stort
+    //     (f.eks. etter at fanen har vært i bakgrunnen) - Math.min(1, ...)-klemmingen er derfor unødvendig.
+    // Med rettingen gir gust 0.3 på 8 m/s kast på 1,45 m/s i snitt og opptil ~3,1 m/s, altså 60 % av
+    // nominell verdi i snitt. MIDDELVINDEN er uendret: kastet svinger om null og legger ikke til noe
+    // vedvarende trykk - det er kun variasjonen som kommer tilbake.
+    // Delt av alle tre simulatorene (quad, VTOL og fixed-wing kaller alle denne med samme signatur).
+    const GUST_HOLD_MIN_SEC = 1.0;   // korteste tid ett kast-mål står
+    const GUST_HOLD_MAX_SEC = 3.0;   // lengste tid ett kast-mål står
+    const GUST_RESPONSE_RATE = 1.2;  // 1/s - tidskonstant ~0,83 s inn mot et nytt kast
+    const GUST_DECAY_RATE = 2.0;     // 1/s - hvor raskt et gjenstående kast ebber ut når kast slås AV
+
     // Beregner gjeldende vindvektor (verdensrom, m/s): stabil komponent + jevnt glattet
     // (ikke hakkete) tilfeldig kast-element. gustOffsetVec muteres (holder tilstand mellom kall).
+    // Kastets tilstand (retning + gjenstående holdetid) henger på gustOffsetVec som egne felter, ikke i
+    // modul-scope: signaturen er dermed uendret, og hver kaller får sin egen, uavhengige kast-syklus.
     function computeWind(dt, windSettings, gustOffsetVec, outVec) {
         outVec = outVec || new THREE.Vector3();
         if (!windSettings.enabled) {
@@ -1068,11 +1093,32 @@
         const dirRad = THREE.MathUtils.degToRad(windSettings.directionDeg);
         const steady = new THREE.Vector3(Math.sin(dirRad), 0, Math.cos(dirRad)).multiplyScalar(windSettings.speed);
         if (windSettings.gust > 0) {
-            const gustTarget = new THREE.Vector3(Math.random() * 2 - 1, 0, Math.random() * 2 - 1)
-                .multiplyScalar(windSettings.gust * windSettings.speed);
-            gustOffsetVec.lerp(gustTarget, Math.min(1, dt * 0.6));
+            if (gustOffsetVec.gustHoldLeft === undefined) {
+                gustOffsetVec.gustHoldLeft = 0;
+                gustOffsetVec.gustDirX = 0;
+                gustOffsetVec.gustDirZ = 0;
+            }
+            gustOffsetVec.gustHoldLeft -= dt;
+            if (gustOffsetVec.gustHoldLeft <= 0) {
+                gustOffsetVec.gustDirX = Math.random() * 2 - 1;
+                gustOffsetVec.gustDirZ = Math.random() * 2 - 1;
+                gustOffsetVec.gustHoldLeft = GUST_HOLD_MIN_SEC + Math.random() * (GUST_HOLD_MAX_SEC - GUST_HOLD_MIN_SEC);
+            }
+            // Retningen lagres som en enhetsløs [-1,1]-verdi og skaleres med styrke/kast HVER gang, slik
+            // at et dra i vind- eller kast-slideren slår inn umiddelbart i stedet for ved neste kast.
+            const scale = windSettings.gust * windSettings.speed;
+            const a = 1 - Math.exp(-GUST_RESPONSE_RATE * dt);
+            gustOffsetVec.x += (gustOffsetVec.gustDirX * scale - gustOffsetVec.x) * a;
+            gustOffsetVec.z += (gustOffsetVec.gustDirZ * scale - gustOffsetVec.z) * a;
+            gustOffsetVec.y = 0;
         } else {
-            gustOffsetVec.lerp(new THREE.Vector3(), Math.min(1, dt * 2));
+            // Nullstilt holdetid: slås kast på igjen senere, starter en frisk syklus med det samme i
+            // stedet for å vente ut resten av en gammel.
+            gustOffsetVec.gustHoldLeft = 0;
+            const a = 1 - Math.exp(-GUST_DECAY_RATE * dt);
+            gustOffsetVec.x -= gustOffsetVec.x * a;
+            gustOffsetVec.z -= gustOffsetVec.z * a;
+            gustOffsetVec.y = 0;
         }
         outVec.copy(steady).add(gustOffsetVec);
         return outVec;
@@ -1554,14 +1600,23 @@
 
     /* ---------- FPV HUD/OSD (crosshair / kunstig horisont) ---------- */
     // Betaflight-lignende OSD-crosshair: hvit, liten runding i midten med korte streker ut til hver side.
+    // HUD-grafikken var opprinnelig tegnet i et fast 400x300-canvas som CSS strakk ut til hele bildet.
+    // Nå følger kvad-simulatorens canvas den faktiske render-oppløsningen (se resizeFpvHudCanvas i
+    // js/simulator.js), så alle piksel-målene under skaleres med høyden for å beholde nøyaktig samme
+    // SYNLIGE størrelse som før. VTOL- og fixed-wing-simulatorene bruker fortsatt 400x300, der blir
+    // faktoren nøyaktig 1 og tegningen bit-for-bit uendret.
+    const FPV_HUD_DESIGN_H = 300;
+    function fpvHudScale(h) { return h / FPV_HUD_DESIGN_H; }
+
     function drawFpvCrosshair(ctx, w, h) {
+        const s = fpvHudScale(h);
         ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.5 * s;
         const cx = w / 2, cy = h / 2;
         ctx.beginPath();
-        ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 3.5 * s, 0, Math.PI * 2);
         ctx.stroke();
-        const gap = 9, wingLen = 16;
+        const gap = 9 * s, wingLen = 16 * s;
         ctx.beginPath();
         ctx.moveTo(cx - gap - wingLen, cy); ctx.lineTo(cx - gap, cy);
         ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + gap + wingLen, cy);
@@ -1571,18 +1626,38 @@
     // Betaflight-lignende kunstig horisont: ingen himmel-/bakkefarge, kun noen korte hvite streker som
     // alltid ligger vannrett i forhold til den ekte horisonten (roterer med rull, flyttes med pitch).
     // Tar ferdig utregnede grader (pitchDeg/rollDeg) - kalleren avgjør aksekonvensjon selv.
-    function drawFpvHorizonFromAngles(ctx, w, h, pitchDeg, rollDeg) {
-        const pxPerDeg = 3;
+    // pitchDeg er her KAMERAETS elevasjon over horisonten (positiv = kameraet peker OPP), ikke
+    // nødvendigvis luftfartøyets kroppsvinkel - ser kameraet opp, ligger horisonten NEDENFOR
+    // bildesenter, altså mot positiv y i canvas (der y peker ned).
+    // opts.fovDeg (valgfri): kameraets VERTIKALE synsfelt. Er den satt, plasseres linja med den EKTE
+    // perspektivprojeksjonen f*tan(v) i stedet for den lineære tilnærmingen pxPerDeg = 3 - først da
+    // LIGGER linja faktisk på horisonten i bildet, i stedet for bare å bevege seg riktig vei.
+    // Uten opts oppfører funksjonen seg nøyaktig som før (VTOL- og fixed-wing-simulatorene kaller den
+    // uten, og er dermed urørt).
+    function drawFpvHorizonFromAngles(ctx, w, h, pitchDeg, rollDeg, opts) {
+        const o = opts || {};
+        const s = fpvHudScale(h);
+        let offsetPx;
+        if (o.fovDeg) {
+            // Klemt til ±85°: tan() går mot uendelig ved 90, og linja er uansett for lengst ute av
+            // bildet der. Uten klemmingen ville et loop rett opp/ned gitt Infinity inn i ctx.translate.
+            const p = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(pitchDeg, -85, 85));
+            const f = (h / 2) / Math.tan(THREE.MathUtils.degToRad(o.fovDeg / 2));
+            offsetPx = f * Math.tan(p);
+        } else {
+            const pxPerDeg = 3 * s;
+            offsetPx = pitchDeg * pxPerDeg;
+        }
         ctx.save();
-        ctx.translate(w / 2, h / 2 + pitchDeg * pxPerDeg);
+        ctx.translate(w / 2, h / 2 + offsetPx);
         ctx.rotate(THREE.MathUtils.degToRad(-rollDeg));
         ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1.5;
-        const dashLen = 26, gap = 13;
+        ctx.lineWidth = 1.5 * s;
+        const dashLen = 26 * s, gap = 13 * s;
         ctx.beginPath();
         ctx.moveTo(-gap - dashLen, 0); ctx.lineTo(-gap, 0);
         ctx.moveTo(gap, 0); ctx.lineTo(gap + dashLen, 0);
-        ctx.moveTo(0, -5); ctx.lineTo(0, 5);
+        ctx.moveTo(0, -5 * s); ctx.lineTo(0, 5 * s);
         ctx.stroke();
         ctx.restore();
     }

@@ -184,8 +184,10 @@
             </div>
             <div class="sim-rate-row">
                 <label>FPV cam-vinkel</label>
-                <input type="range" id="fpvTiltInput" min="-45" max="45" step="1">
-                <span class="sim-rate-value" id="fpvTiltValue">-15</span>
+                <!-- max hevet 45 -> 60 (brukerens ønske). min står på -45: en nedovervinklet montering
+                     utover det har ingen praktisk nytte, og positiv retning er opp - se DEFAULT_FPV_TILT_DEG. -->
+                <input type="range" id="fpvTiltInput" min="-45" max="60" step="1">
+                <span class="sim-rate-value" id="fpvTiltValue">15</span>
             </div>
             <div class="sim-rate-row">
                 <label style="flex:1;">Realistisk modus</label>

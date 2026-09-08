@@ -10,13 +10,24 @@ const GRAVITY = 9.81;               // m/s^2
 // (Verdiene under er dempet noe ift. en ren "snap-to-rate"-følelse, slik at treghet/moment merkes tydeligere -
 // både i rotasjon og i hvor lenge droneen "seiler" videre lineært før luftmotstanden bremser den.)
 const TORQUE_GAIN = 0.30;
-// Propellskivene virker som "fallskjermer" ved vertikal bevegelse (mye mer luftmotstand opp/ned enn
-// horisontalt gjennom lufta) - uten dette føles droneen glatt/"såpete" når gassen slippes.
-const VERTICAL_DRAG_MULTIPLIER = 1.6;
+// Propellskivene virker som "fallskjermer" ved bevegelse LANGS skivenes normal (mye mer luftmotstand
+// gjennom skiva enn på tvers av den) - uten dette føles droneen glatt/"såpete" når gassen slippes.
+// NB: dette leddet virker langs dronens EGEN opp-akse (se dragVec i stepPhysics), ikke verdens Y - et
+// dykk med dronen pitchet 90 grader skal ikke bremses som om propellskiva sto vannrett.
+// Senket fra 1.6 (pilottilbakemelding: "dronen er for lett ... simulatoren kjennes seigere ut enn DRL"):
+// 1.6 ga en terminalfart i fritt fall på under 10 m/s, altså en drone som DALER i stedet for å falle.
+const VERTICAL_DRAG_MULTIPLIER = 1.2;
 // Luftmotstand i to ledd per klasse: dragLinear dominerer i lav fart (indusert drag/momentum-drag fra
 // propellstrømmen - det som faktisk bremser en quad som "seiler" sakte avgårde etter en dytt), dragQuad
 // dominerer i høy fart (v² - "veggen" nær toppfart). Kun kvadratisk ledd ga null bremsing i lav fart
 // og en drone som fløt evig videre etter et lite puff.
+// Vekten mellom de to leddene ble flyttet etter pilottilbakemelding ("kjennes seigere ut enn DRL"):
+// dragLinear var så høy at det LINEÆRE leddet dominerte helt opp til ~30 m/s, og ga en retardasjon på
+// 0.23 g ved bare 5 m/s (en ekte 5-tommer ligger rundt 0.04 g der) - hver minste bevegelse ble dempet
+// bort. dragLinear er derfor omtrent halvert/tredelt og dragQuad hevet tilsvarende, slik at toppfarten
+// per klasse holder seg omtrent uendret mens lavfarts-"seigheten" forsvinner:
+//   racing 0.20/0.006 -> 0.07/0.011 (toppfart 41 -> 37 m/s), mid 0.35/0.02 -> 0.16/0.03 (27 -> 26 m/s),
+//   cinematic 0.55/0.07 -> 0.26/0.10 (19 -> 17.5 m/s).
 // maxYawRateDeg: øvre TAK på yaw-rate uansett hva brukeren selv setter i Rates-panelet (se
 // effectiveYawRates lenger ned) - inertiaYaw ALENE (over) gir riktig RETNING (tyngre klasser er tregere å
 // spinne opp/ned i yaw), men uten et eget tak ville de likevel til slutt nådd akkurat samme TOPPFART som
@@ -29,7 +40,7 @@ const DRONE_CLASSES = {
         label: "Racing (rask, lett)",
         mass: 0.5, maxThrust: 18,
         inertiaRollPitch: 0.025, inertiaYaw: 0.05, maxYawRateDeg: 800, // høyt nok til i praksis ikke begrense noen vanlig Rates-instilling
-        dragLinear: 0.2, dragQuad: 0.006, visualScale: 0.72 // kun visuell størrelse - massen er uendret
+        dragLinear: 0.07, dragQuad: 0.011, visualScale: 0.72 // kun visuell størrelse - massen er uendret
     },
     // Brukerens krav, ordrett: "legge til en racing quad, ikke for øvelsene men kun for freeflight? med
     // twr på 10:1 f.eks.?" - egen, NY klassenøkkel ("racingPro"), IKKE en endring av "racing" over (den
@@ -54,20 +65,20 @@ const DRONE_CLASSES = {
         label: "Racing Pro (svært kraftig, TWR ~10:1)",
         mass: 0.5, maxThrust: 49,
         inertiaRollPitch: 0.025, inertiaYaw: 0.05, maxYawRateDeg: 800,
-        dragLinear: 0.2, dragQuad: 0.006, visualScale: 0.72,
+        dragLinear: 0.07, dragQuad: 0.011, visualScale: 0.72,
         hiddenFromMenu: true
     },
     mid: {
         label: "Middels",
         mass: 1.2, maxThrust: 24,
         inertiaRollPitch: 0.07, inertiaYaw: 0.14, maxYawRateDeg: 250,
-        dragLinear: 0.35, dragQuad: 0.02, visualScale: 1.3
+        dragLinear: 0.16, dragQuad: 0.03, visualScale: 1.3
     },
     cinematic: {
         label: "Cinematic (stor, treg)",
         mass: 2.6, maxThrust: 35,
         inertiaRollPitch: 0.16, inertiaYaw: 0.32, maxYawRateDeg: 120,
-        dragLinear: 0.55, dragQuad: 0.07, visualScale: 2.3
+        dragLinear: 0.26, dragQuad: 0.10, visualScale: 2.3
     }
 };
 const DEFAULT_DRONE_CLASS = "racing";
@@ -118,7 +129,12 @@ function axisTorqueNorm(axisRateSettings) {
 // "Airmode på": hele motorsettet løftes samlet slik at den laveste motoren akkurat når AIRMODE_MIN_IDLE
 // før klemming - differensialen (og kontrollautoriteten) bevares uavhengig av gassnivå, på bekostning
 // av at total trekkraft kan bli høyere enn det gassen isolert sett tilsier.
-const AIRMODE_MIN_IDLE = 0.05;
+// Senket fra 0.05 etter pilottilbakemelding ("propellene hjelper for mye til selv om throttle er i idle"):
+// tomgangsgulvet virker på ALLE fire motorer samtidig, så det er et rent løft som motvirker tyngdekraften
+// hele tiden. For racing var 0.05 * 18 N = 0.9 N mot en vekt på 4.9 N - fritt fall startet altså på
+// 8.0 m/s^2 i stedet for 9.81. Med 0.03 blir det 0.54 N (11 %), dvs. 8.7 m/s^2 - fortsatt nok tomgang til
+// at airmode har en differensial å regulere med, men uten den tydelige "for lett"-følelsen.
+const AIRMODE_MIN_IDLE = 0.03;
 
 /* ---------- Vortex ring state (VRS) ----------
    Rask vertikal nedstigning med lav horisontalfart lar propellene synke ned i sin egen nedvask og
@@ -242,16 +258,18 @@ const LOITER_VEL_TO_LEAN_DEG = 3.5; // grader krengevinkel per m/s fartsavvik (P
 // Egen (høyere) krengevinkel-takk enn MAX_SELF_LEVEL_ANGLE - Loiter skal kunne kaste inn mer krengning enn
 // Stabilized/Alt Hold for å faktisk klare å holde posisjonen i sterk vind (se LOITER_MAX_WIND_SPEED) og
 // følge et pinneutslag helt til LOITER_MAX_SPEED. 45° gir god margin: nødvendig vinkel for å stå stille i
-// LOITER_MAX_WIND_SPEED vind (utregnet fra drag-modellen per droneklasse) ligger på 29-32°, og for å FLY
-// LOITER_MAX_SPEED i marsjfart på 37-42° - begge godt innenfor taket, uten å måtte gå til et urealistisk
-// ekstremt "racing"-aktig lenevinkel-tak.
+// LOITER_MAX_WIND_SPEED vind (utregnet fra drag-modellen per droneklasse) ligger på 20-26°, og for å FLY
+// LOITER_MAX_SPEED i marsjfart på 26-35° - begge godt innenfor taket, uten å måtte gå til et urealistisk
+// ekstremt "racing"-aktig lenevinkel-tak. (Tallene falt fra hhv. 29-32 og 37-42 grader da
+// drag-modellen ble tunet ned, se kommentaren ved DRONE_CLASSES - taket på 45 grader har dermed
+// fått enda bedre margin.)
 const LOITER_MAX_LEAN_ANGLE = 45;   // grader
 // I-ledd (se loiterIntegralFwd/-Right i stepPhysics) - et RENT P-ledd krever en VEDVARENDE fartsFEIL for
 // å holde en gitt krengevinkel oppe, så mot en konstant vind ville droneen aldri stoppe helt opp (den
 // måtte stadig drifte litt for at feilen skal holde korreksjonsvinkelen aktiv) - I-leddet bygger sakte opp
 // en egen vinkel-bias som til slutt bærer HELE motvirkningen alene, slik at fartsfeilen (og dermed driften)
 // kan gå mot null selv i vedvarende vind. Klemt til LOITER_WIND_I_MAX_DEG for å unngå "integral windup" -
-// BUG rettet: klemt til kun 15° tidligere, mens opptil ~32° faktisk trengs for å stå stille i sterk vind,
+// BUG rettet: klemt til kun 15° tidligere, mens opptil ~26° (~32° før drag-tuningen) faktisk trengs for å stå stille i sterk vind,
 // så I-leddet kunne ALDRI ta over hele jobben og en liten, vedvarende drift ble stående igjen uansett hvor
 // lenge man ventet. LOITER_WIND_I_MAX_DEG matcher derfor nå LOITER_MAX_LEAN_ANGLE - samme prinsipp som
 // ArduCopters egen IMAX (satt langt over det som normalt trengs, ikke stramt rundt et anslått behov).
@@ -279,7 +297,17 @@ const LOITER_MAX_ANGLE_RATE = 60;   // grader/s
 // Vindstyrke Loiter er dimensjonert for å holde posisjon i (se vindwarning i updateHud) - ved sterkere
 // vind enn dette kan I-leddet/krengevinkeltaket over bli utilstrekkelige, og piloten varsles.
 const LOITER_MAX_WIND_SPEED = 10;   // m/s
-const DEFAULT_FPV_TILT_DEG = -15;   // typisk oppovervinklet FPV-kamera-montering
+// BUG rettet: sto på -15 med kommentaren "typisk oppovervinklet", men rotation.x = -15° peker kameraet
+// 15 grader NED, ikke opp. Three.js sitt kamera ser langs lokal -Z, og R_x(v) · (0,0,-1) = (0, sin v,
+// -cos v): POSITIV vinkel gir positiv y-komponent, altså blikket opp. Standardoppsettet så derfor
+// nedover, stikk i strid med både kommentaren og en ekte FPV-quad (som vinkles opp nettopp for at
+// kameraet skal se FREMOVER når dronen duver nesa ned for å fly fort). Feilen ble synlig da den
+// kunstige horisonten begynte å ta hensyn til kameravinkelen - se drawFpvHorizon.
+// Selve fortegnskonvensjonen er UENDRET (positiv = opp, som den alltid har vært i koden) - det var kun
+// standardVERDIEN som hadde feil fortegn. Se også migreringen i loadSettings for allerede lagrede verdier.
+const DEFAULT_FPV_TILT_DEG = 15;    // typisk oppovervinklet FPV-kamera-montering (positiv = opp)
+// Den gamle, feilaktige standardverdien - brukt KUN av engangs-migreringen i loadSettings.
+const LEGACY_FPV_TILT_DEG = -15;
 const GROUND_CLEARANCE = 0.08;      // m, bakkekontakt
 const CRASH_SINK_RATE = 6;          // m/s - synkefart ved bakkeberøring som regnes som en hard krasj
 const FIXED_DT = 1 / 120;           // fysikk-tidssteg
@@ -362,6 +390,11 @@ const DEFAULT_WIND = { enabled: false, speed: 5, directionDeg: 0, gust: 0.3 };
 
 const DEFAULT_SETTINGS = {
     fpvTiltDeg: DEFAULT_FPV_TILT_DEG,
+    // Markør for engangs-migreringen av fpvTiltDeg (se loadSettings). Lagrede innstillinger fra FØR
+    // fortegnsrettingen mangler feltet, og loadJSON lar da denne standarden (false) stå - som er
+    // nettopp signalet migreringen ser etter. Etter migrering settes den true og lagres ved neste
+    // saveSettings, slik at den aldri kjører to ganger.
+    fpvTiltMigrated: false,
     droneClass: DEFAULT_DRONE_CLASS,
     realisticMode: false,
     // Standard PÅ (brukervalg, se mixMotors-fiksen rett over) - matcher hvordan en ekte freestyle-/
@@ -1089,6 +1122,17 @@ function loadSettings() {
     // Vind skal alltid være av ved sideinnlasting, uansett hva som var lagret fra en tidligere økt -
     // styrke/retning/kast huskes fortsatt, men man må aktivere vinden på nytt hver gang siden lastes.
     result.wind.enabled = false;
+    // Engangs-migrering av kameravinkelen (se DEFAULT_FPV_TILT_DEG): den gamle standarden -15 pekte
+    // kameraet NED i stedet for opp. Uten dette ville fortegnsrettingen ikke hatt noen effekt i det
+    // hele tatt for noen som allerede har flydd - den lagrede verdien vinner alltid over standarden i
+    // loadJSON.
+    // Vi kan ikke skille "arvet den gale standarden" fra "valgte -15 bevisst", så migreringen flytter
+    // KUN den eksakte gamle standardverdien. Har man selv dratt slideren til noe annet - inkludert en
+    // annen negativ verdi - står valget urørt.
+    if (!result.fpvTiltMigrated) {
+        if (result.fpvTiltDeg === LEGACY_FPV_TILT_DEG) result.fpvTiltDeg = DEFAULT_FPV_TILT_DEG;
+        result.fpvTiltMigrated = true;
+    }
     return result;
 }
 function saveSettings() {
@@ -1262,7 +1306,15 @@ let windsockHandle = null;
 
 function buildGround() {
     const group = new THREE.Group();
-    const groundMat = new THREE.MeshStandardMaterial({ map: Sim.buildGroundTexture() });
+    const groundTex = Sim.buildGroundTexture();
+    // Anisotropisk filtrering (samme fiks som VTOL-simmens groundDecalProps, se kommentaren der).
+    // Sjakkbrettet på 2 m ER avstandsreferansen fra VLOS - men piloten står på bakken og ser den i en
+    // SVÆRT slak graderingsvinkel (6° på 15 m fra 1,6 m øyehøyde). Uten anisotropi velger GPU-en ett
+    // mip-nivå ut fra den VERSTE av de to teksturaksene, og rutene mudres ut til flat grønt akkurat der
+    // avstandsbedømmingen trenger dem mest (brukeren: "unaturlig vanskelig å bedømme avstand til
+    // dronen"). renderer er opprettet før dette kallet - se initScene.
+    groundTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const groundMat = new THREE.MeshStandardMaterial({ map: groundTex });
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -5212,23 +5264,182 @@ function buildWorldObjects() {
     return group;
 }
 
+/* ---------- Propell ----------
+   Bladene var tidligere rette BoxGeometry-plater: konstant korde, ingen vridning, ingen profil.
+   Nå bygges hvert blad som en ekte propellflate - en parametrisk overflate der hver spennvidde-
+   stasjon har sin egen korde (planform), vridning (pitch), tykkelse og tilbakesveip, med et
+   NACA-lignende, kambert tverrsnitt. Det er nettopp vridningen fra rot til tupp som gjør at en
+   propell LESER som en propell og ikke som en pinne.
+   Tabellene under er i r/R (andel av tuppradien). Verdiene følger en typisk multirotor-propell:
+   korden er smal ved roten, bredest rundt 60 % ut, og avrundet mot tuppen; vridningen faller fra
+   ca. 30 grader ved roten til ca. 7,5 ved tuppen (geometrisk washout - uten den ville de indre
+   delene av bladet stått i altfor stor innfallsvinkel, siden de går saktere enn tuppen). */
+const PROP_STATIONS   = [0.16, 0.28, 0.40, 0.52, 0.64, 0.76, 0.86, 0.93, 0.97, 1.00]; // r/R
+const PROP_CHORD_FRAC = [0.42, 0.72, 0.90, 0.99, 1.00, 0.94, 0.82, 0.66, 0.45, 0.06]; // andel av maks korde
+const PROP_TWIST_DEG  = [30,   24,   19,   15.5, 13,   11,   9.5,  8.5,  8,    7.5];  // pitch-vinkel
+const PROP_SWEEP_FRAC = [0, 0.004, 0.010, 0.018, 0.027, 0.037, 0.046, 0.053, 0.058, 0.062]; // tilbakesveip, andel av R
+const PROP_THICK_FRAC = [0.14, 0.125, 0.112, 0.100, 0.090, 0.082, 0.076, 0.072, 0.070, 0.070]; // tykkelse/korde
+const PROP_CHORDWISE = 10; // punkter langs korden per side, cosinus-fordelt (tett ved forkanten)
+// Maks korde som andel av tuppradien. Tre-blads propeller har smalere blad enn to-blads ved samme
+// soliditet, akkurat som i virkeligheten.
+const PROP_MAX_CHORD_FRAC_2 = 0.20;
+const PROP_MAX_CHORD_FRAC_3 = 0.165;
+// Navet er en liten boss som klemmer propellen fast på motorakselen, IKKE en klump oppå motoren.
+// BUG rettet (brukeren: "midten av propellene har en voldsom utvekst? skal jo bare være en liten motor
+// der og så selve propeller-midten"): navet var definert som en andel av TUPPRADIEN, så da bladene ble
+// forlenget vokste navet med dem - det endte på 54 mm i diameter mot motorens 29 mm, altså 189 % av
+// motoren, og stakk 20 mm opp over den. Målene er derfor faste lokale enheter i samme skala som motoren
+// selv (som er hardkodet til radius 0.02, se motorOffsets-løkka i buildDrone), slik at forholdet mellom
+// nav og motor ikke kan drive fra hverandre igjen. En ekte propell har et nav rundt halvparten av
+// motorklokkens diameter.
+const PROP_HUB_RADIUS = 0.011;      // topp - 55 % av motorens radius
+const PROP_HUB_BASE_RADIUS = 0.013; // bunn, lett konisk som en ekte navadapter
+const PROP_HUB_HEIGHT = 0.010;   // akkurat gapet mellom motortoppen (y=0.04) og bladplanet (y=0.05)
+
+// NACA-lignende tykkelsesfordeling. Siste ledd er -0.1036 (ikke -0.1015 som i den klassiske
+// formelen), varianten som lukker bakkanten eksakt i s = 1 - ellers ville profilen hatt en åpen
+// sprekk der, som gir hull i skyggekastet og rot i normalene.
+function propThicknessAt(s, tMax) {
+    return tMax / 0.2 * (0.2969 * Math.sqrt(s) - 0.1260 * s - 0.3516 * s * s + 0.2843 * s * s * s - 0.1036 * s * s * s * s);
+}
+// Enkel parabolsk kamber (bulning), maks 3,5 % av korden midt på - nok til at over- og undersiden
+// fanger lyset ulikt, som er det som faktisk gjør vridningen synlig.
+function propCamberAt(s) {
+    return 0.035 * 4 * s * (1 - s);
+}
+// Ett blad som lukket flate. Bladet peker langs +X (rot mot tupp) slik pivot-kontrakten krever, se
+// buildPropeller. spinDir speiler geometrien: en propell som går med klokka og en som går mot er
+// speilbilder av hverandre i virkeligheten, og forkanten må ligge i den retningen bladet beveger seg.
+// Rotasjon om +Y med positiv vinkel flytter et punkt på +X-aksen mot -Z, så for spinDir = +1 skal
+// forkanten ligge på -Z. Vridningen får samme fortegn som spinDir, slik at forkanten står HØYERE
+// enn bakkanten på begge varianter - det er det som gir løft oppover uansett rotasjonsretning.
+function buildPropBladeGeometry(tipRadius, maxChord, spinDir) {
+    const dir = spinDir >= 0 ? 1 : -1;
+    // Tabellene over dekker den AERODYNAMISKE delen av bladet, fra r/R = 0.16 og ut. Innenfor det
+    // sitter bladhalsen som går ned i navet. Uten den ville bladet startet 0.16 * R ute i lufta og
+    // sveve løsrevet fra navet - derfor legges det på en ekstra stasjon ved akkurat navradiusen, regnet
+    // ut her i stedet for å stå i tabellen, slik at den følger med automatisk om navet endres.
+    // Halsen er smalere og tykkere enn bladet utenfor (rund overgang), og har litt mer pitch.
+    const rootFrac = Math.min(PROP_HUB_RADIUS / tipRadius, PROP_STATIONS[0] * 0.6);
+    const stations = [rootFrac].concat(PROP_STATIONS);
+    const chordFrac = [PROP_CHORD_FRAC[0] * 0.62].concat(PROP_CHORD_FRAC);
+    const twistDeg = [PROP_TWIST_DEG[0] + 2].concat(PROP_TWIST_DEG);
+    const sweepFrac = [0].concat(PROP_SWEEP_FRAC);
+    const thickFrac = [PROP_THICK_FRAC[0] * 1.5].concat(PROP_THICK_FRAC);
+    const nSpan = stations.length;
+    const ring = 2 * PROP_CHORDWISE - 2; // unike punkter rundt profilen (for- og bakkant deles)
+    const pos = [];
+    for (let i = 0; i < nSpan; i++) {
+        const chord = chordFrac[i] * maxChord;
+        const tw = dir * THREE.MathUtils.degToRad(twistDeg[i]);
+        const cs = Math.cos(tw), sn = Math.sin(tw);
+        const sweep = dir * sweepFrac[i] * tipRadius;
+        const x = stations[i] * tipRadius;
+        for (let k = 0; k < ring; k++) {
+            // k går hele veien rundt profilen: oversiden fra forkant til bakkant, så undersiden tilbake.
+            const upper = k < PROP_CHORDWISE;
+            const kk = upper ? k : ring - k;
+            const s = 0.5 * (1 - Math.cos(Math.PI * kk / (PROP_CHORDWISE - 1)));
+            const half = propThicknessAt(s, thickFrac[i]) / 2;
+            const yc = (propCamberAt(s) + (upper ? half : -half)) * chord;
+            const zc = dir * (s - 0.25) * chord; // pitch-akse i kvart-korde, som på en ekte propell
+            // Vri tverrsnittet om X, og legg sveipet på ETTERPÅ (det er en forskyvning i
+            // rotorplanet, ikke en del av profilen).
+            pos.push(x, yc * cs - zc * sn, yc * sn + zc * cs + sweep);
+        }
+    }
+    const idx = [];
+    // Speilingen for spinDir = -1 snur håndetheten på flaten, så trekantene må vikles motsatt vei -
+    // ellers ville normalene pekt innover og bladet blitt svart/vrangt belyst.
+    // Grunnrekkefølgen er (a, c, b): verifisert mot fortegnet på det signerte volumet av den lukkede
+    // flaten (divergensteoremet), som skal være POSITIVT når normalene peker ut.
+    const flip = dir < 0;
+    function tri(a, b, c) { if (flip) { idx.push(a, b, c); } else { idx.push(a, c, b); } }
+    for (let i = 0; i < nSpan - 1; i++) {
+        for (let k = 0; k < ring; k++) {
+            const a = i * ring + k, b = i * ring + (k + 1) % ring;
+            const c = (i + 1) * ring + k, d = (i + 1) * ring + (k + 1) % ring;
+            tri(a, c, b);
+            tri(b, c, d);
+        }
+    }
+    // Lukk rot og tupp med vifter, så flaten er tett (åpne ender gir hull i skyggen).
+    const t = (nSpan - 1) * ring;
+    for (let k = 1; k < ring - 1; k++) {
+        tri(0, k + 1, k);
+        tri(t, t + k, t + k + 1);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
+}
+
+// Gjennomsiktigheten skal antyde BEVEGELSESUSKARPHET, ikke være en fast egenskap ved propellen
+// (brukeren: "helst ikke gjennomsiktige før de har større rpm. og da kun bladene, ikke senter").
+// Under PROP_BLUR_START_SPIN er bladene helt ugjennomsiktige - det gjelder både en disarmert drone
+// (spinSpeed = 0) og tomgang. Over det tynnes de gradvis ut mot PROP_BLUR_MIN_OPACITY ved full gass.
+// spinSpeed kommer fra updateDroneVisual og går 0 (disarmert) / 4 (tomgang) til 64 (full gass).
+const PROP_BLUR_START_SPIN = 12;
+const PROP_BLUR_FULL_SPIN = 48;
+const PROP_BLUR_MIN_OPACITY = 0.45;
+// Navet er ALDRI gjennomsiktig - det er en solid klump som ikke roterer nok i forhold til seg selv til
+// å bli uskarp, og brukeren ba eksplisitt om at bare bladene tynnes ut.
+function updatePropBladeOpacity(propGroup, spinSpeed) {
+    const mat = propGroup.userData.bladeMaterial;
+    if (!mat) return;
+    const t = clamp((spinSpeed - PROP_BLUR_START_SPIN) / (PROP_BLUR_FULL_SPIN - PROP_BLUR_START_SPIN), 0, 1);
+    const opacity = 1 - t * (1 - PROP_BLUR_MIN_OPACITY);
+    // three.js må rekompilere shaderen når .transparent endres, men IKKE når bare .opacity endres -
+    // needsUpdate settes derfor kun på selve flankene, ikke hvert bilde (det ville kastet
+    // shader-programmet på nytt 60 ganger i sekundet).
+    const wantTransparent = opacity < 1;
+    if (mat.transparent !== wantTransparent) {
+        mat.transparent = wantTransparent;
+        mat.needsUpdate = true;
+    }
+    mat.opacity = opacity;
+}
 // Propell bygget av individuelle blad-pivoter (hub i origo, bladet stikker ut langs pivotens +X) -
 // også for 2-blads, slik at propellskade kan brekke av ett og ett blad (pivot.scale.x skalerer
 // bladet fra huben og utover, se updatePropDamageVisual). Pivotene ligger i group.userData.blades.
-function buildPropeller(bladeCount, bladeLength) {
+// bladeLength er tipp-til-tipp: tuppradien er halve, og MÅ forbli det - både propell-
+// treffdeteksjonen (updatePropStrikes) og rekkevidden i updatePilotCollision regner med bladeLength / 2.
+function buildPropeller(bladeCount, bladeLength, spinDir) {
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x111111, transparent: true, opacity: 0.8 });
+    // roughness lagt til: uten et høylys er en vridd flate visuelt umulig å skille fra en flat
+    // plate - det er refleksjonen som vandrer langs bladet som viser at det faktisk er vridd.
+    // Blad og nav har HVER SITT materiale: bare bladene tynnes ut med turtallet, se
+    // updatePropBladeOpacity. Bladene starter ugjennomsiktige (transparent: false).
+    const bladeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.45 });
+    const hubMat = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.5 });
+    const tipRadius = bladeLength / 2;
+    const maxChord = tipRadius * (bladeCount <= 2 ? PROP_MAX_CHORD_FRAC_2 : PROP_MAX_CHORD_FRAC_3);
+    // Alle bladene på en propell er identiske - geometrien bygges én gang og deles.
+    const bladeGeo = buildPropBladeGeometry(tipRadius, maxChord, spinDir === undefined ? 1 : spinDir);
     const blades = [];
     for (let i = 0; i < bladeCount; i++) {
         const pivot = new THREE.Group();
         pivot.rotation.y = (i / bladeCount) * Math.PI * 2;
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(bladeLength * 0.5, 0.005, bladeCount <= 2 ? 0.02 : 0.018), mat);
-        blade.position.x = bladeLength * 0.25;
+        const blade = new THREE.Mesh(bladeGeo, bladeMat);
+        blade.castShadow = true;
         pivot.add(blade);
         group.add(pivot);
         blades.push(pivot);
     }
+    // Nav. Ligger på selve gruppen, IKKE på en blad-pivot - ellers ville det krympet sammen med et
+    // avbrukket blad (se PROP_BROKEN_STUB_SCALE). Målene er faste og knyttet til motorstørrelsen, se
+    // PROP_HUB_RADIUS. Senteret settes slik at navets BUNN står på motortoppen og OVERSIDEN ligger i
+    // bladplanet (propell-gruppen plasseres i y = 0.05 og motoren rekker til y = 0.04, se buildDrone) -
+    // altså akkurat slik en propell faktisk sitter på en motor, i stedet for å sveve midt i lufta over den.
+    const hub = new THREE.Mesh(
+        new THREE.CylinderGeometry(PROP_HUB_RADIUS, PROP_HUB_BASE_RADIUS, PROP_HUB_HEIGHT, 12), hubMat);
+    hub.position.y = -PROP_HUB_HEIGHT / 2;
+    hub.castShadow = true;
+    group.add(hub);
     group.userData.blades = blades;
+    group.userData.bladeMaterial = bladeMat;
     return group;
 }
 
@@ -5254,12 +5465,16 @@ function legLengthForClass(classKey) {
 }
 // Delt mellom det visuelle (buildDrone) og propell-treffdeteksjonen (updatePropStrikes) - propellens
 // tuppradius er halve bladlengden i begge blad-variantene.
-// Økt fra 0.2/0.28 - ekte quad-propeller er typisk ~50-55% av (diagonal) motor-til-motor-avstand
-// (f.eks. 5" prop = 127mm på en ~230mm wheelbase); med DRONE_ARM_LENGTH=0.22 gir motorene en diagonal
-// avstand på 0.44, og de gamle bladlengdene (radius 0.1/0.14) var langt kortere/stumpere enn det -
-// disse verdiene gir fortsatt trygg klaring mellom nabopropeller (se motorOffsets).
+// Utledes nå av rammen i stedet for å være hardkodet (brukeren: "bladene må være litt lengre, spissene
+// skal nesten berøre hverandre"): motorene står i (±DRONE_ARM_LENGTH, ±DRONE_ARM_LENGTH), så to
+// NABOmotorer står 2*DRONE_ARM_LENGTH = 0.44 fra hverandre, og propelldiameteren er den avstanden minus
+// klaringen under. Da kan de to aldri gå i hverandre uansett hva DRONE_ARM_LENGTH senere settes til.
+// Alle klassene deler verdien fordi de deler DRONE_ARM_LENGTH - klassene skiller seg i visualScale
+// (0.72 / 1.3 / 2.3), så den faktiske propellen i verden er fortsatt svært forskjellig. classKey
+// beholdes i signaturen siden alle kallerne sender den, og for at en klasse senere skal kunne avvike.
+const PROP_TIP_CLEARANCE = 0.02;    // lokale enheter mellom tuppene på to nabopropeller
 function bladeLengthForClass(classKey) {
-    return classKey === "cinematic" ? 0.38 : 0.3;
+    return DRONE_ARM_LENGTH * 2 - PROP_TIP_CLEARANCE;
 }
 function getLegTopLocalPositions(armLength) {
     return [
@@ -5287,13 +5502,25 @@ function getLegFootLocalPositions(legLength, armLength) {
 
 // Landingsben festet ved hver arm/motor og ned til en fot lengre ute - ikke brukt på Racing
 // (ekte racing-quader lander på understellet/motorene, uten egne ben).
-function buildLandingLegs(legLength, armLength) {
+// opts (valgfri, kun mid bruker den): { rearColor, map } farger de TO BAKRE bena og legger på
+// karbonveven. Rekkefølgen fra getLegTopLocalPositions er fremre-høyre, fremre-venstre, bakre-høyre,
+// bakre-venstre - indeks 2 og 3 er altså bakenden, samme konvensjon som MOTOR_MIX og propDamage.
+// Uten opts oppfører funksjonen seg nøyaktig som før (cinematic og racingPro kaller den med to
+// argumenter og er dermed urørt).
+function buildLandingLegs(legLength, armLength, opts) {
     const group = new THREE.Group();
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
+    const o = opts || {};
+    const baseProps = { color: 0x2a2a2a };
+    if (o.map) baseProps.map = o.map;
+    const legMat = new THREE.MeshStandardMaterial(baseProps);
+    // Bakbena i samme røde som bakarmene, slik at hele bakenden leses under ett (brukeren: "og bena
+    // under bakarmene også røde?").
+    const rearMat = o.rearColor === undefined ? legMat : new THREE.MeshStandardMaterial(
+        o.map ? { color: o.rearColor, roughness: 0.5, map: o.map } : { color: o.rearColor, roughness: 0.5 });
     const tops = getLegTopLocalPositions(armLength);
     const feet = getLegFootLocalPositions(legLength, armLength);
     tops.forEach(function (top, i) {
-        const leg = buildStrutBetween(top, feet[i], 0.012, legMat);
+        const leg = buildStrutBetween(top, feet[i], 0.012, i >= 2 ? rearMat : legMat);
         leg.castShadow = true;
         group.add(leg);
     });
@@ -5303,14 +5530,137 @@ function buildLandingLegs(legLength, armLength) {
 // Bygger droneen prosedyralt (X-ramme + 4 motorer/propeller) - ingen eksterne modellfiler.
 // Utseendet varierer med drone-type: Racing får en spiss "canopy" og 3-bladet propell for et tøffere
 // preg, Cinematic får en hengende gimbal-kule og lange, godt synlige landingsben.
+// Middels-klassen var den eneste UTEN et eget kjennetegn - Racing har canopy, Cinematic gimbalkule,
+// mid hadde ingenting (brukeren: "nå blir den jo veldig flat med så lite detaljer og ensfarge").
+// Får her et batteri med stropper på toppen, et lite kamera under nesa, GPS-mast bak og lyse
+// motorkapper - både for å gi klassen en egen silhuett og for at det skal finnes DETALJ på modellen:
+// detaljtetthet som avtar med avstanden er i seg selv en avstandskue, en ensfarget kloss har ingen.
+//
+// Fargevalget er MÅLT mot bakgrunnene dronen faktisk sees mot (gress i lav høyde under øvelsene,
+// himmel høyere oppe), i three r128 sin LinearEncoding-pipeline. Lærdommen derfra er kontraintuitiv:
+// MØRKE flater har høy kontrast mot BEGGE bakgrunner (propellblad 91 %, kropp 73 %, landingsben 63 %),
+// mens MELLOMGRÅ smelter inn i gresset fordi de lander på gressets egen lyshet. Dagens bakre armer
+// (#444444) lå på 25 % og den dempede røde nesemarkøren (#992222) på bare 7 % - i praksis usynlig
+// akkurat når man trenger å se hvilken vei dronen vender. Derfor: strukturen holdes MØRK (best
+// silhuett), og detaljene legges på som LYSE aksenter oppå. Det gir tydelig omriss OG lesbar form,
+// i stedet for å måtte velge.
+// Front/bak-fargingen er SNUDD etter brukerens forslag: rødt bak, som bremselys på en bil ("kanskje
+// bakarmene bør være rød? som bremselys?"). Det er en sterkere intuisjon for en pilot som står bak
+// dronen enn den gamle røde nesa - ser du rødt, flyr den fra deg. Landingsbena bak følger samme farge,
+// så hele bakenden leses under ett.
+// "Litt mørkere rødfarge" var ønsket, men den har en FELLE: gresset ligger på 16,9 % oppfattet lyshet,
+// og en rød som lander DER slukner helt. Målt ramme (verste kontrast mot gress/himmel):
+//   #ff3b30 23 %  |  #e02a24 18 %  |  #cc241f 16 %  |  #b81f1a 10 %  |  #a31b18 3 %  |  #992222 7 %
+// Altså: et par hakk mørkere går fint, men fra ca. #b81f1a og nedover forsvinner den - og det var
+// nøyaktig der den gamle #992222 lå. #e02a24 er derfor så mørkt som det er forsvarlig å gå: fortsatt
+// 18 % mot bakgrunnen, og BEDRE kontrast mot den lyse fronten (53 % mot 41 %) enn den knallrøde.
+const MID_REAR_COLOR = 0xe02a24;       // armer, motorer og landingsben BAK - "bremselys"
+// Fronten må da bære sin egen identitet. Lys grå måler best av kandidatene (29 % mot bakgrunn, 91 %
+// mot den mørke kroppen, 53 % mot den røde bakenden) og leser samtidig naturlig som "lys foran".
+const MID_FRONT_COLOR = 0xc8ccd0;      // armer og motorer FORAN
+const MID_STRUCTURE_COLOR = 0x2e2e2e;  // kropp/mast - mørk, 57 % mot bakgrunn
+
+// Prosedural karbonvev - samme prinsipp som Sim.buildGroundTexture (ingen eksterne bildefiler).
+// VIKTIG om hva dette faktisk gir: ved 11 m er HELE armen 4,4 piksler bred, og én piksel dekker 9 mm.
+// En vev med 0,5 mm tråder er dermed fullstendig usynlig fra VLOS - dette er en forbedring for Chase-
+// og FPV-kameraet, IKKE for avstandsbedømming under øvelsene (der er det bare hele deler som bytter
+// farge som leses). Teksturen er gråtone med gjennomsnitt nær 1.0 og MULTIPLISERES med materialfargen,
+// slik at den ikke forskyver de målte kontrastverdiene over - den legger bare struktur oppå dem.
+function buildMidWeaveTexture() {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+    // 2x2 twill: to vevretninger i litt ulik valør gir det karakteristiske karbon-sjakkmønsteret.
+    const cell = size / 8;
+    for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 8; x++) {
+            const twill = ((x + y) % 4 < 2);
+            ctx.fillStyle = twill ? "#e6e6e6" : "#f4f4f4";
+            ctx.fillRect(x * cell, y * cell, cell, cell);
+            // Tynn tråd-strek langs vevretningen - det som gir glansen retning.
+            ctx.fillStyle = twill ? "#d2d2d2" : "#fbfbfb";
+            if (twill) ctx.fillRect(x * cell, y * cell + cell * 0.5, cell, cell * 0.18);
+            else ctx.fillRect(x * cell + cell * 0.5, y * cell, cell * 0.18, cell);
+        }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(4, 4);
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return texture;
+}
+function buildMidDetails() {
+    const group = new THREE.Group();
+    function part(geo, color, pos, opts) {
+        const o = opts || {};
+        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+            color: color,
+            roughness: o.roughness !== undefined ? o.roughness : 0.55
+        }));
+        mesh.position.set(pos[0], pos[1], pos[2]);
+        if (o.rotX) mesh.rotation.x = o.rotX;
+        if (o.shadow !== false) mesh.castShadow = true;
+        group.add(mesh);
+        return mesh;
+    }
+    // Kroppen er BoxGeometry(0.16, 0.06, 0.16) om origo: overside y=+0.03, underside y=-0.03.
+    // Alt under er i drone-lokale enheter og skaleres av visualScale (1.3 for mid) i rebuildDroneMesh.
+
+    // Topplate i karbon - tynn, nesten sort (88 % mot bakgrunn), gir en skarp kantlinje mellom
+    // kroppen og batteriet i stedet for at de flyter sammen til én kloss.
+    part(new THREE.BoxGeometry(0.168, 0.006, 0.168), 0x0f1114, [0, 0.033, 0]);
+
+    // Batteripakke oppå platen (0.081 x 0.039 x 0.137 m etter visualScale - omtrent en 4S-pakke).
+    part(new THREE.BoxGeometry(0.062, 0.030, 0.105), 0x2b3f8c, [0, 0.051, 0.004], { roughness: 0.5 });
+    // Etikett - liten, lys flate (84 % mot strukturen) som gir noe å "miste" med avstanden.
+    part(new THREE.BoxGeometry(0.064, 0.012, 0.026), 0xe8b33d, [0, 0.055, -0.030], { shadow: false });
+    // To borrelås-stropper tvers over pakken.
+    part(new THREE.BoxGeometry(0.070, 0.038, 0.010), 0x141414, [0, 0.050, -0.036]);
+    part(new THREE.BoxGeometry(0.070, 0.038, 0.010), 0x141414, [0, 0.050, 0.040]);
+
+    // Kamera under nesa. Henger like under kroppen (y -0.061 til -0.031), godt innenfor landingsbena
+    // (føttene står på ca. y -0.12, se legLengthForClass) - rent kosmetisk, det rører ikke
+    // kontaktpunktene i getContactLocalPoints eller propell-treffdeteksjonen.
+    part(new THREE.BoxGeometry(0.042, 0.030, 0.038), 0x1e1e1e, [0, -0.046, -0.032]);
+    part(new THREE.CylinderGeometry(0.013, 0.013, 0.020, 12), 0x0d0d0d, [0, -0.046, -0.058], { rotX: Math.PI / 2 });
+    // Selve linseglasset: lav roughness gir et lite høylys fra sola. Et glimt som vandrer når dronen
+    // ruller er en tydelig FORM-kue - den forteller om orienteringen på en måte en matt flate ikke gjør.
+    part(new THREE.CylinderGeometry(0.0095, 0.0095, 0.004, 12), 0x3b6a96, [0, -0.046, -0.0695],
+        { rotX: Math.PI / 2, roughness: 0.12, shadow: false });
+
+    // GPS-mast bak - gir klassen en egen silhuett og en tydelig "hvilken vei er bak"-referanse.
+    part(new THREE.CylinderGeometry(0.0035, 0.0035, 0.05, 6), MID_STRUCTURE_COLOR, [0, 0.058, 0.062]);
+    part(new THREE.CylinderGeometry(0.016, 0.016, 0.008, 10), 0xd8dce0, [0, 0.086, 0.062]);
+
+    return group;
+}
+
 function buildDrone(classKey) {
     const isRacing = classKey === "racing";
     const isCinematic = classKey === "cinematic";
+    // Eksplisitt på nøkkelen, IKKE "verken racing eller cinematic" - racingPro (skjult i menyen, se
+    // DRONE_CLASSES) ville ellers arvet mid-detaljeringen uten at noen hadde bedt om det.
+    const isMid = classKey === "mid";
 
     const group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const armMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
-    const frontArmMat = new THREE.MeshStandardMaterial({ color: 0x992222 });
+    const midWeave = isMid ? buildMidWeaveTexture() : null;
+    // Kroppen får veven den også - det var nettopp den store, svarte flaten brukeren pekte på.
+    const bodyMat = new THREE.MeshStandardMaterial(
+        isMid ? { color: 0x222222, roughness: 0.6, map: midWeave } : { color: 0x222222 });
+    // Kun mid får den målte paletten, karbonveven og lavere roughness (høylys fra sola = formkue) -
+    // se buildMidDetails. De andre klassene står urørt.
+    // MERK at armMat/frontArmMat beholder sine gamle NAVN (de brukes også av racing sin canopy), men
+    // for mid er innholdet snudd: "arm" = bakenden og bærer nå den røde bremselys-fargen, "frontArm"
+    // = fronten og er lys. Se MID_REAR_COLOR/MID_FRONT_COLOR.
+    const armMat = new THREE.MeshStandardMaterial(
+        isMid ? { color: MID_REAR_COLOR, roughness: 0.5, map: midWeave } : { color: 0x444444 });
+    const frontArmMat = new THREE.MeshStandardMaterial(
+        isMid ? { color: MID_FRONT_COLOR, roughness: 0.5, map: midWeave } : { color: 0x992222 });
 
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.16), bodyMat);
     body.castShadow = true;
@@ -5324,6 +5674,7 @@ function buildDrone(classKey) {
         canopy.castShadow = true;
         group.add(canopy);
     }
+    if (isMid) group.add(buildMidDetails());
     if (isCinematic) {
         const gimbal = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), new THREE.MeshStandardMaterial({ color: 0x111111 }));
         gimbal.position.set(0, -0.06, -0.02);
@@ -5353,7 +5704,8 @@ function buildDrone(classKey) {
     group.add(arm1, arm2);
 
     if (!isRacing) {
-        group.add(buildLandingLegs(legLengthForClass(classKey), armLength));
+        group.add(buildLandingLegs(legLengthForClass(classKey), armLength,
+            isMid ? { rearColor: MID_REAR_COLOR, map: midWeave } : undefined));
     }
 
     // Forover er lokal -Z. Fremre motorer (z < 0) farges rødlig, som på en ekte FPV-quad.
@@ -5375,7 +5727,20 @@ function buildDrone(classKey) {
         motor.castShadow = true;
         group.add(motor);
 
-        const prop = buildPropeller(bladeCount, bladeLength);
+        if (isMid) {
+            // Mørk motorkappe i alle fire hjørner. Var lys grå da fronten fortsatt var rød - nå som
+            // FRONTEN er lys grå ville en lys kappe smeltet inn i den, så den er snudd til nesten
+            // sort: 91 % kontrast mot den lyse fronten og 78 % mot den røde bakenden, altså en tydelig
+            // avgrensning av alle fire motorene uansett ende. Ligger på y 0.040-0.046, klar av
+            // propellbladene (0.0475-0.0525) og av motorsylinderen under (0-0.040).
+            const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.006, 8),
+                new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.45 }));
+            cap.position.set(m.x, 0.043, m.z);
+            cap.castShadow = true;
+            group.add(cap);
+        }
+
+        const prop = buildPropeller(bladeCount, bladeLength, m.dir);
         prop.position.set(m.x, 0.05, m.z);
         group.add(prop);
         props.push({ mesh: prop, spinDir: m.dir });
@@ -5541,6 +5906,12 @@ function rebuildDroneMesh() {
 function resizeRenderer() {
     const wrap = document.querySelector(".sim-page");
     Sim.resizeRenderer(renderer, wrap, [chaseCamera, fpvCamera, vlosCamera]);
+    // FPV-OSD-canvaset må følge SAMME størrelse som rendereren, ellers står bakgrunnsbufferen igjen
+    // på gårsdagens vindusstørrelse og hele HUD-en blir skjevt skalert. Lagt HER, ikke på en egen
+    // resize-lytter, fordi denne funksjonen er den ENE veien inn: den kalles ved oppstart, fra
+    // window-resize-lytteren OG fra Sim.createViewportWatcher (skjermbytte/DPI-endring uten resize-
+    // event). En egen lytter ville gått glipp av den siste.
+    resizeFpvHudCanvas();
 }
 
 // Chase-kamera med manuell orbit - delt logikk med fixed-wing-simulatoren, se
@@ -6037,8 +6408,10 @@ function stepPhysics(dt) {
         droneState.angularVelocity.yaw *= PASSIVE_ANGULAR_DAMPING;
     }
 
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(droneState.quaternion);
-    const thrustVec = up.multiplyScalar(thrustForce);
+    // Dronens EGEN opp-akse: både trekkraftens retning og propellskivenes normal (se dragVec under).
+    // multiplyScalar muterer, så thrustVec tar en klone - bodyUp må forbli en enhetsvektor.
+    const bodyUp = new THREE.Vector3(0, 1, 0).applyQuaternion(droneState.quaternion);
+    const thrustVec = bodyUp.clone().multiplyScalar(thrustForce);
     const gravityVec = new THREE.Vector3(0, -spec.mass * GRAVITY, 0);
     // Luftmotstand virker mot hastigheten relativt til luften (vind), ikke bakken - en drone driver
     // derfor nedover vinden over tid, akkurat som i virkeligheten, og må styres imot for å holde posisjon.
@@ -6047,16 +6420,20 @@ function stepPhysics(dt) {
         ? droneState.velocity.clone()
         : droneState.velocity.clone().sub(currentWindVector);
     // Luftmotstand i to ledd (se kommentaren ved DRONE_CLASSES): lineært ledd bremser lavfarts-drift,
-    // kvadratisk ledd gir "veggen" nær toppfart. Anisotropisk: vertikal (verdens-Y) bevegelse møter mer
-    // motstand enn horisontal (VERTICAL_DRAG_MULTIPLIER) - propellskivene bremser opp-/nedgang kraftigst.
-    const dragCoeffX = spec.dragLinear + spec.dragQuad * Math.abs(airRelativeVelocity.x);
-    const dragCoeffY = (spec.dragLinear + spec.dragQuad * Math.abs(airRelativeVelocity.y)) * VERTICAL_DRAG_MULTIPLIER;
-    const dragCoeffZ = spec.dragLinear + spec.dragQuad * Math.abs(airRelativeVelocity.z);
-    const dragVec = new THREE.Vector3(
-        -dragCoeffX * airRelativeVelocity.x,
-        -dragCoeffY * airRelativeVelocity.y,
-        -dragCoeffZ * airRelativeVelocity.z
-    );
+    // kvadratisk ledd gir "veggen" nær toppfart. Anisotropisk: bevegelse gjennom propellskivene møter
+    // mer motstand enn bevegelse på tvers av dem (VERTICAL_DRAG_MULTIPLIER).
+    // Farten splittes derfor langs dronens EGEN opp-akse (skivenes normal) og resten, IKKE langs verdens
+    // Y som før: en drone pitchet 90 grader i et dykk har propellskivene stående på HØYKANT i luftstrømmen
+    // og skal ikke "fallskjerm"-bremses, mens den gamle verdens-Y-varianten bremste alt som beveget seg
+    // nedover uansett hvordan dronen sto. Det kvadratiske leddet bruker nå den faktiske fartsSTØRRELSEN
+    // per komponent (|v|*v) i stedet for hver verdensakse for seg - luftmotstanden på tvers av skivene
+    // blir dermed lik i alle retninger, slik den skal være, i stedet for å avhenge av kompassretningen.
+    const axialSpeed = airRelativeVelocity.dot(bodyUp);
+    const axialVel = bodyUp.clone().multiplyScalar(axialSpeed);
+    const lateralVel = airRelativeVelocity.clone().sub(axialVel);
+    const axialCoeff = (spec.dragLinear + spec.dragQuad * Math.abs(axialSpeed)) * VERTICAL_DRAG_MULTIPLIER;
+    const lateralCoeff = spec.dragLinear + spec.dragQuad * lateralVel.length();
+    const dragVec = axialVel.multiplyScalar(-axialCoeff).add(lateralVel.multiplyScalar(-lateralCoeff));
     const accel = new THREE.Vector3().add(thrustVec).add(gravityVec).add(dragVec).multiplyScalar(1 / spec.mass);
 
     droneState.velocity.add(accel.clone().multiplyScalar(dt));
@@ -6705,6 +7082,9 @@ function updateDroneVisual(dt) {
     const spinSpeed = droneState.armed ? (4 + inputState.stick.throttle * 60) : 0;
     dronePropellers.forEach(function (p) {
         p.mesh.rotation.y += p.spinDir * spinSpeed * dt;
+        // Bladenes gjennomsiktighet følger turtallet (navet er alltid solid) - se
+        // updatePropBladeOpacity.
+        updatePropBladeOpacity(p.mesh, spinSpeed);
     });
 }
 
@@ -6989,9 +7369,33 @@ let fpvHudCtx = null;
 let fpvHudModeIndex = 0;
 
 const fpvHudCanvasEl = document.getElementById("fpvHudCanvas");
+// BUG rettet: bakgrunnsbufferen var låst til 400x300 mens CSS strekker canvaset til å dekke hele
+// .sim-page (width/height: 100%, se .sim-fpv-hud). På et 16:9-bilde ble horisontal akse dermed strukket
+// ca. 1,33x mer enn vertikal, så alt som ikke er vannrett eller loddrett fikk feil vinkel: en rull på
+// 30° ble tegnet som ca. 25°, og crosshair-sirkelen var en ellipse. VERTIKALT stemte det (300 px svarte
+// til full bildehøyde), som er grunnen til at horisontens PLASSERING var riktig etter fortegnsrettingen
+// selv om VINKELEN ikke var det.
+// Bufferen følger nå .sim-page i samme oppløsning som 3D-rendereren (samme min(devicePixelRatio, 2) som
+// renderer.setPixelRatio i initScene), slik at én canvas-piksel svarer til én render-piksel.
+// Selve HUD-grafikken skalerer med høyden inne i tegnefunksjonene (se FPV_HUD_DESIGN_H i
+// js/simulator-common.js), så strekene beholder nøyaktig samme synlige størrelse som før.
+function resizeFpvHudCanvas() {
+    const wrap = document.querySelector(".sim-page");
+    if (!wrap || !fpvHudCanvasEl) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    // Math.max(1, ...) er rent forsvarsverk: er .sim-page ennå ikke layoutet (clientWidth 0) ville et
+    // canvas med bredde 0 gjort hver eneste tegneoperasjon til en stille no-op, og h/2-projeksjonen i
+    // horisonten til 0. Vi lar heller bufferen stå på noe gyldig til neste resizeRenderer retter den.
+    const w = Math.max(1, Math.round(wrap.clientWidth * ratio));
+    const h = Math.max(1, Math.round(wrap.clientHeight * ratio));
+    // Å skrive til width/height NULLSTILLER canvaset (og all context-tilstand), så vi rører det kun når
+    // størrelsen faktisk har endret seg - ellers ville HUD-en blinket ved hvert eneste resize-kall.
+    if (fpvHudCanvasEl.width === w && fpvHudCanvasEl.height === h) return;
+    fpvHudCanvasEl.width = w;
+    fpvHudCanvasEl.height = h;
+}
 function initFpvHudCanvas() {
-    fpvHudCanvasEl.width = 400;
-    fpvHudCanvasEl.height = 300;
+    resizeFpvHudCanvas();
     fpvHudCtx = fpvHudCanvasEl.getContext("2d");
     fpvHudModeIndex = Math.max(0, FPV_HUD_MODES.indexOf(settings.fpvHudMode));
 }
@@ -7007,11 +7411,37 @@ function toggleFpvHud() {
 const drawFpvCrosshair = Sim.drawFpvCrosshair;
 
 // Samme aksekonvensjon-negasjon som resten av fysikken (se merknad i stepPhysics).
+// BUG rettet (brukerrapport: "OSD kunstig horisont i FPV modus beveger seg feil vei. Den forsvinner ned
+// når en vipper frem, men burde holdt seg på horisonten").
+// To separate feil lå bak:
+//  1) FORTEGNET. Denne funksjonen brukte samme negasjon som kontrolloven (currentPitchDeg i stepPhysics,
+//     -euler.x). Vipper man nesa ned blir euler.x negativ, negasjonen gjorde pitchDeg positiv, og
+//     ctx.translate flyttet linja NEDOVER i canvas (der y peker ned) - stikk motsatt av virkeligheten,
+//     der en nesedukking løfter horisonten OPP i bildet. Nøyaktig samme feil ble funnet og rettet i
+//     BÅDE fixed-wing- og VTOL-simulatoren tidligere (se drawFpvHorizon i js/simulator-fixedwing.js og
+//     js/simulator-vtol.js, med kommentaren "pitch-fortegnet her er IKKE negert") - kvad-simulatoren
+//     ble bare aldri med på den rettingen.
+//  2) LINJA LÅ IKKE PÅ HORISONTEN, som er den andre halvdelen av rapporten. Vinkelen ble regnet fra
+//     DRONENS kroppsvinkel, men FPV-kameraet er montert med sin egen vinkel (settings.fpvTiltDeg,
+//     justerbar -45..45) - det er KAMERAET, ikke kroppen, som bestemmer hvor horisonten havner i bildet.
+//     I tillegg var plasseringen lineær (3 px per grad) mens et perspektivkamera projiserer med tan().
+// Elevasjonen regnes derfor ut fra kameraets faktiske synsretning i verden, og selve plasseringen
+// overlates til den ekte projeksjonen (fovDeg-grenen i Sim.drawFpvHorizonFromAngles).
 function drawFpvHorizon(ctx, w, h) {
+    // Kameraets synsretning utledes direkte fra kropps-quaternionen + monteringsvinkelen, IKKE via
+    // fpvCamera.getWorldDirection(): den ville avhengt av at verdensmatrisene alt er oppdatert, og
+    // renderer.render() kalles først ETTER updateFpvHud i animate-løkka. Kameraets lokale synsretning
+    // er (0,0,-1) rotert om X med monteringsvinkelen.
+    const tilt = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
+    const camForward = new THREE.Vector3(0, Math.sin(tilt), -Math.cos(tilt))
+        .applyQuaternion(droneState.quaternion);
+    // Positiv = kameraet peker OPP, og horisonten ligger da NEDENFOR bildesenter.
+    const elevationDeg = THREE.MathUtils.radToDeg(Math.asin(clamp(camForward.y, -1, 1)));
+    // Rullen er URØRT (den ble ikke rapportert som feil, og monteringsvinkelen er en ren pitch-rotasjon
+    // som ikke påvirker den).
     const euler = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ");
-    const pitchDeg = -THREE.MathUtils.radToDeg(euler.x);
     const rollDeg = -THREE.MathUtils.radToDeg(euler.z);
-    Sim.drawFpvHorizonFromAngles(ctx, w, h, pitchDeg, rollDeg);
+    Sim.drawFpvHorizonFromAngles(ctx, w, h, elevationDeg, rollDeg, { fovDeg: fpvCamera.fov });
 }
 function updateFpvHud() {
     const mode = FPV_HUD_MODES[fpvHudModeIndex];
