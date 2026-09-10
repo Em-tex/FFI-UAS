@@ -42,8 +42,8 @@ const DRONE_CLASSES = {
     racing: {
         label: "Racing (rask, lett)",
         // 18 N (TWR 3,7:1) - den opprinnelige verdien. Ble hevet til 22 under feilsøkingen av tapte
-        // rundetider, men satt tilbake: rekorden på 26,12 s ble satt nettopp på 18 N, og da visualScale
-        // under ble senket til 0.52 kom farten tilbake av seg selv (25,72 s). Tapet skyldtes
+        // rundetider, men satt tilbake: den daværende rekorden på 26,12 s ble satt nettopp på 18 N, og da
+        // visualScale under ble senket til 0.52 kom farten tilbake av seg selv (25,72 s). Tapet skyldtes
         // propellstørrelsen - større treffradius gir flere portklipp, og ett klipp koster ca. 0,8 s
         // resten av runden - ikke manglende kraft. Se racingPro for en 10:1-variant.
         mass: 0.5, maxThrust: 18,
@@ -939,7 +939,7 @@ const EXERCISES = {
             "runder du vil - hver fullførte runde havner i ledertavlen (lagres lokalt i nettleseren), " +
             "med beste tid øverst.",
         medalNote: "Sammen med de tre andre tidsaktivitetene avgjør den dårligste medaljen din samlede " +
-            "Acro-bekreftelse. Slår du 0:26.12 får du i tillegg platinum - ny rekord, ta skjermbilde og " +
+            "Acro-bekreftelse. Slår du 0:26.46 får du i tillegg platinum - ny rekord, ta skjermbilde og " +
             "send det til rpas@ffi.no.",
         // Ikke noTiming (ex11 sin variant) - racing har en helt egen, løpende klokke (se
         // updateExerciseHud/raceStartTime), bare vist annerledes enn de vanlige øvelsenes tidtaking.
@@ -10336,7 +10336,7 @@ function updateRacingCrashAutoReset(now) {
 
 // Bygger banner-teksten for et fullført forsøk på en av de fire tidsaktivitetene (kalt herfra OG fra
 // finishTargetHitRun) - medaljenavn når tiden var god nok (se acroMedalForTime/recordAcroMedal), pluss -
-// KUN når en ekte, kjent rekord finnes å slå (se ACRO_RECORD_SEC, i dag bare race1/race3) - en ekstra
+// KUN når en ekte, kjent rekord finnes å slå (se ACRO_RECORD_SEC, i dag race1/race3/raceTunnel) - en ekstra
 // oppfordring om å dokumentere en ny rekord. "kanskje en liten premie" (ikke et fast løfte) - brukerens
 // egen, bevisst forbeholdne ordlyd ("Slår man denne får man kanskje en liten premie"), gjentatt her
 // ordrett i stedet for gjort om til noe skråsikkert.
@@ -10508,14 +10508,19 @@ const ACRO_MEDAL_THRESHOLDS = {
     // tidene. legg til et minutt på alle nivåene") - gull 1:30->2:30, sølv 2:00->3:00, bronse 3:20->4:20.
     targetStrike: { gold: 150, silver: 180, bronze: 260 }
 };
-// Platinum: KUN for de to eksisterende banene, der en ekte, kjent rekord finnes å slå - operativ leder
-// UAS sine egne rekorder (0:26.12 på enkeltrundebanen, 1:24.05 på tre runder-banen), IKKE en vanlig
-// spillers personlige beste (brukeren, presisert: "det skal ikke bli platinum. Det er kun hvis man slår
-// operativ leder UAS sine rekorder som blir platinum" - se også acroDiplomaOverlay sin note i
-// simulator.html, som tidligere feilaktig omtalte dette som "dine egne rekorder"). raceTunnel/targetStrike
-// er nye baner uten noen etablert rekord ennå - de får ikke et platinum-nivå før en reell referansetid
-// finnes (legg til flere nøkler her den dagen det er aktuelt).
-const ACRO_RECORD_SEC = { race1: 26.12, race3: 84.05 };
+// Platinum: KUN for de banene der en ekte, kjent rekord finnes å slå - operativ leder UAS sine egne
+// rekorder (0:26.46 på enkeltrundebanen, 1:23.10 på tre runder-banen, 0:47.97 på Til topps), IKKE en
+// vanlig spillers personlige beste (brukeren, presisert: "det skal ikke bli platinum. Det er kun hvis
+// man slår operativ leder UAS sine rekorder som blir platinum" - se også acroDiplomaOverlay sin note i
+// simulator.html, som tidligere feilaktig omtalte dette som "dine egne rekorder"). targetStrike er den
+// eneste banen uten en etablert rekord ennå - den får ikke et platinum-nivå før en reell referansetid
+// finnes (legg til nøkkelen her den dagen det er aktuelt).
+// race1 hevet fra 26.12 til 26.46: 26.12 ble satt på den gamle racingdronen (store propeller). Etter at
+// rammen ble skalert ned (visualScale 0.52) og skyvet satt tilbake til 18 N er 26.46 operativ leders
+// beste tid på dagens fysikk. Grensen er streng (timeSec < record under), så selve 26.46-runden gir ikke
+// platinum - den må slås. race3 satt ned tilsvarende, fra 84.05 til 83.10 (1:23.10) - samme grunn,
+// samme bane, bare tre sammenhengende runder.
+const ACRO_RECORD_SEC = { race1: 26.46, race3: 83.10, raceTunnel: 47.97 };
 const ACRO_MEDAL_RANK = { bronze: 1, silver: 2, gold: 3, platinum: 4 };
 const ACRO_MEDAL_LABELS_NB = { bronze: "bronse", silver: "sølv", gold: "gull", platinum: "platinum" };
 function acroMedalLabel(medal) { return ACRO_MEDAL_LABELS_NB[medal] || ""; }
