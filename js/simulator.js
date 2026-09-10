@@ -46,7 +46,7 @@ const DRONE_CLASSES = {
         // nede på 0.52 (se under) satte brukeren 25,72 s mot en tidligere rekord på 26,12 - altså raskere
         // enn før, uten ekstra kraft. TWR 3,7:1 er fortsatt lavt for noe som heter "Racing" (ekte
         // racing-quads ligger på 8-12:1), men det er en egen sak - se racingPro for 10:1-varianten.
-        mass: 0.5, maxThrust: 18,
+        mass: 0.5, maxThrust: 20,
         // inertia SKALERT sammen med visualScale under. Verdiene er ikke frie parametre: 0.025 var
         // eksakt masse * motorradius² ved den gamle skalaen (0.5 * (0.22*sqrt(2)*0.72)² = 0.0251), altså
         // utledet av rammen. Ved 0.52 blir motorradien 0.162 m og m*r² = 0.013. Yaw beholder sitt
