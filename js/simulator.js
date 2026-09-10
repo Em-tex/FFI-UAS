@@ -510,7 +510,13 @@ const KILLSWITCH_SUCCESS_WATCH_SEC = 4;
 // Kutt SENERE enn denne andelen av rømningsvarigheten (men fortsatt før selve deadline) teller ikke
 // lenger som en trygg/tidsnok respons - uten denne kunne man kutte i aller siste liten, praktisk talt
 // allerede inni faresonen, og fortsatt få det godkjent (se updateKillswitchStage).
-const KILLSWITCH_SAFE_CUTOFF_FRACTION = 0.75;
+// Hevet fra 0.75 sammen med at selve varighetene ble lengre (se CROWD/TRAFFIC-konstantene), etter
+// brukerrapport om at scenarioet feilet selv NÅR kutt var riktig reaksjon. Årsaken var at vinduet ble
+// målt fra det UVARSLEDE utløsningstidspunktet, mens forflytningen bruker t² og derfor er nesten
+// umerkelig i starten: med 3,2 s varighet og 0.75 hadde dronen flyttet seg under 25 % av veien etter
+// 1,6 s, og vinduet lukket seg 2,4 s. Det ga under ett sekund handlingsrom fra hendelsen i det hele
+// tatt var synlig - kortere enn en normal menneskelig reaksjon på en uventet hendelse (1,5-2,5 s).
+const KILLSWITCH_SAFE_CUTOFF_FRACTION = 0.85;
 // Vises i noen sekunder når en "vente"-fase starter (øvelsesstart, nytt steg, eller nytt forsøk etter
 // feil) - forteller hva brukeren skal gjøre AKKURAT NÅ (fly den vanlige runden), uten å røpe noe om at
 // noe kommer til å skje. Se spawnForExercise/advanceExerciseStage/updateKillswitchStage.
@@ -520,7 +526,7 @@ const KILLSWITCH_PATROL_HINT = "Følg ringen med nesa fremover.";
 const KILLSWITCH_REARM_HINT = "Sett kill-bryteren tilbake i armert stilling for å starte nytt forsøk.";
 
 // Scenario 1: dronen mister styringen og "flyr av seg selv" mot folkemengden ved bilen (CROWD_CENTER).
-const CROWD_RUNAWAY_DURATION_SEC = 3.2;
+const CROWD_RUNAWAY_DURATION_SEC = 4.5;  // hevet fra 3.2 - se KILLSWITCH_SAFE_CUTOFF_FRACTION
 const CROWD_TARGET_ALTITUDE = 1.4; // ca. hodehøyde i mengden
 
 // Scenario 2: et helikopter kommer plutselig lavt gjennom området mens brukeren beholder full kontroll -
@@ -545,7 +551,7 @@ const HELI_SAFE_HORIZ_DISTANCE = 10;
 // Scenario 3: dronen stikker av oppover mot høyden der et fly krysser (AIRWAY_ALTITUDE, godt over
 // TRAFFIC_DANGER_ALTITUDE - selve terskelen rømningen stoppes ved dersom motorene ikke kuttes i tide).
 const TRAFFIC_DANGER_ALTITUDE = 70;
-const TRAFFIC_CLIMB_DURATION_SEC = 3.4;
+const TRAFFIC_CLIMB_DURATION_SEC = 4.6;  // hevet fra 3.4 - se KILLSWITCH_SAFE_CUTOFF_FRACTION
 const AIRWAY_ALTITUDE = 95;
 const AIRPLANE_FLIGHT_HALF_LENGTH = 100;
 const AIRPLANE_FLIGHT_DURATION_SEC = 6;
@@ -565,21 +571,30 @@ const PEDESTRIAN_SAFE_MAX_SPEED = 2; // m/s - "i kontrollert sveveflukt", ikke b
 
 // Ingen av meldingene under vises mens noe FAKTISK skjer (se seksjons-kommentaren over) - kun i etterkant,
 // som forklaring når et forsøk mislykkes.
+// pass: kvitteringen for RIKTIG respons. Manglet helt før - markKillswitchStageResolved var stum, så et
+// korrekt kutt ga null tilbakemelding mens droneen falt (og krasjbanneret dukket opp av selve fallet).
+// Brukerrapport: "man får ikke tilbakemelding om hva som skjedde (om man gikk videre eller ble resatt,
+// og hva som var feil)". Formuleres som en BEKREFTELSE på handlingen, ikke bare "bra jobba" - poenget
+// er at piloten skal vite HVILKEN respons som var den riktige.
 const KILLSWITCH_MESSAGES = {
     crowd: {
+        pass: "Riktig - du kuttet motorene i tide, før dronen nådde folkemengden. Ser hvor den havner...",
         fail: "For sent - dronen traff folkemengden. Nytt forsøk om et øyeblikk...", // aldri kuttet i tide (droneen NÅDDE faktisk frem)
         failLate: "Du kuttet motorene for sent til at det regnes som en trygg respons. Nytt forsøk om et øyeblikk..." // kuttet, men for nær innpå til å telle - se KILLSWITCH_SAFE_CUTOFF_FRACTION
     },
     heli: {
+        pass: "Riktig - du holdt trygg avstand til helikopteret uten å kutte motorene.",
         failKilled: "Feil respons - dronen var fullt kontrollerbar. Et innflyvende helikopter unngås ved " +
             "å vike unna eller lande, ikke ved å kutte motorene. Nytt forsøk om et øyeblikk...",
         failTooClose: "For nær helikopteret! Vik tydelig unna eller land tidligere neste gang. Nytt forsøk om et øyeblikk..."
     },
     traffic: {
+        pass: "Riktig - du kuttet motorene i tide, før dronen nådde lufttrafikkens høyde. Ser hvor den havner...",
         fail: "For sent - konflikt med lufttrafikken. Nytt forsøk om et øyeblikk...",
         failLate: "Du kuttet motorene for sent til at det regnes som en trygg respons. Nytt forsøk om et øyeblikk..."
     },
     pedestrians: {
+        pass: "Riktig - du holdt trygg avstand til fotgjengerne uten å kutte motorene.",
         failKilled: "Feil respons - dronen var fullt kontrollerbar. Fotgjengere i området unngås ved å " +
             "vike unna eller lande, ikke ved å kutte motorene. Nytt forsøk om et øyeblikk...",
         failTooClose: "For nære fotgjengerne! Vik tydelig unna eller land tidligere neste gang. Nytt forsøk om et øyeblikk..."
@@ -7170,7 +7185,13 @@ function updateHud() {
     // å resette"). Skjuler hele banneret (ikke bare hintet) i dette vinduet - to samtidige, delvis
     // motstridende meldinger ("KRASJ! Trykk R" og "Truffet! X/2") er unødvendig støy når treffet uansett
     // var meningen.
-    crashBanner.classList.toggle("show", droneState.crashed && !droneState.injured && !exerciseState.targetHitPendingUntil);
+    // ksPhase "resolved": scenarioet er nettopp BESTÅTT og droneen faller fritt som en direkte følge av
+    // den RIKTIGE responsen (se markKillswitchStageResolved). Et "KRASJ! Trykk R for å resette" oppå
+    // kvitteringen leste da ut som at forsøket mislyktes - samme resonnement som targetHitPendingUntil
+    // rett over: krasjet var meningen. Skjules derfor i dette vinduet.
+    const ksSuccessCrash = exerciseState.active && exerciseState.ksPhase === "resolved";
+    crashBanner.classList.toggle("show", droneState.crashed && !droneState.injured &&
+        !exerciseState.targetHitPendingUntil && !ksSuccessCrash);
     // Loiter er dimensjonert (I-ledd + LOITER_MAX_LEAN_ANGLE, se konstantene) for å holde posisjonen i
     // opptil LOITER_MAX_WIND_SPEED - over det kan krengevinkeltaket bli utilstrekkelig til å motvirke
     // vinden helt, og piloten varsles i stedet for å bare drifte uforklarlig.
@@ -8842,9 +8863,19 @@ function spawnPedestrianWalk() {
 // Vellykket respons på heli/pedestrians (vike unna/lande) - samme "vent litt før neste steg"-pause som
 // crowd/traffic sin post-kill-visning (KILLSWITCH_SUCCESS_WATCH_SEC), slik at brukeren rekker å se
 // utfallet (helikopteret som passerer trygt, fotgjengerne som går forbi) før neste hendelse starter.
-function markKillswitchStageResolved(now) {
+// Steget er BESTÅTT. message er kvitteringen for riktig respons - før var denne funksjonen helt stum,
+// slik at et korrekt kutt ga null tilbakemelding mens droneen falt de neste KILLSWITCH_SUCCESS_WATCH_SEC
+// sekundene. Med krasjbanneret som dukket opp av selve fallet (se updateHud) leste et vellykket forsøk
+// i praksis ut som en feil. Brukerrapport: "man får ikke tilbakemelding om hva som skjedde".
+function markKillswitchStageResolved(now, message) {
     exerciseState.ksPhase = "resolved";
     exerciseState.ksRespawnAt = now + KILLSWITCH_SUCCESS_WATCH_SEC * 1000;
+    if (message) {
+        exerciseState.warningMessage = message;
+        // Står ut hele "se hva som skjer"-vinduet, så kvitteringen fortsatt er synlig når droneen lander.
+        exerciseState.warningUntil = now + KILLSWITCH_SUCCESS_WATCH_SEC * 1000;
+        exerciseState.warningIsSuccess = true;
+    }
 }
 
 // Utløser selve hendelsen - bevisst HELT STILLE (ingen banner/melding, se seksjonskommentaren over
@@ -8919,7 +8950,7 @@ function updateHeliDangerPhase(now) {
         }
         return; // helikopteret flyr fortsatt - vent og se om avstanden holder seg trygg
     }
-    markKillswitchStageResolved(now); // ferdig overflydd uten at avstanden noen gang ble kritisk - bestått
+    markKillswitchStageResolved(now, KILLSWITCH_MESSAGES.heli.pass); // ferdig overflydd uten at avstanden noen gang ble kritisk - bestått
 }
 
 // Samme respons-logikk som helikopteret (vike unna/lande, ikke kill) OG samme "vent til det er ferdig"-
@@ -8938,7 +8969,7 @@ function updatePedestrianDangerPhase(now) {
     );
     const controlled = droneState.grounded || droneState.velocity.length() < PEDESTRIAN_SAFE_MAX_SPEED;
     if (horizDist >= PEDESTRIAN_SAFE_DISTANCE && controlled) {
-        markKillswitchStageResolved(now);
+        markKillswitchStageResolved(now, KILLSWITCH_MESSAGES.pedestrians.pass);
     } else {
         respawnKillswitchAttempt(now, KILLSWITCH_MESSAGES.pedestrians.failTooClose);
     }
@@ -8994,7 +9025,7 @@ function updateKillswitchStage(stage, dt, now) {
             // Kuttet for sent (etter ksSafeCutoffAt, men fortsatt før selve deadline) er IKKE en
             // vellykket respons - se KILLSWITCH_SAFE_CUTOFF_FRACTION.
             if (now < exerciseState.ksSafeCutoffAt) {
-                markKillswitchStageResolved(now);
+                markKillswitchStageResolved(now, KILLSWITCH_MESSAGES[stage.variant].pass);
             } else {
                 // Kuttet, men for sent til å telle som trygt - IKKE samme melding som "aldri kuttet i
                 // tide" (droneen har her ikke nødvendigvis faktisk nådd frem, bare reagert for seint).
