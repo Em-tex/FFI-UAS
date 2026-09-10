@@ -41,11 +41,12 @@ const VERTICAL_DRAG_MULTIPLIER = 1.2;
 const DRONE_CLASSES = {
     racing: {
         label: "Racing (rask, lett)",
-        // maxThrust hevet 18 -> 22 N (TWR 3,7:1 -> 4,5:1) etter pilottilbakemelding: "racingdrona
-        // oppleves littegrann tregere". TWR 3,7:1 er lavt for noe som heter "Racing" (ekte racing-quads
-        // ligger på 8-12:1); 4,5:1 gir tydelig mer punch ut av portene uten å bli et helt annet fartøy.
-        // Se racingPro for 10:1-varianten.
-        mass: 0.5, maxThrust: 22,
+        // Hevet midlertidig til 22 N under feilsøkingen av tapte rundetider, men satt TILBAKE til 18 N:
+        // det viste seg at tapet kom fra propellstørrelsen, ikke fra manglende kraft. Med visualScale
+        // nede på 0.52 (se under) satte brukeren 25,72 s mot en tidligere rekord på 26,12 - altså raskere
+        // enn før, uten ekstra kraft. TWR 3,7:1 er fortsatt lavt for noe som heter "Racing" (ekte
+        // racing-quads ligger på 8-12:1), men det er en egen sak - se racingPro for 10:1-varianten.
+        mass: 0.5, maxThrust: 18,
         // inertia SKALERT sammen med visualScale under. Verdiene er ikke frie parametre: 0.025 var
         // eksakt masse * motorradius² ved den gamle skalaen (0.5 * (0.22*sqrt(2)*0.72)² = 0.0251), altså
         // utledet av rammen. Ved 0.52 blir motorradien 0.162 m og m*r² = 0.013. Yaw beholder sitt
@@ -5897,9 +5898,9 @@ function initScene() {
         smoothingBase: 0.001,
         lookAtOffsetY: 0.3
     });
-    fpvCamera = new THREE.PerspectiveCamera(95, aspect, 0.05, 2000);
+    fpvCamera = new THREE.PerspectiveCamera(95, aspect, FPV_CAMERA_NEAR, FPV_CAMERA_FAR);
     // Onboard FPV-kamera, montert litt foran/over senter. Vinkel er justerbar (Rates-panelet).
-    fpvCamera.position.set(0, 0.06, -0.12);
+    fpvCamera.position.set(0, FPV_CAMERA_LOCAL_Y, -0.12);
     fpvCamera.rotation.x = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
 
     rebuildDroneMesh();
@@ -5970,8 +5971,15 @@ function rebuildDroneMesh() {
     const droneMesh = buildDrone(droneState.droneClass);
     droneGroup = droneMesh.group;
     dronePropellers = droneMesh.props;
-    droneGroup.scale.setScalar(currentDroneSpec().visualScale);
+    const droneScale = currentDroneSpec().visualScale;
+    droneGroup.scale.setScalar(droneScale);
     droneGroup.add(fpvCamera);
+    // Kompenser near/far for foreldre-skalaen - se FPV_CAMERA_FAR. Uten dette klippes himmelkula bort
+    // på de små droneklassene, og rendererens tomme, svarte bakgrunn skinner gjennom der himmelen
+    // skulle vært.
+    fpvCamera.near = FPV_CAMERA_NEAR / droneScale;
+    fpvCamera.far = FPV_CAMERA_FAR / droneScale;
+    fpvCamera.updateProjectionMatrix();
     scene.add(droneGroup);
     // Nybygde propeller er visuelt hele - påfør gjeldende skade på nytt så modellen og fysikken
     // (propDamage kuttes fortsatt i mikseren) aldri forteller to ulike historier.
@@ -7163,23 +7171,46 @@ function buildDroneShadowDecal() {
 // ingen posisjonsinformasjon uansett (droneen er for langt unna til at "rett under" er nyttig å vite).
 // Senket fra 45 (brukeren: "skyggen ... henger litt for lenge igjen når drone øker høyden. må forsvinne
 // litt tidligere med høyden") - falmer nå helt bort innen 26 m i stedet for 45.
+// FPV-kameraets høyde over droneens origo, i DRONE-LOKALE enheter (skaleres altså med visualScale).
+// Navngitt fordi skyggedekalen må kjenne den: dekalens løft er i verdensmeter og skalerer IKKE, så uten
+// en sammenligning kan dekalen ende opp i eller over kameraet på en liten drone - se
+// updateDroneShadowDecal.
+// FPV-kameraets rekkevidde i VERDENSmeter. Kameraet er barn av droneGroup, som skaleres med
+// visualScale - og et skalert kamera får skalert rekkevidde: view-matrisen er inversen av kameraets
+// world-matrise, så en skala s deler verdensavstander på s i view-rom. Effektiv far blir dermed far * s.
+// BUG (brukerrapport: "sort sirkel på himmelen i fpv modus"): med visualScale 0.72 ga far 2000 en
+// effektiv rekkevidde på 1440 m, akkurat innenfor himmelkulas radius på 1400. Da racing ble krympet til
+// 0.52 falt den til 1040 m - himmelkula havnet 360 m UTENFOR far-planet og ble klippet bort, slik at
+// rendererens tomme bakgrunn (svart) skinte gjennom der himmelen skulle vært.
+// near/far settes derfor KOMPENSERT for skalaen i rebuildDroneMesh, slik at den effektive rekkevidden
+// er den samme uansett hvor stor droneklassen er.
+const FPV_CAMERA_NEAR = 0.05;
+const FPV_CAMERA_FAR = 2000;
+const FPV_CAMERA_LOCAL_Y = 0.06;
 const DRONE_SHADOW_MAX_ALT = 26;
 const DRONE_SHADOW_MIN_OPACITY = 0, DRONE_SHADOW_MAX_OPACITY = 0.82;
+// Løftet dekalen legges over bakken - ren z-fighting-margin mot bakkeplanet, i VERDENSmeter.
+const DRONE_SHADOW_GROUND_LIFT = 0.03;
 function updateDroneShadowDecal() {
+    const surfaceY = solidSurfaceHeightAt(droneState.position.x, droneState.position.z, droneState.position.y);
     // Klemt til ALDRI å overstige droneens egen, faktiske høyde - en skygge kan per definisjon ikke ligge
-    // OVER det den kastes fra. Rent forsvarsverk (brukerens gjentatte rapport: "stor svart sirkel på
-    // himmelen der nesa peker", som IKKE forsvant etter forrige runde sin minY-fiks i
-    // solidSurfaceHeightAt - trolig enda en, ikke identifisert, kilde til en for høy "bakke"-avlesning et
-    // sted i verden): uansett HVILKEN kollider/formel som måtte returnere en for høy verdi et sted, kan
-    // dekalen nå strukturelt aldri havne synlig oppe i himmelen foran droneen igjen - den flater i verste
-    // fall bare ut på droneens egen høyde (fullt synlig/opak, men RETT VED droneen, ikke langt unna og
-    // oppe i løse lufta).
-    const groundY = Math.min(
-        solidSurfaceHeightAt(droneState.position.x, droneState.position.z, droneState.position.y),
-        droneState.position.y
-    );
+    // OVER det den kastes fra. Forsvarsverk mot en for høy "bakke"-avlesning et sted i verden, se
+    // DRONE_SHADOW_GROUND_LIFT-kommentaren under for hvorfor det ALENE ikke var nok.
+    const groundY = Math.min(surfaceY, droneState.position.y);
     const altitude = Math.max(0, droneState.position.y - groundY);
-    droneShadowDecal.position.set(droneState.position.x, groundY + 0.03, droneState.position.z);
+    // BUG rettet, andre runde (brukerrapport: "nå har du reintrodusert buggen med sort sirkel på
+    // himmelen"). Klemmingen over gjorde at dekalen i verste fall flatet ut PÅ droneens egen høyde -
+    // akseptabelt så lenge FPV-kameraet lå godt over den. Men kameraet sitter i FPV_CAMERA_LOCAL_Y *
+    // visualScale (altså SKALERT med droneen), mens løftet er en fast verdi i VERDENSmeter. Da racing
+    // ble krympet fra 0.72 til 0.52 falt klaringen mellom dem fra 13,2 mm til 1,2 mm, og enhver klemming
+    // la en helt opak, mørk skive rett foran kameraet.
+    // To ledd retter det: løftet kan aldri overstige en andel av kamerahøyden, OG en skygge som ikke kan
+    // legges under droneen skjules helt. Den bærer uansett ingen informasjon - poenget med den er å vise
+    // hvor droneen er i forhold til bakken.
+    const camLift = FPV_CAMERA_LOCAL_Y * currentDroneSpec().visualScale;
+    const lift = Math.min(DRONE_SHADOW_GROUND_LIFT, camLift * 0.4);
+    const clampEngaged = surfaceY >= droneState.position.y - lift;
+    droneShadowDecal.position.set(droneState.position.x, groundY + lift, droneState.position.z);
     const reach = (DRONE_ARM_LENGTH + bladeLengthForClass(droneState.droneClass) / 2) * currentDroneSpec().visualScale;
     const linT = Math.min(altitude / DRONE_SHADOW_MAX_ALT, 1);
     // sqrt i stedet for lineær t - falmer BRATT med det samme i lav høyde og flater ut mot slutten, i
@@ -7193,7 +7224,9 @@ function updateDroneShadowDecal() {
     const size = reach * 2.6 * (1 + t * 0.6);
     droneShadowDecal.scale.set(size, size, 1);
     droneShadowDecal.material.opacity = DRONE_SHADOW_MAX_OPACITY - t * (DRONE_SHADOW_MAX_OPACITY - DRONE_SHADOW_MIN_OPACITY);
-    droneShadowDecal.visible = linT < 1; // usynlig fra og med DRONE_SHADOW_MAX_ALT - ingen "henger igjen"-margin utover det
+    // usynlig fra og med DRONE_SHADOW_MAX_ALT (ingen "henger igjen"-margin utover det), OG når
+    // klemmingen over har slått inn - se clampEngaged.
+    droneShadowDecal.visible = linT < 1 && !clampEngaged;
 }
 
 /* ---------- Visuell oppdatering + HUD ---------- */
@@ -7585,21 +7618,33 @@ const drawFpvCrosshair = Sim.drawFpvCrosshair;
 //     I tillegg var plasseringen lineær (3 px per grad) mens et perspektivkamera projiserer med tan().
 // Elevasjonen regnes derfor ut fra kameraets faktiske synsretning i verden, og selve plasseringen
 // overlates til den ekte projeksjonen (fovDeg-grenen i Sim.drawFpvHorizonFromAngles).
+// Sideforholdet OSD-en opprinnelig ble tegnet i (400x300). Canvaset er nå kvadratisk-piksel og følger
+// render-oppløsningen, men de horisontale målene skaleres opp med dette forholdet slik at strekene får
+// samme rekkevidde som før rettingen - se opts.uiScale i Sim.drawFpvCrosshair.
+const FPV_HUD_UI_SCALE = 4 / 3;
 function drawFpvHorizon(ctx, w, h) {
-    // Kameraets synsretning utledes direkte fra kropps-quaternionen + monteringsvinkelen, IKKE via
-    // fpvCamera.getWorldDirection(): den ville avhengt av at verdensmatrisene alt er oppdatert, og
-    // renderer.render() kalles først ETTER updateFpvHud i animate-løkka. Kameraets lokale synsretning
-    // er (0,0,-1) rotert om X med monteringsvinkelen.
-    const tilt = THREE.MathUtils.degToRad(settings.fpvTiltDeg);
-    const camForward = new THREE.Vector3(0, Math.sin(tilt), -Math.cos(tilt))
-        .applyQuaternion(droneState.quaternion);
-    // Positiv = kameraet peker OPP, og horisonten ligger da NEDENFOR bildesenter.
-    const elevationDeg = THREE.MathUtils.radToDeg(Math.asin(clamp(camForward.y, -1, 1)));
-    // Rullen er URØRT (den ble ikke rapportert som feil, og monteringsvinkelen er en ren pitch-rotasjon
-    // som ikke påvirker den).
-    const euler = new THREE.Euler().setFromQuaternion(droneState.quaternion, "YXZ");
-    const rollDeg = -THREE.MathUtils.radToDeg(euler.z);
-    Sim.drawFpvHorizonFromAngles(ctx, w, h, elevationDeg, rollDeg, { fovDeg: fpvCamera.fov });
+    // ATTITYDE-indikator, ikke en sporing av hvor den ekte horisonten havner i bildet.
+    // Rettet etter brukerrapport ("bør den ikke være midt i blinken når drona er level? uavhengig av
+    // kameravinkelen?"): en kunstig horisont viser FARTØYETS stilling, slik den gjør i Betaflight og på
+    // ekte FPV-utstyr. Kameraets monteringsvinkel skal derfor IKKE regnes inn - en vannrett drone gir
+    // en sentrert strek uansett hva fpvTiltDeg står på. En tidligere versjon kompenserte for
+    // kameravinkelen og flyttet streken bort fra sentrum ved vannrett flyging; det var feil premiss.
+    // Pitch: nesen opp = positiv = horisonten skal ligge NEDENFOR bildesenter (positiv y i canvas).
+    const bodyFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(droneState.quaternion);
+    const pitchDeg = THREE.MathUtils.radToDeg(Math.asin(clamp(bodyFwd.y, -1, 1)));
+    // Rull regnes geometrisk, ikke som -euler.z: den Euler-komponenten er bildets faktiske rullvinkel
+    // bare når dronen er tilnærmet vannrett i pitch. Er man både banket OG pitchet - altså i enhver
+    // skikkelig sving - blander YXZ-rekkefølgen aksene, og streken står skjevt (brukerrapport: "kunstig
+    // horisont virker ikke å ligge helt på horisonten i svinger"). Målt avvik var opptil 6,8° ved 50°
+    // pitch og 70° rull.
+    // Vinkelen er hvor mye verdens opp er dreid bort fra kroppens opp. Fortegnet er valgt slik at et
+    // HØYRE bank hever høyre ende av streken, som er det man ser i bildet når verden ruller motsatt vei
+    // av fartøyet (brukerrapport: "OSD horisonten ruller motsatt vei").
+    const bodyRight = new THREE.Vector3(1, 0, 0).applyQuaternion(droneState.quaternion);
+    const bodyUp = new THREE.Vector3(0, 1, 0).applyQuaternion(droneState.quaternion);
+    const rollDeg = THREE.MathUtils.radToDeg(Math.atan2(-bodyRight.y, bodyUp.y));
+    Sim.drawFpvHorizonFromAngles(ctx, w, h, pitchDeg, rollDeg,
+        { fovDeg: fpvCamera.fov, uiScale: FPV_HUD_UI_SCALE });
 }
 function updateFpvHud() {
     const mode = FPV_HUD_MODES[fpvHudModeIndex];
@@ -7611,7 +7656,7 @@ function updateFpvHud() {
     const w = fpvHudCanvasEl.width, h = fpvHudCanvasEl.height;
     fpvHudCtx.clearRect(0, 0, w, h);
     if (mode === "horizon") drawFpvHorizon(fpvHudCtx, w, h);
-    drawFpvCrosshair(fpvHudCtx, w, h);
+    drawFpvCrosshair(fpvHudCtx, w, h, { uiScale: FPV_HUD_UI_SCALE });
 }
 
 function updateWindsockVisual(now) {

@@ -1728,15 +1728,21 @@
     const FPV_HUD_DESIGN_H = 300;
     function fpvHudScale(h) { return h / FPV_HUD_DESIGN_H; }
 
-    function drawFpvCrosshair(ctx, w, h) {
+    // opts.uiScale (valgfri, standard 1): ganger de horisontale MALENE - ikke linjetykkelsen. Kvad-
+    // simulatorens canvas ble rettet fra 400x300 (som CSS strakk ULIKT i x og y) til kvadratiske
+    // piksler; det gjorde OSD-en geometrisk riktig, men 25 % smalere enn den brukeren var vant til
+    // ("OSD-en ble plutselig annerledes? likte de gamle hvite strekene bedre"). 4/3 gir tilbake den
+    // gamle horisontale rekkevidden UTEN å gjeninnføre forvrengningen - sirkelen forblir en sirkel.
+    function drawFpvCrosshair(ctx, w, h, opts) {
         const s = fpvHudScale(h);
+        const u = s * ((opts && opts.uiScale) || 1);
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 1.5 * s;
         const cx = w / 2, cy = h / 2;
         ctx.beginPath();
         ctx.arc(cx, cy, 3.5 * s, 0, Math.PI * 2);
         ctx.stroke();
-        const gap = 9 * s, wingLen = 16 * s;
+        const gap = 9 * u, wingLen = 16 * u;
         ctx.beginPath();
         ctx.moveTo(cx - gap - wingLen, cy); ctx.lineTo(cx - gap, cy);
         ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + gap + wingLen, cy);
@@ -1757,6 +1763,8 @@
     function drawFpvHorizonFromAngles(ctx, w, h, pitchDeg, rollDeg, opts) {
         const o = opts || {};
         const s = fpvHudScale(h);
+        // se drawFpvCrosshair for hvorfor de horisontale målene har sin egen faktor
+        const u = s * (o.uiScale || 1);
         let offsetPx;
         if (o.fovDeg) {
             // Klemt til ±85°: tan() går mot uendelig ved 90, og linja er uansett for lengst ute av
@@ -1773,7 +1781,7 @@
         ctx.rotate(THREE.MathUtils.degToRad(-rollDeg));
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 1.5 * s;
-        const dashLen = 26 * s, gap = 13 * s;
+        const dashLen = 26 * u, gap = 13 * u;
         ctx.beginPath();
         ctx.moveTo(-gap - dashLen, 0); ctx.lineTo(-gap, 0);
         ctx.moveTo(gap, 0); ctx.lineTo(gap + dashLen, 0);
