@@ -427,6 +427,11 @@ const EXERCISE_CENTER = new THREE.Vector3(0, 0, -6);
 const EXERCISE_ALTITUDE = 1;
 const HOVER_ALTITUDE = 2.5;
 const ALTITUDE_TOLERANCE = 2;
+// Hvor nær høydegrensen HUD-feltet slår om til gult forvarsel (se updateExerciseHud), som ANDEL av
+// steget sin egen toleranse. En fast margin i meter fungerer dårlig her: 0,5 m er et fornuftig
+// forvarsel mot løypenes toleranse på 2 m, men ville farget halve hover-båndet (toleranse 1 m) gult
+// selv om holde-tiden fortsatt teller der. Med 0,25 gulner de ytterste 25 % av båndet uansett steg.
+const HUD_ALT_CAUTION_FRAC = 0.25;
 const SQUARE_HALF_SIDE = 5;
 const CIRCLE_RADIUS = 5;
 const CIRCLE_SEGMENTS = 16;
@@ -510,6 +515,9 @@ const KILLSWITCH_SAFE_CUTOFF_FRACTION = 0.75;
 // feil) - forteller hva brukeren skal gjøre AKKURAT NÅ (fly den vanlige runden), uten å røpe noe om at
 // noe kommer til å skje. Se spawnForExercise/advanceExerciseStage/updateKillswitchStage.
 const KILLSWITCH_PATROL_HINT = "Følg ringen med nesa fremover.";
+// Vises mens et nytt killswitch-forsøk venter på at den FYSISKE kill-bryteren settes tilbake i armert
+// stilling - se ksAwaitingRearm i spawnKillswitchStage/updateKillswitchStage.
+const KILLSWITCH_REARM_HINT = "Sett kill-bryteren tilbake i armert stilling for å starte nytt forsøk.";
 
 // Scenario 1: dronen mister styringen og "flyr av seg selv" mot folkemengden ved bilen (CROWD_CENTER).
 const CROWD_RUNAWAY_DURATION_SEC = 3.2;
@@ -635,6 +643,33 @@ const HELI_PATROL_CENTER = new THREE.Vector3(EXERCISE_CENTER.x, 0, EXERCISE_CENT
 const HELI_PATROL_WAYPOINTS = buildCircleWaypoints(HELI_PATROL_CENTER, CIRCLE_RADIUS, CIRCLE_SEGMENTS);
 
 // Felles beskrivelsestekst-suffiks: reglene er like for alle øvelsene.
+// Høydekravet i klartekst, utledet av konstantene over slik at oppgaveteksten ALDRI kan si noe annet enn
+// det avviks-sjekken faktisk gjør (brukerrapport: "Det er lagt inn en grense for når en flyr for høyt.
+// Kan den bli vist synlig som grafikk eller skrevet om i oppgaven?" - grensen fantes, men beskrivelsene
+// oppga bare målhøyden, ikke marginen, så den var i praksis skjult til man brøt den).
+// Kun løype-øvelsene (firkant/sirkel/åttetall) - "Høydeforandring" har 3D-veipunkt og dermed INGEN
+// høydegrense, se stageAltitudeLimit.
+const EXERCISE_ALTITUDE_TEXT = "Hold høyden på " + EXERCISE_ALTITUDE + " m - over " +
+    (EXERCISE_ALTITUDE + ALTITUDE_TOLERANCE) + " m regnes som avvik. ";
+// Hover-øvelsenes høydebånd. Mildere mekanisme enn løypenes: å falle utenfor gir ikke avvik, det
+// nullstiller bare holde-tiden (se stage.type === "hover" i updateExercise).
+const HOVER_ALTITUDE_TEXT = "Høyden teller som godkjent mellom " +
+    (HOVER_ALTITUDE - HOVER_ALTITUDE_TOLERANCE) + " og " + (HOVER_ALTITUDE + HOVER_ALTITUDE_TOLERANCE) + " m. ";
+// Start-hintet (oppgaveteksten som vises idet en øvelse starter) sto i 4,5 s, som flere meldte var for
+// kort (brukerrapport: "Fint om oppgaveteksten kan bli stående et sekund eller to lengre ... det til
+// tider var vanskelig å få med seg oppgaven før den ble borte").
+// Løsningen er ikke bare å øke tiden: den står nå VESENTLIG lenger, men forsvinner med det samme piloten
+// faktisk begynner å fly. Da er teksten lest, og et banner som henger igjen midt i bildet er bare i
+// veien - særlig i øvelser der man skal se etter noe med det samme. Samme grep som racingbanen allerede
+// gjorde snevert ved start/mål-porten (se updateRacingStage), nå generelt for alle øvelser.
+const EXERCISE_HINT_MS = 10000;
+// Vises alltid minst så lenge, uansett pinnebevegelse - et rykk i pinnen idet øvelsen spawner skal ikke
+// kunne blinke bort hele oppgaveteksten før den er lesbar.
+const EXERCISE_HINT_MIN_MS = 1500;
+// Hvor langt en pinne må ha flyttet seg fra der den sto da hintet kom, for å regnes som "nå flyr han".
+// Måles som ENDRING, ikke absoluttverdi: en gass-spak som hviler i bunn, eller en pinne med litt trim,
+// står ikke nødvendigvis på null ved spawn - da ville en absolutt terskel slått til umiddelbart.
+const EXERCISE_HINT_STICK_DELTA = 0.15;
 const EXERCISE_RULES_TEXT = "\n\nFørste avvik gir bare en advarsel; skjer det igjen nullstilles steget " +
     "og dronen settes tilbake på avgangsplassen (klokka går videre).\n\nDroneklassen settes automatisk " +
     "til Middels, og du flyr fra VLOS-posisjonen. R restarter hele øvelsen med nullstilt klokke.";
@@ -649,8 +684,8 @@ const EXERCISES = {
         fullDescription: "Hold dronen i ro over det markerte punktet på " + HOVER_ALTITUDE + " m høyde - " +
             "først med nesa bort fra deg, så mot venstre, så mot høyre, og til slutt med nesa mot deg. " +
             "Hver retning må holdes i minst " + HOVER_HOLD_SEC + " sekunder innenfor omtrent samme posisjon " +
-            "og høyde - driver du ut av området eller mister retningen, nullstilles tiden for gjeldende " +
-            "retning.\n\nPila på bakken viser retningen nesa skal peke.\n\nDroneklassen settes automatisk til " +
+            "og høyde. " + HOVER_ALTITUDE_TEXT + "Driver du ut av området eller mister retningen, " +
+            "nullstilles tiden for gjeldende retning.\n\nPila på bakken viser retningen nesa skal peke.\n\nDroneklassen settes automatisk til " +
             "Middels, og du flyr fra VLOS-posisjonen. R restarter hele øvelsen med nullstilt klokke.",
         stages: [
             { id: "hover-out", label: "Hover - nese ut", type: "hover", headingYaw: LOCKED_HEADING, holdSec: HOVER_HOLD_SEC },
@@ -666,7 +701,7 @@ const EXERCISES = {
         shortDescription: "Fly firkanten med nesa fast bort fra deg - " + REQUIRED_CLEAN_LAPS + " rene runder.",
         startHint: "Fly firkanten. Følg indikatoren. Nesa skal peke bort fra deg hele tiden.",
         fullDescription: "Fly langs den markerte firkanten med nesa hele tiden fast rettet bort fra deg " +
-            "(ren pinnestyring - sidelengs og baklengs inngår). Hold høyden på " + EXERCISE_ALTITUDE + " m. " +
+            "(ren pinnestyring - sidelengs og baklengs inngår). " + EXERCISE_ALTITUDE_TEXT +
             "Du må fullføre " + REQUIRED_CLEAN_LAPS + " runder uten avvik." + EXERCISE_RULES_TEXT,
         // captureRadius: 1.5 var for stramt gitt hvor vanskelig dybde er å bedømme fra VLOS på avstand
         // ("føles nær uten at det registreres") - 2.0 er fortsatt tydelig trangere enn sirkelens
@@ -680,7 +715,7 @@ const EXERCISES = {
         shortDescription: "Firkanten med nesa i fartsretningen - 2 rene runder.",
         startHint: "Fly firkanten. Følg indikatoren. Nesa skal peke i fartsretningen hele veien.",
         fullDescription: "Samme firkant, men nå skal nesa peke fremover i fartsretningen hele veien " +
-            "(som en bil - yaw i hjørnene). Hold høyden på " + EXERCISE_ALTITUDE + " m. " +
+            "(som en bil - yaw i hjørnene). " + EXERCISE_ALTITUDE_TEXT +
             "2 runder uten avvik kreves - noe færre enn de andre øvelsene, siden nese-styringen her " +
             "i seg selv er den krevende delen." + EXERCISE_RULES_TEXT,
         // cornerGraceSec: nese-sjekken hviler noen sekunder etter hvert hjørne - der skal man
@@ -711,7 +746,7 @@ const EXERCISES = {
         shortDescription: "Sirkelen med nesa fast bort fra deg - " + REQUIRED_CLEAN_LAPS + " rene runder.",
         startHint: "Fly sirkelen. Følg indikatoren. Nesa skal peke bort fra deg hele tiden.",
         fullDescription: "Fly den markerte sirkelen med nesa hele tiden fast rettet bort fra deg. " +
-            "Hold høyden på " + EXERCISE_ALTITUDE + " m. " + REQUIRED_CLEAN_LAPS + " runder uten avvik." +
+            EXERCISE_ALTITUDE_TEXT + REQUIRED_CLEAN_LAPS + " runder uten avvik." +
             EXERCISE_RULES_TEXT,
         // captureRadius: sirkelpunktene ligger ~2,3 m fra hverandre - standardradiusen (2.5) tok
         // neste punkt nesten umiddelbart og lot en slurvete bane telle som ren runde.
@@ -724,7 +759,7 @@ const EXERCISES = {
         shortDescription: "Sirkelen med nesa i fartsretningen - " + REQUIRED_CLEAN_LAPS + " rene runder.",
         startHint: "Fly sirkelen. Følg indikatoren. Nesa skal peke i fartsretningen hele veien.",
         fullDescription: "Samme sirkel, med nesa fremover i fartsretningen - jevn, koordinert yaw " +
-            "gjennom hele svingen. Hold høyden på " + EXERCISE_ALTITUDE + " m. " + REQUIRED_CLEAN_LAPS +
+            "gjennom hele svingen. " + EXERCISE_ALTITUDE_TEXT + REQUIRED_CLEAN_LAPS +
             " runder uten avvik." + EXERCISE_RULES_TEXT,
         stages: [{ id: "circle-forward", label: "Sirkel - nese frem", waypoints: CIRCLE_WAYPOINTS, noseMode: "forward", captureRadius: 1.3 }]
     },
@@ -735,8 +770,7 @@ const EXERCISES = {
         shortDescription: "Åttetall med nesa fast bort fra deg - " + REQUIRED_CLEAN_LAPS + " rene runder.",
         startHint: "Fly åttetallet. Følg indikatoren. Nesa skal peke bort fra deg hele tiden.",
         fullDescription: "Fly åttetallet med nesa hele tiden fast rettet bort fra deg - svingene bytter " +
-            "retning midtveis, så pinneføringen speiles i hver løkke. Hold høyden på " + EXERCISE_ALTITUDE +
-            " m. " + REQUIRED_CLEAN_LAPS + " runder uten avvik." + EXERCISE_RULES_TEXT,
+            "retning midtveis, så pinneføringen speiles i hver løkke. " + EXERCISE_ALTITUDE_TEXT + REQUIRED_CLEAN_LAPS + " runder uten avvik." + EXERCISE_RULES_TEXT,
         // captureRadius: åttetallets 24 punkter ligger ~1,5 m fra hverandre - standardradiusen (2.5)
         // "tok" punktene lenge før dronen var fremme og kunne hoppe over dem.
         stages: [{ id: "eight-out", label: "Åttetall - nese ut", waypoints: EIGHT_WAYPOINTS, noseMode: "out", captureRadius: 1.2 }]
@@ -748,7 +782,7 @@ const EXERCISES = {
         shortDescription: "Åttetall med nesa i fartsretningen - 2 rene runder.",
         startHint: "Fly åttetallet. Følg indikatoren. Nesa skal peke i fartsretningen hele veien.",
         fullDescription: "Åttetallet med nesa fremover i fartsretningen - koordinert yaw som bytter " +
-            "svingretning i kryssingen. Hold høyden på " + EXERCISE_ALTITUDE + " m. 2 runder uten avvik." +
+            "svingretning i kryssingen. " + EXERCISE_ALTITUDE_TEXT + "2 runder uten avvik." +
             EXERCISE_RULES_TEXT,
         stages: [{ id: "eight-forward", label: "Åttetall - nese frem", waypoints: EIGHT_WAYPOINTS, noseMode: "forward", captureRadius: 1.2, requiredCleanLaps: 2 }]
     },
@@ -760,8 +794,7 @@ const EXERCISES = {
         startHint: "Fly åttetallet i sidevind. Korriger jevnlig for avdrift for å holde formen.",
         fullDescription: "Samme åttetall, men nå med 3 m/s vind aktivert automatisk - du må korrigere " +
             "kontinuerlig for avdrift for å holde formen. Flys anbefalt med nesa ut, men nese-retningen " +
-            "sjekkes ikke her - fokuset er vindkorreksjon og formen, ikke nesestilling. Hold høyden på " +
-            EXERCISE_ALTITUDE + " m. " + REQUIRED_CLEAN_LAPS + " runder uten avvik. Vinden settes tilbake " +
+            "sjekkes ikke her - fokuset er vindkorreksjon og formen, ikke nesestilling. " + EXERCISE_ALTITUDE_TEXT + REQUIRED_CLEAN_LAPS + " runder uten avvik. Vinden settes tilbake " +
             "til dine egne innstillinger når øvelsen avsluttes." + EXERCISE_RULES_TEXT,
         wind: { speed: 3, directionDeg: 90, gust: 0.2 },
         // noseMode "free": ingen nese-sjekk i det hele tatt (se updateExercise) - nese ut er anbefalt
@@ -782,6 +815,7 @@ const EXERCISES = {
         startHint: "Hold posisjonen i den gule indikatoren og korriger jevnlig for vinden.",
         fullDescription: "Ta av, hold posisjonen i den markerte hover-sonen på " + HOVER_ALTITUDE + " m høyde i " +
             HOVER_HOLD_SEC + " sekunder mens vinden dytter på deg, og land deretter på landingsplassen (H). " +
+            HOVER_ALTITUDE_TEXT +
             "Nese-retningen sjekkes ikke her - fokuset er ren posisjonsholding mot vind, som i øvelse 9. " +
             "Vinden er " + HOVER_WIND_MIN_SPEED + "-" + HOVER_WIND_MAX_SPEED + " m/s fra en ny, tilfeldig " +
             "retning HVER runde. Du må gjennomføre dette " + REQUIRED_HOVER_WIND_REPS + " ganger for å bestå " +
@@ -968,8 +1002,8 @@ Object.assign(EXERCISES, {
             "over det markerte punktet på " + HOVER_ALTITUDE + " m høyde mens vinden dytter på deg - først " +
             "med nesa bort fra deg, så mot venstre, så mot høyre, og til slutt med nesa mot deg. Hver " +
             "retning må holdes i minst " + HOVER_HOLD_SEC + " sekunder innenfor omtrent samme posisjon og " +
-            "høyde - driver du ut av området eller mister retningen, nullstilles tiden for gjeldende " +
-            "retning.\n\nVinden er " + HOVER_WIND_MIN_SPEED + "-" + HOVER_WIND_MAX_SPEED +
+            "høyde. " + HOVER_ALTITUDE_TEXT + "Driver du ut av området eller mister retningen, " +
+            "nullstilles tiden for gjeldende retning.\n\nVinden er " + HOVER_WIND_MIN_SPEED + "-" + HOVER_WIND_MAX_SPEED +
             " m/s fra en ny, tilfeldig retning.\n\nDroneklassen settes automatisk til Middels, og du flyr " +
             "fra VLOS-posisjonen. R restarter hele øvelsen med nullstilt klokke.",
         wind: { speed: HOVER_WIND_MIN_SPEED, directionDeg: 0, gust: 0.3 },
@@ -7490,6 +7524,12 @@ const exerciseState = {
     warningUntil: 0,
     warningMessage: "",
     warningIsSuccess: false, // styrer bannerfargen: grønn for fullført deløvelse/bestått, oransje for avvik
+    // Start-hintets egen tilstand, se showStartHint/maybeDismissStartHint. startHintUntil speiler
+    // warningUntil så lenge det er start-hintet som faktisk står på skjermen - blir banneret overskrevet
+    // av et avviks-varsel, matcher de ikke lenger, og dismiss-logikken holder fingrene av fatet.
+    startHintUntil: 0,
+    startHintFrom: 0,
+    startHintStick: null, // pinneposisjonene da hintet kom - null når intet start-hint er aktivt
     startTime: 0,
     savedDroneClass: null,
     savedCameraModeIndex: 0,
@@ -7517,6 +7557,14 @@ const exerciseState = {
     ksPedestrianStartTime: 0,
     ksPatrolIndex: 0, // "vente"-fasens "liksom"-runde (gjenbruker CIRCLE_WAYPOINTS) - rent kosmetisk
     ksSavedFlightMode: null, // flightMode midlertidig tvunget til Stabilized under crowd/traffic-rømning
+    // Den FYSISKE kill-bryteren følger bryterPOSISJONEN hvert bilde (se kill-håndteringen i updateInput),
+    // ikke en stigende kant. Etter en kill-respons står den derfor fortsatt i kill-stilling når neste
+    // forsøk klargjøres: spawnKillswitchStage sin resetDrone() armerer, men updateInput tvinger armed
+    // tilbake til false samme bilde. Uten dette flagget leste "vente"-fasen det som at piloten kuttet
+    // motorene helt uten grunn og restartet forsøket umiddelbart - i praksis en løkke rett ETTER en
+    // korrekt kill-respons (brukerrapport: "jeg killer motorene og får meldingen om at motorene ble
+    // killet uten grunn ... men det er jo feil? da er det jo grunn til kill").
+    ksAwaitingRearm: false,
 
     // Racingbanen (ex-race1) - se "Øvelser: racing-tilstandsmaskin". Gjenbruker wpIndex/engaged (samme
     // felt som løype-øvelsene) for hvilken port som er neste/om start/mål er krysset minst én gang.
@@ -7859,6 +7907,10 @@ function showExerciseSummary(exerciseId, elapsedSec, isNewBest, isNearBest, just
     const text = document.getElementById("exerciseSummaryText");
     const nextBtn = document.getElementById("exerciseNextBtn");
     const closeBtn = document.getElementById("exerciseSummaryCloseBtn");
+    // Gate-advarselen skal aldri henge igjen fra et tidligere kort - nullstilles hver gang kortet bygges.
+    const gateEl = document.getElementById("exerciseSummaryGate");
+    gateEl.style.display = "none";
+    gateEl.innerHTML = "";
 
     const noTiming = !!EXERCISES[exerciseId].noTiming;
     title.textContent = justCompletedAll ? "Gratulerer - alle øvelser bestått!"
@@ -7886,10 +7938,25 @@ function showExerciseSummary(exerciseId, elapsedSec, isNewBest, isNearBest, just
             nextBtn.style.display = "";
             nextBtn.textContent = "Neste: " + EXERCISES[nextId].label;
             nextBtn.onclick = function () {
-                summary.style.display = "none";
+                // Kortet skjules FØRST når vi vet at øvelsen faktisk startet. Øvelser med
+                // requiresGamepadKill (ex11/rq3) avvises av gaten i startExercise, og tidligere ble kortet
+                // skjult før kallet - da så det ut som knappen ikke gjorde noen ting. Nå blir kortet
+                // stående med forklaringen og en vei videre.
                 // startExercise() kaller stopExercise() (gjenoppretter klasse/kamera) internt før den nye
                 // øvelsen settes opp - droneen spawnes på avgangsplassen, ikke der forrige ble stående.
-                startExercise(nextId);
+                // Gaten avviser FØR den stopExercise-en, så et avvist forsøk lar alt stå urørt.
+                if (!startExercise(nextId)) {
+                    gateEl.style.display = "";
+                    gateEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ' +
+                        EXERCISES[nextId].label + ' krever at Kill/Arm-knappen er bundet til en fysisk ' +
+                        'fjernkontroll. Bind den, og trykk "Neste" på nytt. ' +
+                        '<button type="button" id="summaryGateCalibrationBtn">Åpne kalibrering</button>';
+                    document.getElementById("summaryGateCalibrationBtn").addEventListener("click", function () {
+                        togglePanel(document.getElementById("gamepadPanel"));
+                    });
+                    return;
+                }
+                summary.style.display = "none";
             };
         } else {
             nextBtn.style.display = "none";
@@ -7941,6 +8008,23 @@ function advanceExerciseStage() {
 
 // Kalles rett etter den faste fysikk-løkka i animate() (se lenger ned) - droneState.position/
 // quaternion reflekterer da nettopp integrert fysikk for dette bildet.
+
+// Gjeldende høydekrav for et steg, eller null om steget ikke har noe. ETT sted som avgjør dette, slik at
+// avviks-sjekken i updateExercise og HUD-visningen ikke kan komme i utakt - det var nettopp fordi kravet
+// bare fantes implisitt inne i updateExercise at det aldri ble kommunisert noe sted.
+//   hard: true  = brudd teller som AVVIK (løypene - andre avvik nullstiller steget)
+//   hard: false = brudd nullstiller bare holde-tiden (hover)
+// "Høydeforandring" (sikksakken) har veipunkt med egen y og skal nettopp endre høyde - den får null.
+function stageAltitudeLimit(stage) {
+    if (!stage) return null;
+    if (stage.type === "hover" || stage.type === "hoverWind") {
+        return { target: HOVER_ALTITUDE, tolerance: HOVER_ALTITUDE_TOLERANCE, hard: false };
+    }
+    if (!stage.waypoints || !stage.waypoints.length) return null;
+    if (stage.waypoints[0].y !== undefined) return null;
+    return { target: EXERCISE_ALTITUDE, tolerance: ALTITUDE_TOLERANCE, hard: true };
+}
+
 function updateExercise(dt, now) {
     if (!exerciseState.active || exerciseState.awaitingNext) return; // fryst etter bestått - se completeExercise
 
@@ -8139,7 +8223,10 @@ function updateExercise(dt, now) {
             exerciseState.headingBadSinceMs = null;
         }
     }
-    const altitudeViolation = !is3d && Math.abs(droneState.position.y - EXERCISE_ALTITUDE) > ALTITUDE_TOLERANCE;
+    // Samme kilde som HUD-en leser, se stageAltitudeLimit - tidligere sto grensen kun her, hardkodet.
+    const altLimit = stageAltitudeLimit(stage);
+    const altitudeViolation = !!altLimit && altLimit.hard &&
+        Math.abs(droneState.position.y - altLimit.target) > altLimit.tolerance;
     const violationNow = headingViolation || altitudeViolation;
 
     if (violationNow) {
@@ -8193,10 +8280,56 @@ const exerciseHudViolationsEl = document.getElementById("exerciseHudViolations")
 const exerciseHudViolationsItemEl = document.getElementById("exerciseHudViolationsItem");
 const exerciseHudHeadingErrorEl = document.getElementById("exerciseHudHeadingError");
 const exerciseHudHeadingErrorItemEl = document.getElementById("exerciseHudHeadingErrorItem");
+const exerciseHudAltEl = document.getElementById("exerciseHudAlt");
+const exerciseHudAltItemEl = document.getElementById("exerciseHudAltItem");
 const exerciseHudTimerItemEl = document.getElementById("exerciseHudTimerItem");
 const exerciseHudTimerEl = document.getElementById("exerciseHudTimer");
 const exerciseHudLapTimesItemEl = document.getElementById("exerciseHudLapTimesItem");
 const exerciseHudLapTimesEl = document.getElementById("exerciseHudLapTimes");
+
+
+// Setter oppgaveteksten som vises idet en øvelse (eller et killswitch-scenario) starter. ETT sted, slik
+// at varigheten og dismiss-oppførselen er lik for alle øvelsene - se EXERCISE_HINT_MS.
+function showStartHint(message) {
+    const now = performance.now();
+    exerciseState.warningMessage = message;
+    exerciseState.warningUntil = now + EXERCISE_HINT_MS;
+    exerciseState.warningIsSuccess = true;
+    exerciseState.startHintUntil = exerciseState.warningUntil;
+    exerciseState.startHintFrom = now;
+    // Kopi, ikke referanse - inputState.stick muteres i hvert bilde, så en referanse ville alltid
+    // sammenlignet pinnen med seg selv og aldri registrert noen bevegelse.
+    exerciseState.startHintStick = {
+        roll: inputState.stick.roll, pitch: inputState.stick.pitch,
+        yaw: inputState.stick.yaw, throttle: inputState.stick.throttle
+    };
+}
+
+// Fjerner start-hintet så snart piloten begynner å fly. Kalles hvert bilde.
+// Bevisst basert på PINNEBEVEGELSE og ikke på at dronen er i lufta: flere øvelser spawner allerede
+// luftbårne ("Returner hjem" starter i 35-45 m, racingbanen ved sin egen startport), så et
+// "er den grounded"-kriterium ville sluknet hintet umiddelbart nettopp der teksten er viktigst.
+function maybeDismissStartHint() {
+    if (!exerciseState.startHintStick) return;
+    const now = performance.now();
+    // Er banneret overskrevet av noe annet (avviks-varsel, deløvelse fullført ...) eller gått ut av seg
+    // selv, har vi ikke noe her å gjøre - da eier den meldingen sin egen tid.
+    if (exerciseState.warningUntil !== exerciseState.startHintUntil || now >= exerciseState.warningUntil) {
+        exerciseState.startHintStick = null;
+        return;
+    }
+    if (now - exerciseState.startHintFrom < EXERCISE_HINT_MIN_MS) return;
+    const base = exerciseState.startHintStick, s = inputState.stick;
+    const flyr = Math.abs(s.roll - base.roll) > EXERCISE_HINT_STICK_DELTA ||
+        Math.abs(s.pitch - base.pitch) > EXERCISE_HINT_STICK_DELTA ||
+        Math.abs(s.yaw - base.yaw) > EXERCISE_HINT_STICK_DELTA ||
+        Math.abs(s.throttle - base.throttle) > EXERCISE_HINT_STICK_DELTA;
+    if (flyr) {
+        exerciseState.warningUntil = 0;
+        exerciseState.startHintUntil = 0;
+        exerciseState.startHintStick = null;
+    }
+}
 
 function updateExerciseHud() {
     const showBanner = performance.now() < exerciseState.warningUntil;
@@ -8304,6 +8437,30 @@ function updateExerciseHud() {
             (exerciseState.headingErrorDeg <= HEADING_TOLERANCE_DEG ? "sim-armed" : "sim-killed");
     }
 
+
+    // Løpende høyde mot steget sitt krav. Kravet fantes fra før, men KUN inne i avviks-sjekken - en pilot
+    // fikk vite om det først når det var brutt (brukerrapport: "Det er lagt inn en grense for når en flyr
+    // for høyt. Kan den bli vist synlig?"). Samme mønster som nese-feil-feltet rett over: grønt innenfor,
+    // rødt utenfor, og i tillegg gult som forvarsel når man nærmer seg. Feltet skjules helt for steg uten
+    // høydekrav (racing, "Høydeforandring", killswitch, retur) - se stageAltitudeLimit.
+    const hudAltLimit = stageAltitudeLimit(stage);
+    if (!hudAltLimit) {
+        exerciseHudAltItemEl.style.display = "none";
+    } else {
+        exerciseHudAltItemEl.style.display = "";
+        const y = droneState.position.y;
+        const maxAlt = hudAltLimit.target + hudAltLimit.tolerance;
+        const minAlt = hudAltLimit.target - hudAltLimit.tolerance;
+        const avvik = Math.abs(y - hudAltLimit.target);
+        // Løypene har bakken som reell nedre grense (minAlt er negativ), så der er kun taket verdt å vise.
+        // Hover har et ekte bånd i begge retninger og viser hele det.
+        exerciseHudAltEl.textContent = minAlt > 0
+            ? y.toFixed(1) + " m (" + minAlt + "-" + maxAlt + ")"
+            : y.toFixed(1) + " m (maks " + maxAlt + ")";
+        exerciseHudAltEl.className = "sim-status-value " +
+            (avvik > hudAltLimit.tolerance ? "sim-killed"
+                : avvik > hudAltLimit.tolerance * (1 - HUD_ALT_CAUTION_FRAC) ? "sim-caution" : "sim-armed");
+    }
     // "Uforutsette hendelser" (ex11) handler om riktig respons, ikke fart - se noTiming/completeExercise.
     if (EXERCISES[exerciseState.exerciseId].noTiming) {
         exerciseHudTimerItemEl.style.display = "none";
@@ -8341,9 +8498,7 @@ function spawnForExercise(exercise) {
     // exercise.stages[0] er alltid riktig steg å klargjøre.
     if (exercise.stages[0].type === "killswitch") {
         spawnKillswitchStage(exercise.stages[0]);
-        exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
-        exerciseState.warningUntil = performance.now() + 4000;
-        exerciseState.warningIsSuccess = true;
+        showStartHint(KILLSWITCH_PATROL_HINT);
     } else {
         // Racingbanen (ex-race1): egen spawn ved den nye banens start/mål-port i stedet for
         // avgangsplassen - se spawnRacingStage/RACE_SPAWN_POINT.
@@ -8352,9 +8507,7 @@ function spawnForExercise(exercise) {
         // FØRSTE målet (dronen) trenger å klargjøres/vises her, se spawnTargetHitStage.
         if (exercise.stages[0].type === "targetHit") spawnTargetHitStage(exercise.stages[0]);
         if (exercise.startHint) {
-            exerciseState.warningMessage = exercise.startHint;
-            exerciseState.warningUntil = performance.now() + 4500;
-            exerciseState.warningIsSuccess = true;
+            showStartHint(exercise.startHint);
         }
     }
     if (exercise.spawn === "far") {
@@ -8395,10 +8548,15 @@ function spawnForExercise(exercise) {
 
 function startExercise(id) {
     const exercise = EXERCISES[id];
-    if (!exercise) return;
+    if (!exercise) return false;
     // Gaten håndheves også her (ikke bare i UI-en, se showExerciseDetail) - avviser før stopExercise()
     // slik at et eventuelt PÅGÅENDE forsøk på en annen øvelse ikke avbrytes for et forsøk som uansett blir avvist.
-    if (exercise.requiresGamepadKill && !isGamepadKillBound()) return;
+    // Returverdien er hele poenget: dette var en STILLE return, og "Neste"-knappen i oppsummeringskortet
+    // (se showExerciseSummary) skjulte kortet FØR den kalte hit. Fullførte man "Returner hjem i vind" og
+    // trykket "Neste: 12. Uforutsette hendelser" uten en bundet kill-bryter, forsvant altså kortet og
+    // absolutt ingenting skjedde - brukerrapport: "klikker på neste øvelse ... men skjer ingenting".
+    // Meny-veien var aldri utsatt (startBtn.disabled = gateBlocked der), kun denne.
+    if (exercise.requiresGamepadKill && !isGamepadKillBound()) return false;
     stopExercise();
     exerciseState.savedDroneClass = droneState.droneClass;
     exerciseState.savedCameraModeIndex = cameraModeIndex;
@@ -8468,6 +8626,7 @@ function startExercise(id) {
         document.getElementById("racingLeaderboardTitle").textContent = "Ledertavle - " + exercise.label;
         renderRacingLeaderboard();
     }
+    return true;
 }
 
 // Idempotent opprydning - kalles både fra "Avbryt" og fra starten av startExercise (dekker "bytt til
@@ -8594,6 +8753,9 @@ function spawnKillswitchStage(stage) {
     // spilleren fortsatt sto på bakken/nettopp hadde lettet, lenge før de var i nærheten av runden.
     exerciseState.ksEngaged = false;
     exerciseState.ksTriggerAt = 0;
+    // Se feltets egen kommentar: bryteren kan fortsatt stå i kill-stilling etter forrige forsøk, og
+    // resetDrone() over blir da overstyrt igjen alt neste bilde.
+    exerciseState.ksAwaitingRearm = true;
     if (heliHandle) heliHandle.group.visible = false;
     if (airplaneHandle) airplaneHandle.visible = false;
     if (pedestrianHandle) pedestrianHandle.visible = false;
@@ -8784,6 +8946,24 @@ function updatePedestrianDangerPhase(now) {
 
 function updateKillswitchStage(stage, dt, now) {
     if (exerciseState.ksPhase === "wait") {
+        // Venter fortsatt på at den fysiske bryteren settes tilbake i armert stilling? Da er en
+        // disarmert drone IKKE et feilgrep - det er bare bryteren som står igjen der piloten satte den
+        // sist, se ksAwaitingRearm. Flagget klareres i det øyeblikket droneen faktisk er armert.
+        if (exerciseState.ksAwaitingRearm) {
+            if (!droneState.armed) {
+                // Si fra hva som mangler, men først når et eventuelt annet banner ("Fullført! Neste:
+                // ...", start-hintet) har fått stå ferdig - ellers ville denne overskrevet dem
+                // umiddelbart. Settes med kort levetid og fornyes hvert bilde, så den forsvinner av seg
+                // selv straks bryteren er tilbake.
+                if (now >= exerciseState.warningUntil) {
+                    exerciseState.warningMessage = KILLSWITCH_REARM_HINT;
+                    exerciseState.warningUntil = now + 400;
+                    exerciseState.warningIsSuccess = false;
+                }
+                return;
+            }
+            exerciseState.ksAwaitingRearm = false;
+        }
         if (!droneState.armed) {
             // Motorene kuttet (eller krasjet) før noe faktisk inntraff - ikke en del av drillen ennå,
             // bare klargjør et nytt forsøk i stedet for å telle det som noe reelt.
@@ -8842,9 +9022,7 @@ function updateKillswitchStage(stage, dt, now) {
     }
     if (exerciseState.ksPhase === "pending-respawn" && now >= exerciseState.ksRespawnAt) {
         spawnKillswitchStage(stage);
-        exerciseState.warningMessage = KILLSWITCH_PATROL_HINT;
-        exerciseState.warningUntil = now + 4000;
-        exerciseState.warningIsSuccess = true;
+        showStartHint(KILLSWITCH_PATROL_HINT);
     }
 }
 
@@ -11030,6 +11208,8 @@ function animate(now) {
     updateHud();
     updateTargetLivesHud();
     updateRaceResultPopup(now);
+    // Oppgaveteksten skal vike for flyging - se maybeDismissStartHint.
+    maybeDismissStartHint();
     updateExerciseHud();
     updateSignalOverlay(now);
     updateFpvHud();

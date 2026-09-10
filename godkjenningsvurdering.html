@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vurdering av godkjenninger - FFI UAS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="js/menu.js"></script>
+</head>
+<body>
+
+<!-- Vises kun mens brukeren drar en fil inn over vinduet (se dragenter/dragleave/drop i
+     js/godkjenningsvurdering.js) - samme dra-og-slipp-innlasting som sjekkliste-byggeren har. -->
+<div class="drop-json-overlay no-print" id="dropJsonOverlay">
+    <div class="drop-json-overlay-inner">
+        <i class="fa-solid fa-file-import"></i>
+        <p>Slipp JSON-filen her for å laste den inn</p>
+    </div>
+</div>
+
+<div class="container">
+
+    <div style="text-align:center; padding: 20px 0 20px 0;">
+        <h1>Vurdering av godkjenninger</h1>
+    </div>
+
+    <!-- Hjelpetekst helt øverst, før alt annet - dette skjemaet fylles IKKE ut av den som søker om å
+         få fly, og uten denne linjen ville en pilot som finner siden i menyen fort tro at dette var
+         enda et skjema hen selv måtte fylle ut sammen med søknaden. -->
+    <div class="review-intro">
+        <i class="fa-solid fa-circle-info"></i>
+        <p>Fylles ut av operativ leder UAS ved vurdering av ny godkjenning.</p>
+    </div>
+
+    <!-- Helhetsvurderingen, øverst - oppdateres av updateVerdict() hver gang en status endres. -->
+    <div class="review-verdict state-open" id="verdictBox">
+        <i class="fa-solid fa-hourglass-half" id="verdictIcon"></i>
+        <div class="review-verdict-text">
+            <strong id="verdictTitle">Ikke ferdig vurdert</strong>
+            <span id="verdictSub">Ingen sjekkpunkter er vurdert ennå.</span>
+        </div>
+    </div>
+
+    <div class="form-grid">
+        <div class="form-field">
+            <label for="reviewSubject">UAS-aktivitet</label>
+            <input type="text" id="reviewSubject" class="no-print" placeholder="F.eks. Testflyging FX-10">
+            <span class="print-value" data-print-for="reviewSubject"></span>
+        </div>
+        <div class="form-field">
+            <label for="reviewApplicant">Søker</label>
+            <input type="text" id="reviewApplicant" class="no-print">
+            <span class="print-value" data-print-for="reviewApplicant"></span>
+        </div>
+        <div class="form-field">
+            <label for="reviewer">Operativ leder UAS</label>
+            <input type="text" id="reviewer" class="no-print">
+            <span class="print-value" data-print-for="reviewer"></span>
+        </div>
+        <div class="form-field">
+            <label for="reviewDate">Dato</label>
+            <input type="date" id="reviewDate" class="no-print">
+            <span class="print-value" data-print-for="reviewDate"></span>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-clipboard-check" style="color:white;"></i>
+            <h2>Sjekkpunkter</h2>
+        </div>
+        <p class="review-list-hint no-print">
+            Klikk på navnet til et sjekkpunkt for veiledning om hva som skal sjekkes.
+        </p>
+        <!-- Selve radene bygges av renderCheckpoints() ut fra CHECKPOINTS i
+             js/godkjenningsvurdering.js - listen skal kunne utvides der uten å røre HTML-en. -->
+        <div class="review-list" id="reviewList"></div>
+    </div>
+
+    <div class="no-print" style="text-align:center; margin-top: 30px;">
+        <button class="btn" id="downloadPdfBtn"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
+        <button class="btn btn-secondary" id="downloadJsonBtn"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
+        <button class="btn btn-secondary" id="uploadJsonBtn"><i class="fa-solid fa-file-import"></i> Last inn JSON</button>
+        <input type="file" id="uploadJsonInput" accept="application/json,.json" style="display:none">
+        <button class="btn btn-danger" id="resetFormBtn"><i class="fa-solid fa-rotate-left"></i> Nullstill skjema</button>
+    </div>
+
+</div>
+
+<!-- Veiledningsboks for ett sjekkpunkt - fylles og åpnes av openGuide() ved klikk på et sjekkpunktnavn. -->
+<div class="guide-modal-overlay no-print" id="guideOverlay">
+    <div class="guide-modal-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+        <button type="button" class="guide-modal-close" id="guideCloseBtn" title="Lukk">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+        <h3 id="guideTitle"></h3>
+        <p id="guideIntro"></p>
+        <ul id="guidePoints"></ul>
+    </div>
+</div>
+
+<script src="js/godkjenningsvurdering.js"></script>
+</body>
+</html>

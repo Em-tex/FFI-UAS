@@ -24,9 +24,14 @@ document.addEventListener("DOMContentLoaded", function() {
             ]
         },
         {
-            name: "Risikovurdering", icon: "fa-triangle-exclamation", children: [
+            // Het tidligere "Risikovurdering" - omdøpt til "Godkjenning for å fly" (brukerønske: mer
+            // beskrivende for hva verktøyene under faktisk brukes til). Selve filnavnet
+            // risikovurdering.html er bevisst IKKE endret - eventuelle bokmerker og delte lenker til
+            // oversikten skal fortsatt virke.
+            name: "Godkjenning for å fly", icon: "fa-circle-check", children: [
                 { name: "Oversikt", link: "risikovurdering.html", icon: "fa-house" },
-                { name: "Sjekkliste-bygger", link: "sjekkliste-bygger.html", icon: "fa-list-check" }
+                { name: "Sjekkliste-bygger", link: "sjekkliste-bygger.html", icon: "fa-list-check" },
+                { name: "Vurdering av godkjenninger", link: "godkjenningsvurdering.html", icon: "fa-clipboard-check" }
             ]
         }
         // Legg til flere sider her etter hvert, f.eks.:

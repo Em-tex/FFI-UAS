@@ -126,6 +126,11 @@
                 <span class="sim-status-label">Nese-feil</span>
                 <span id="exerciseHudHeadingError" class="sim-status-value">-</span>
             </div>
+            <!-- Hoydekravet var tidligere usynlig til man brot det - se stageAltitudeLimit. -->
+            <div class="sim-status-item" id="exerciseHudAltItem">
+                <span class="sim-status-label">Høyde</span>
+                <span id="exerciseHudAlt" class="sim-status-value">-</span>
+            </div>
             <div class="sim-status-item" id="exerciseHudTimerItem">
                 <span class="sim-status-label">Tid</span>
                 <span id="exerciseHudTimer" class="sim-status-value">0:00</span>
@@ -500,6 +505,9 @@
         <div class="sim-exercise-summary" id="exerciseSummary" style="display:none;">
             <h3 id="exerciseSummaryTitle"></h3>
             <p id="exerciseSummaryText"></p>
+            <!-- Vises kun naar "Neste" peker paa en ovelse som krever bundet kill-bryter og den ikke er
+                 bundet - se showExerciseSummary. Uten denne forsvant kortet og ingenting skjedde. -->
+            <p id="exerciseSummaryGate" class="sim-exercise-gate-warning" style="display:none;"></p>
             <div class="sim-summary-buttons">
                 <button type="button" class="sim-btn sim-btn-primary" id="exerciseNextBtn">Neste</button>
                 <button type="button" class="sim-btn sim-btn-primary" id="exerciseSummaryCloseBtn">Lukk</button>

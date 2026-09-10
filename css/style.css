@@ -536,6 +536,9 @@ h3 { font-size: 1.1rem; color: #555; margin: 0 0 10px 0; border-bottom: 2px soli
 }
 .sim-status-value.sim-armed { color: #6fdc8c; }
 .sim-status-value.sim-killed { color: #ff6b6b; }
+/* Mellomtilstand: innenfor kravet, men nær nok grensen til at det er verdt et varsel (brukt av
+   høydefeltet i øvelses-HUD-en, se updateExerciseHud). */
+.sim-status-value.sim-caution { color: #ffcf5c; }
 /* Rundetider (race3, se exerciseHudLapTimes) - opptil tre tider på én linje ved siden av totaltiden,
    litt mindre skrift enn de andre HUD-verdiene så raden ikke blir bredere enn nødvendig. */
 .sim-status-value-sm { font-size: 0.8rem; white-space: nowrap; }
@@ -2980,3 +2983,236 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 /* Sjekklistedel med bare ett punkt - overskriften er allerede beskrivende, så bare tiltaket vises som
    ren tekst i stedet for en tabellrad med redundant situasjon-kolonne (se buildSectionBox). */
 .print-single-action { padding: 5px 8px; font-size: 8.5pt; line-height: 1.4; }
+
+/* ============================================================================
+   Vurdering av godkjenninger (godkjenningsvurdering.html)
+   Skjemaet operativ leder UAS fyller ut ved vurdering av en ny godkjenning.
+   ============================================================================ */
+
+/* Hjelpetekst helt øverst - dette skjemaet fylles IKKE ut av den som søker om å få fly, og uten en
+   tydelig avsender-linje ville en pilot som finner siden i menyen fort tro at dette var enda et skjema
+   hen selv måtte levere sammen med søknaden. */
+.review-intro {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--ffi-light-bg);
+    border-left: 4px solid var(--ffi-blue);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+}
+.review-intro i { color: var(--ffi-blue); font-size: 1.1rem; }
+.review-intro p { margin: 0; color: #444; font-size: 0.95rem; }
+
+/* Helhetsvurderingen - tre tilstander, satt av updateVerdict i js/godkjenningsvurdering.js. */
+.review-verdict {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin-bottom: 30px;
+}
+.review-verdict i { font-size: 1.8rem; }
+.review-verdict-text { display: flex; flex-direction: column; gap: 2px; }
+.review-verdict-text strong { font-size: 1.15rem; }
+.review-verdict-text span { font-size: 0.9rem; color: #555; }
+.review-verdict.state-open { background: #f7f8fa; border-color: #d6dae0; }
+.review-verdict.state-open i, .review-verdict.state-open strong { color: #6b7684; }
+.review-verdict.state-blocked { background: #fdf1ef; border-color: #e6b7b0; }
+.review-verdict.state-blocked i, .review-verdict.state-blocked strong { color: #a01414; }
+.review-verdict.state-ok { background: #eaf6ee; border-color: #a9d9bb; }
+.review-verdict.state-ok i, .review-verdict.state-ok strong { color: #1e7a44; }
+
+.review-list-hint { margin: 0; padding: 14px 20px 0; color: #777; font-size: 0.85rem; }
+.review-list { padding: 10px 20px 20px; }
+
+/* Gruppeoverskrift ("Beskrivelse av operasjonen") - gruppen har ingen egen status, den oppsummerer bare
+   underpunktene sine i en liten pille til høyre (se updateGroupPills). */
+.review-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 18px 0 4px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #eee;
+}
+.review-group-head:first-child { margin-top: 6px; }
+.review-group-pill {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.review-group-pill.pill-open { background: #eef0f3; color: #6b7684; }
+.review-group-pill.pill-blocked { background: #fdf1ef; color: #a01414; }
+.review-group-pill.pill-ok { background: #eaf6ee; color: #1e7a44; }
+
+.review-row {
+    border-bottom: 1px solid #eee;
+    /* Fargestripen til venstre settes av data-status under - gjennomsiktig som utgangspunkt, slik at
+       radene ikke hopper sidelengs i det en status velges. */
+    border-left: 3px solid transparent;
+    padding: 4px 0 4px 10px;
+}
+.review-row:last-child { border-bottom: none; }
+.review-row-sub { margin-left: 18px; }
+/* Første frittstående punkt etter en gruppes underpunkter (f.eks. "Pilotliste" rett under
+   "Risiko for tredjepart") får litt luft over seg - uten den leses det lett som enda et underpunkt
+   under gruppeoverskriften lenger opp, siden innrykket alene er en svak markør. */
+.review-row-sub + .review-row:not(.review-row-sub) { margin-top: 14px; }
+.review-row[data-status="ok"] { border-left-color: #2e9e5b; }
+.review-row[data-status="forbedring"] { border-left-color: #c0392b; }
+.review-row[data-status="na"] { border-left-color: #b9bec6; }
+
+.review-row-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* Sjekkpunktnavnet er en knapp fordi det skal åpne veiledningsteksten ved klikk (se openGuide) - stylet
+   som vanlig tekst med en diskret understrek ved hover, ikke som enda en blå knapp i skjemaet. */
+.review-title-btn, .review-group-btn {
+    flex: 1 1 220px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    padding: 8px 0;
+    text-align: left;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.95rem;
+    color: #333;
+    cursor: pointer;
+}
+.review-group-btn { font-size: 1.05rem; font-weight: 700; color: var(--ffi-blue); padding: 0; }
+.review-title-btn i, .review-group-btn i { color: #9aa3ad; font-size: 0.85rem; }
+.review-title-btn:hover span, .review-group-btn:hover span { text-decoration: underline; }
+.review-title-btn:hover i, .review-group-btn:hover i { color: var(--ffi-blue); }
+
+.review-row-controls { display: flex; align-items: center; gap: 8px; }
+.review-status {
+    width: 190px;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-family: 'Overpass', sans-serif;
+    background: white;
+    color: #333;
+}
+/* "Velg..." skal være tydelig uvalgt - grå tekst på selve nedtrekksmenyen så lenge ingenting er valgt
+   (klassen settes av applyStatusStyling), og grå også i selve listen når den er åpen. */
+.review-status.is-empty { color: #999; }
+.review-status option[value=""] { color: #999; }
+.review-status:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
+
+/* Snakkeboblen som åpner kommentarboksen for punktet. Fylt ikon + FFI-blå når det ligger en kommentar
+   der, slik at en kommentar i en sammenslått boks ikke blir usynlig (se updateCommentBtn). */
+.review-comment-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #9aa3ad;
+    font-size: 1rem;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+}
+.review-comment-btn:hover { color: var(--ffi-blue); background: var(--ffi-light-bg); }
+.review-comment-btn.has-comment { color: var(--ffi-blue); }
+.review-comment-btn.is-open { border-color: var(--border-color); background: var(--ffi-light-bg); }
+
+.review-comment-wrap { display: none; padding: 0 0 10px 0; }
+.review-comment-wrap.open { display: block; }
+.review-comment {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.9rem;
+    resize: vertical;
+    overflow: hidden;
+}
+.review-comment:focus { outline: none; border-color: var(--ffi-blue); box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1); }
+
+@media (max-width: 600px) {
+    /* Nedtrekksmenyen får hele bredden på smal skjerm i stedet for å bli klemt sammen ved siden av et
+       langt sjekkpunktnavn. */
+    .review-row-controls { width: 100%; }
+    .review-status { flex: 1; width: auto; }
+}
+
+/* Veiledningsboksen som åpnes ved klikk på et sjekkpunktnavn. display:none (ikke bare gjennomsiktig) -
+   en usynlig fullskjerm-overlay ville ellers fanget klikk den ikke skal ha. */
+.guide-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.45);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.guide-modal-overlay.open { display: flex; }
+.guide-modal-card {
+    position: relative;
+    background: white;
+    border-radius: 8px;
+    padding: 28px 30px;
+    max-width: 520px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.guide-modal-card h3 {
+    color: var(--ffi-blue);
+    font-size: 1.15rem;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+    padding-right: 30px;
+}
+.guide-modal-card p { margin: 0 0 14px; font-size: 0.95rem; line-height: 1.5; color: #444; }
+.guide-modal-card ul { margin: 0; padding-left: 20px; }
+.guide-modal-card li { font-size: 0.92rem; line-height: 1.5; color: #444; margin-bottom: 8px; }
+.guide-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: #9aa3ad;
+    cursor: pointer;
+}
+.guide-modal-close:hover { color: var(--ffi-blue); }
+
+@media print {
+    /* Radene skal ikke kappes midt i (sjekkpunkt på én side, status og kommentar på neste). */
+    .review-row, .review-verdict, .review-intro { break-inside: avoid; page-break-inside: avoid; }
+    .review-title-print { flex: 1; font-weight: 600; }
+    .review-status-print { font-weight: 600; }
+    .review-row[data-status="forbedring"] .review-status-print { color: #a01414; }
+    /* Kommentarboksen er skjult på skjermen når den er slått sammen, men en utfylt kommentar skal
+       likevel alltid med i utskriften - print-empty (settes av syncPrintFields) skjuler de tomme igjen. */
+    .review-comment-wrap { display: block !important; }
+    .review-comment-wrap.print-empty { display: none !important; }
+    .review-comment-print { white-space: pre-line; color: #444; font-style: italic; }
+    .review-list-hint { display: none; }
+    /* Fargene i helhetsvurderingen og på statusradene bærer selve konklusjonen - uten dette skriver
+       Chrome dem ut som hvite bokser (samme grunn som ved .section-header lenger opp i filen). */
+    .review-verdict, .review-intro { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
