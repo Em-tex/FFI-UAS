@@ -41,9 +41,30 @@ const VERTICAL_DRAG_MULTIPLIER = 1.2;
 const DRONE_CLASSES = {
     racing: {
         label: "Racing (rask, lett)",
-        mass: 0.5, maxThrust: 18,
-        inertiaRollPitch: 0.025, inertiaYaw: 0.05, maxYawRateDeg: 800, // høyt nok til i praksis ikke begrense noen vanlig Rates-instilling
-        dragLinear: 0.07, dragQuad: 0.011, visualScale: 0.72 // kun visuell størrelse - massen er uendret
+        // maxThrust hevet 18 -> 22 N (TWR 3,7:1 -> 4,5:1) etter pilottilbakemelding: "racingdrona
+        // oppleves littegrann tregere". TWR 3,7:1 er lavt for noe som heter "Racing" (ekte racing-quads
+        // ligger på 8-12:1); 4,5:1 gir tydelig mer punch ut av portene uten å bli et helt annet fartøy.
+        // Se racingPro for 10:1-varianten.
+        mass: 0.5, maxThrust: 22,
+        // inertia SKALERT sammen med visualScale under. Verdiene er ikke frie parametre: 0.025 var
+        // eksakt masse * motorradius² ved den gamle skalaen (0.5 * (0.22*sqrt(2)*0.72)² = 0.0251), altså
+        // utledet av rammen. Ved 0.52 blir motorradien 0.162 m og m*r² = 0.013. Yaw beholder sitt
+        // forhold på 2x roll/pitch. Konsekvensen er at vinkelakselerasjonen blir 1,9x høyere - dronen
+        // blir merkbart kvikkere i rull/pitch, som er nettopp det "littegrann tregere" pekte på.
+        inertiaRollPitch: 0.013, inertiaYaw: 0.026, maxYawRateDeg: 800, // høyt nok til i praksis ikke begrense noen vanlig Rates-instilling
+        // visualScale er et MISVISENDE navn: den skalerer ikke bare modellen, men også propell-
+        // treffradiusen (updatePropStrikes), personskade-rekkevidden (updatePilotCollision/
+        // updateBystanderCollision), bakkekontaktpunktene (getContactWorldPoints) og spawn-høyden.
+        // Senket 0.72 -> 0.52 (brukeren: "propellene er veldig store nå. kanskje racingdrona bør være
+        // litt mindre"): 0.72 ga 448 mm wheelbase med 11,9" propell, altså geometrisk nærmere en
+        // cinelifter enn en racer. 0.52 gir 324 mm og 8,6", og - viktigst - en propell-treffradius på
+        // 0.109 m, praktisk talt identisk med 0.108 m som den var FØR bladene ble forlenget. Gate-
+        // klipping er dermed tilbake på nivået banen opprinnelig ble fløyet med.
+        // dragLinear/dragQuad er BEVISST IKKE skalert med arealet (k² ville gitt 0.037/0.0057): de er
+        // ikke rene CdA-tall, men tunet etter følelse over flere runder. Ren areal-skalering ville gitt
+        // toppfart 58,8 m/s, terminalfall 21,9 m/s og dobbelt så lang sideglidning - altså akkurat den
+        // "skli"-oppførselen som ble meldt som et problem.
+        dragLinear: 0.07, dragQuad: 0.011, visualScale: 0.52
     },
     // Brukerens krav, ordrett: "legge til en racing quad, ikke for øvelsene men kun for freeflight? med
     // twr på 10:1 f.eks.?" - egen, NY klassenøkkel ("racingPro"), IKKE en endring av "racing" over (den
@@ -67,8 +88,10 @@ const DRONE_CLASSES = {
     racingPro: {
         label: "Racing Pro (svært kraftig, TWR ~10:1)",
         mass: 0.5, maxThrust: 49,
-        inertiaRollPitch: 0.025, inertiaYaw: 0.05, maxYawRateDeg: 800,
-        dragLinear: 0.07, dragQuad: 0.011, visualScale: 0.72,
+        // Følger racing sin ramme (se dens kommentar): samme skala og dermed samme utledede treghet.
+        // Ville ellers motsagt sin egen "samme masse/ramme-profil som racing"-begrunnelse over.
+        inertiaRollPitch: 0.013, inertiaYaw: 0.026, maxYawRateDeg: 800,
+        dragLinear: 0.07, dragQuad: 0.011, visualScale: 0.52,
         hiddenFromMenu: true
     },
     mid: {
