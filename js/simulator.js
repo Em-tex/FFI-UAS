@@ -41,12 +41,12 @@ const VERTICAL_DRAG_MULTIPLIER = 1.2;
 const DRONE_CLASSES = {
     racing: {
         label: "Racing (rask, lett)",
-        // Hevet midlertidig til 22 N under feilsøkingen av tapte rundetider, men satt TILBAKE til 18 N:
-        // det viste seg at tapet kom fra propellstørrelsen, ikke fra manglende kraft. Med visualScale
-        // nede på 0.52 (se under) satte brukeren 25,72 s mot en tidligere rekord på 26,12 - altså raskere
-        // enn før, uten ekstra kraft. TWR 3,7:1 er fortsatt lavt for noe som heter "Racing" (ekte
-        // racing-quads ligger på 8-12:1), men det er en egen sak - se racingPro for 10:1-varianten.
-        mass: 0.5, maxThrust: 20,
+        // 18 N (TWR 3,7:1) - den opprinnelige verdien. Ble hevet til 22 under feilsøkingen av tapte
+        // rundetider, men satt tilbake: rekorden på 26,12 s ble satt nettopp på 18 N, og da visualScale
+        // under ble senket til 0.52 kom farten tilbake av seg selv (25,72 s). Tapet skyldtes
+        // propellstørrelsen - større treffradius gir flere portklipp, og ett klipp koster ca. 0,8 s
+        // resten av runden - ikke manglende kraft. Se racingPro for en 10:1-variant.
+        mass: 0.5, maxThrust: 18,
         // inertia SKALERT sammen med visualScale under. Verdiene er ikke frie parametre: 0.025 var
         // eksakt masse * motorradius² ved den gamle skalaen (0.5 * (0.22*sqrt(2)*0.72)² = 0.0251), altså
         // utledet av rammen. Ved 0.52 blir motorradien 0.162 m og m*r² = 0.013. Yaw beholder sitt
@@ -11768,10 +11768,19 @@ document.addEventListener("DOMContentLoaded", function () {
     // vi to). ?exercises=initial/recurrent åpner panelet direkte på kategorivalget for det programmet
     // (hopper forbi selve programvalg-toppskjermen) - se copyExerciseMenuLink for "kopier lenke"-
     // knappen som genererer nøyaktig disse lenkene.
-    const deepLinkProgram = new URLSearchParams(location.search).get("exercises");
-    if (deepLinkProgram === "initial" || deepLinkProgram === "recurrent") {
+    // ?exercises=initial/recurrent åpner panelet på kategorivalget for det programmet. I tillegg
+    // godtas en KATEGORINØKKEL direkte (initialQuad, initialAcro, recurrentQuad, recurrentAcro), som
+    // hopper helt inn til øvelseslisten - det er disse menyen bruker for "Quad intro"/"Acro intro"
+    // (se js/menu.js). currentExerciseProgram settes med, slik at "Tilbake" havner på riktig
+    // kategorivalg i stedet for det man tilfeldigvis sto på sist.
+    const deepLink = new URLSearchParams(location.search).get("exercises");
+    if (deepLink === "initial" || deepLink === "recurrent") {
         document.getElementById("exercisesPanel").style.display = "";
-        showExerciseCategoryView(deepLinkProgram);
+        showExerciseCategoryView(deepLink);
+    } else if (deepLink && EXERCISE_CATEGORY_CONFIG[deepLink]) {
+        document.getElementById("exercisesPanel").style.display = "";
+        currentExerciseProgram = deepLink.startsWith("recurrent") ? "recurrent" : "initial";
+        showExerciseListView(deepLink);
     }
 
     requestAnimationFrame(animate);

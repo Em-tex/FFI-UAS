@@ -16,7 +16,19 @@ document.addEventListener("DOMContentLoaded", function() {
                 },
                 {
                     name: "Simulator", icon: "fa-gamepad", children: [
-                        { name: "Quadcopter", link: "simulator.html", icon: "fa-helicopter" },
+                        {
+                            // Quadcopter fikk et nivå til (brukerønske): selve simulatoren, pluss egne
+                            // lenker rett inn i hver øvelseskategori. Lenkene bruker ?exercises=<kategori>
+                            // - se dyplenke-håndteringen nederst i js/simulator.js, som godtar både
+                            // program ("initial"/"recurrent") og kategorinøkkel.
+                            name: "Quadcopter", icon: "fa-helicopter", children: [
+                                { name: "Åpne simulator", link: "simulator.html", icon: "fa-play" },
+                                { name: "Quad intro", link: "simulator.html?exercises=initialQuad", icon: "fa-graduation-cap" },
+                                { name: "Acro intro", link: "simulator.html?exercises=initialAcro", icon: "fa-bolt" },
+                                { name: "Recurrent quad", link: "simulator.html?exercises=recurrentQuad", icon: "fa-rotate" },
+                                { name: "Recurrent acro", link: "simulator.html?exercises=recurrentAcro", icon: "fa-rotate" }
+                            ]
+                        },
                         { name: "Fixed-wing", link: "simulator-fixedwing.html", icon: "fa-plane" },
                         { name: "VTOL", link: "simulator-vtol.html", icon: "fa-plane-up" }
                     ]
@@ -40,11 +52,17 @@ document.addEventListener("DOMContentLoaded", function() {
 
     const path = window.location.pathname;
     const page = path.split("/").pop() || "index.html";
+    // Full adresse inkludert spørrestreng - lenkene til øvelseskategoriene skiller seg KUN på den
+    // (simulator.html?exercises=initialQuad osv.), så uten den ville alle fem Quadcopter-lenkene blitt
+    // markert aktive samtidig.
+    const pageWithQuery = page + window.location.search;
+    // Filnavnet i en lenke, uten spørrestreng - brukes til å markere FORELDRE-menyene som aktive.
+    function linkPage(link) { return (link || "").split("?")[0]; }
 
     // En undermeny-oppføring kan selv ha "children" (f.eks. Simulator under Trening) - da rendres den
     // som en egen nestet dropdown-knapp i stedet for en ren lenke.
     function isDescendantActive(children) {
-        return children.some(child => child.link === page || (child.children && isDescendantActive(child.children)));
+        return children.some(child => linkPage(child.link) === page || (child.children && isDescendantActive(child.children)));
     }
 
     function renderDropdownChild(child) {
@@ -62,7 +80,7 @@ document.addEventListener("DOMContentLoaded", function() {
             html += `</div></div>`;
             return html;
         }
-        const isActive = (page === child.link) ? ' active' : '';
+        const isActive = (pageWithQuery === child.link) ? ' active' : '';
         return `<a href="${child.link}" class="${isActive.trim()}"><i class="fa-solid ${child.icon}"></i> ${child.name}</a>`;
     }
 
@@ -81,7 +99,7 @@ document.addEventListener("DOMContentLoaded", function() {
             html += `</div></li>`;
             return html;
         }
-        const isActive = (page === item.link) ? 'class="active"' : '';
+        const isActive = (pageWithQuery === item.link) ? 'class="active"' : '';
         const target = item.target ? `target="${item.target}"` : '';
         return `<li><a href="${item.link}" ${isActive} ${target}><i class="fa-solid ${item.icon}"></i> ${item.name}</a></li>`;
     }
@@ -121,7 +139,13 @@ document.addEventListener("DOMContentLoaded", function() {
             e.stopPropagation();
             const menu = btn.nextElementSibling;
             const isOpen = menu.classList.contains("open");
-            document.querySelectorAll(".dropdown-menu-nested.open").forEach(function (m) { m.classList.remove("open"); });
+            document.querySelectorAll(".dropdown-menu-nested.open").forEach(function (m) {
+                // Lukk kun menyer som IKKE inneholder knappen vi nettopp klikket. Med tre nivåer
+                // (Quadcopter inni Simulator inni Trening) er foreldremenyen selv en
+                // .dropdown-menu-nested - uten denne testen lukket et klikk på tredje nivå sin egen
+                // foreldremeny, og undermenyen ble åpnet inni noe usynlig.
+                if (!m.contains(btn)) m.classList.remove("open");
+            });
             if (!isOpen) menu.classList.add("open");
         });
     });
