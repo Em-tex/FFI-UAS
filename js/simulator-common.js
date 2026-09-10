@@ -439,6 +439,83 @@
         return binding.inverted ? !raw : raw;
     }
 
+
+    /* ---------- Kollisjon mellom bindinger ----------
+       BUG (brukerrapport): kill og reset kunne bindes til SAMME fysiske knapp. Kill leses som en
+       bryterPOSISJON hvert bilde, reset trigges på stigende kant - så et kutt utløste samtidig en reset,
+       og piloten ble kastet tilbake til avgangsplassen i det øyeblikket hen gjorde det riktige. Det så
+       ut som at øvelsen feilet på en korrekt respons.
+       En binding får derfor ikke lenger settes hvis den ville aktiveres av nøyaktig samme fysiske
+       tilstand som en annen allerede bundet handling.
+       VIKTIG unntak som MÅ fortsette å virke: samme knapp-indeks med motsatt "inverted" er to ULIKE
+       posisjoner på én fysisk 2-posisjons bryter, og er en bevisst støttet konstruksjon (se
+       captureBaseline/flipBindingPart). Den regnes derfor ikke som kollisjon. */
+    function bindingPartsOf(binding) {
+        if (!binding) return [];
+        return binding.type === "combo" ? binding.parts.slice() : [binding];
+    }
+    // Ville denne akse-delen vært "på" ved verdien v? Samme regel som isBindingActive.
+    function axisOnAt(part, v) {
+        return Math.abs(v - part.onValue) < Math.abs(v - part.offValue);
+    }
+    // Samme fysiske kontroll I SAMME posisjon. Manglende type behandles som "button" - eldre lagrede
+    // kart kan være uten feltet, akkurat som isBindingActive antar.
+    function samePart(a, b) {
+        if (!a || !b) return false;
+        const ta = a.type === "axis" ? "axis" : "button";
+        const tb = b.type === "axis" ? "axis" : "button";
+        if (ta !== tb || a.index !== b.index) return false;
+        // To akse-posisjoner kolliderer bare hvis de faktisk overlapper (en 3-posisjons bryter på samme
+        // kanal skal fortsatt kunne styre to ulike handlinger).
+        if (ta === "axis") return axisOnAt(a, b.onValue) && axisOnAt(b, a.onValue);
+        return !!a.inverted === !!b.inverted;
+    }
+    // Delmengde: er ALLE delene i "small" med i "big"? Da vil small-bindingen alltid være aktiv samtidig
+    // som big - altså kolliderer de. Dekker både to identiske enkeltbindinger og "kill = A" mot
+    // "reset = A + B" (der A+B ville utløst begge).
+    function partsSubset(small, big) {
+        return small.length > 0 && small.every(function (p) {
+            return big.some(function (q) { return samePart(p, q); });
+        });
+    }
+    function bindingsConflict(a, b) {
+        const pa = bindingPartsOf(a), pb = bindingPartsOf(b);
+        if (!pa.length || !pb.length) return false;
+        return partsSubset(pa, pb) || partsSubset(pb, pa);
+    }
+    // Nøkkelen til den FØRSTE handlingen candidate kolliderer med, eller null. action er handlingen som
+    // holder på å bindes (seg selv teller aldri som kollisjon).
+    function findBindingConflict(bindingsObj, action, candidate) {
+        const keys = Object.keys(bindingsObj);
+        for (let i = 0; i < keys.length; i++) {
+            if (keys[i] === action) continue;
+            if (bindingsConflict(candidate, bindingsObj[keys[i]])) return keys[i];
+        }
+        return null;
+    }
+    // Alle kollisjoner i et ALLEREDE lagret kart - brukt til å varsle om et oppsett som ble lagret før
+    // sjekken fantes (som brukerens egne kill+reset). Returnerer [{a, b}].
+    function findExistingBindingConflicts(bindingsObj) {
+        const keys = Object.keys(bindingsObj).filter(function (k) { return !!bindingsObj[k]; });
+        const out = [];
+        for (let i = 0; i < keys.length; i++) {
+            for (let j = i + 1; j < keys.length; j++) {
+                if (bindingsConflict(bindingsObj[keys[i]], bindingsObj[keys[j]])) {
+                    out.push({ a: keys[i], b: keys[j] });
+                }
+            }
+        }
+        return out;
+    }
+    // Menneskelig navn på en binding-nøkkel, brukt i kollisjons-meldingene. kill ligger ikke i noen
+    // actionLabels-tabell (den håndteres i sin egen grid), så den må med her.
+    const BINDING_ACTION_LABELS = {
+        kill: "Kill/Arm", reset: "Reset", modeAcro: "Acro", modeStabilized: "Stabilized",
+        modeAltHold: "Alt Hold", modeLoiter: "Loiter", engineOn: "Motor på", engineOff: "Motor av"
+    };
+    function bindingActionLabel(key, actionLabels) {
+        return (actionLabels && actionLabels[key]) || BINDING_ACTION_LABELS[key] || key;
+    }
     // Menneskelesbar ett-linjes beskrivelse av EN enkelt binding-del (aldri en hel combo - kalleren
     // setter selv sammen combo-delene, f.eks. med " + " mellom, se buildGamepadKillGrid).
     function describeBindingPart(binding) {
@@ -475,6 +552,8 @@
         let learnIgnoreButtons = new Set();
         let learnAxisBaseline = [];
         let comboParts = null; // satt av startListeningForCombo - se der
+        // Siste avviste binding (kollisjon), lest ÉN gang av UI-et via takeLastRejection.
+        let lastRejection = null;
         const prevActive = {};
 
         function captureBaseline(gp, extraIgnoreButtons) {
@@ -547,6 +626,19 @@
                     }
                 }
                 if (captured) {
+                    // Avvis en binding som ville aktiveres av nøyaktig samme fysiske tilstand som en
+                    // annen handling - se findBindingConflict. For en pågående kombinasjon testes hele
+                    // den PROSPEKTIVE combo-en, slik at delen aldri legges til i utgangspunktet.
+                    const candidate = comboParts
+                        ? (comboParts.length === 0 ? captured : { type: "combo", parts: comboParts.concat([captured]) })
+                        : captured;
+                    const konflikt = findBindingConflict(bindingsObj, listeningForAction, candidate);
+                    if (konflikt) {
+                        lastRejection = { action: listeningForAction, conflictAction: konflikt };
+                        listeningForAction = null;
+                        comboParts = null;
+                        return; // bindingen settes IKKE - kalleren leser lastRejection og forklarer
+                    }
                     if (comboParts) {
                         comboParts.push(captured);
                     } else {
@@ -571,7 +663,10 @@
             startListening: startListening,
             startListeningForCombo: startListeningForCombo,
             poll: poll,
-            isListening: function () { return listeningForAction; }
+            isListening: function () { return listeningForAction; },
+            // Leser og TØMMER siste kollisjons-avvisning. Kalleren viser den for brukeren - uten dette
+            // ville en avvist binding sett ut som at "Sett"-knappen bare ikke virket.
+            takeLastRejection: function () { const r = lastRejection; lastRejection = null; return r; }
         };
     }
 
@@ -677,7 +772,17 @@
                     if (buttonManager.isListening() !== action) {
                         setBtn.textContent = "Sett";
                         refreshStatus();
-                        if (onChange) onChange();
+                        // Ble bindingen AVVIST fordi den kolliderte? Da er statusen uendret, og uten en
+                        // forklaring her ville "Sett" sett ut som at den bare ikke virket.
+                        const avvist = buttonManager.takeLastRejection && buttonManager.takeLastRejection();
+                        if (avvist && avvist.action === action) {
+                            statusSpan.textContent = "Allerede bundet til " +
+                                bindingActionLabel(avvist.conflictAction, actionLabels) + " - velg en annen";
+                            statusSpan.style.color = "#ff6b6b";
+                            setTimeout(function () { statusSpan.style.color = ""; refreshStatus(); }, 4000);
+                        } else if (onChange) {
+                            onChange();
+                        }
                         clearInterval(checkDone);
                     }
                 }, 150);
@@ -807,6 +912,21 @@
                 const checkDone = setInterval(function () {
                     if (buttonManager.isListening() !== action) {
                         clearInterval(checkDone);
+                        // Avvist pga. kollisjon: delen ble ALDRI lagt til i parts (se poll), så commit()
+                        // ville bare skrevet tilbake det samme. Forklar i stedet hvorfor ingenting skjedde.
+                        const avvist = buttonManager.takeLastRejection && buttonManager.takeLastRejection();
+                        if (avvist && avvist.action === action) {
+                            render();
+                            const varsel = document.createElement("div");
+                            varsel.className = "sim-panel-hint";
+                            varsel.style.color = "#ff6b6b";
+                            varsel.textContent = "Den bryterposisjonen er allerede bundet til " +
+                                bindingActionLabel(avvist.conflictAction) + ". Samme kontroll i samme " +
+                                "posisjon kan ikke styre to ting - da ville begge utløses samtidig.";
+                            containerEl.appendChild(varsel);
+                            setTimeout(function () { if (varsel.parentNode) varsel.parentNode.removeChild(varsel); }, 6000);
+                            return;
+                        }
                         commit();
                         render();
                     }
@@ -1772,6 +1892,8 @@
         readThrottleAxis: readThrottleAxis,
         createAxisCalibrationManager: createAxisCalibrationManager,
         isBindingActive: isBindingActive,
+        findExistingBindingConflicts: findExistingBindingConflicts,
+        bindingActionLabel: bindingActionLabel,
         createButtonBindingManager: createButtonBindingManager,
         populateInputSourceSelect: populateInputSourceSelect,
         buildGamepadChannelsGrid: buildGamepadChannelsGrid,

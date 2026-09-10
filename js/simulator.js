@@ -10,10 +10,13 @@ const GRAVITY = 9.81;               // m/s^2
 // (Verdiene under er dempet noe ift. en ren "snap-to-rate"-følelse, slik at treghet/moment merkes tydeligere -
 // både i rotasjon og i hvor lenge droneen "seiler" videre lineært før luftmotstanden bremser den.)
 const TORQUE_GAIN = 0.30;
-// Propellskivene virker som "fallskjermer" ved bevegelse LANGS skivenes normal (mye mer luftmotstand
-// gjennom skiva enn på tvers av den) - uten dette føles droneen glatt/"såpete" når gassen slippes.
-// NB: dette leddet virker langs dronens EGEN opp-akse (se dragVec i stepPhysics), ikke verdens Y - et
-// dykk med dronen pitchet 90 grader skal ikke bremses som om propellskiva sto vannrett.
+// Propellskivene virker som "fallskjermer" ved strømning GJENNOM skiva (mye mer luftmotstand den veien
+// enn på tvers av den) - uten dette føles droneen glatt/"såpete" når gassen slippes.
+// Multiplikatoren skalerer kun STØRRELSEN på luftmotstanden; selve kraften peker alltid rett mot
+// fartsvektoren (se dragVec i stepPhysics). Tillegget dempes av to ting: hvor mye av strømningen som
+// faktisk går gjennom skiva, og hvor mye gass propellene gir - en propell på gass suger luft gjennom og
+// virker ikke som en plate. I praksis er den derfor på sitt fulle her kun ved gasskutt og loddrett synk,
+// som er nøyaktig situasjonen den ble laget for.
 // Senket fra 1.6 (pilottilbakemelding: "dronen er for lett ... simulatoren kjennes seigere ut enn DRL"):
 // 1.6 ga en terminalfart i fritt fall på under 10 m/s, altså en drone som DALER i stedet for å falle.
 const VERTICAL_DRAG_MULTIPLIER = 1.2;
@@ -6469,20 +6472,38 @@ function stepPhysics(dt) {
         ? droneState.velocity.clone()
         : droneState.velocity.clone().sub(currentWindVector);
     // Luftmotstand i to ledd (se kommentaren ved DRONE_CLASSES): lineært ledd bremser lavfarts-drift,
-    // kvadratisk ledd gir "veggen" nær toppfart. Anisotropisk: bevegelse gjennom propellskivene møter
-    // mer motstand enn bevegelse på tvers av dem (VERTICAL_DRAG_MULTIPLIER).
-    // Farten splittes derfor langs dronens EGEN opp-akse (skivenes normal) og resten, IKKE langs verdens
-    // Y som før: en drone pitchet 90 grader i et dykk har propellskivene stående på HØYKANT i luftstrømmen
-    // og skal ikke "fallskjerm"-bremses, mens den gamle verdens-Y-varianten bremste alt som beveget seg
-    // nedover uansett hvordan dronen sto. Det kvadratiske leddet bruker nå den faktiske fartsSTØRRELSEN
-    // per komponent (|v|*v) i stedet for hver verdensakse for seg - luftmotstanden på tvers av skivene
-    // blir dermed lik i alle retninger, slik den skal være, i stedet for å avhenge av kompassretningen.
-    const axialSpeed = airRelativeVelocity.dot(bodyUp);
-    const axialVel = bodyUp.clone().multiplyScalar(axialSpeed);
-    const lateralVel = airRelativeVelocity.clone().sub(axialVel);
-    const axialCoeff = (spec.dragLinear + spec.dragQuad * Math.abs(axialSpeed)) * VERTICAL_DRAG_MULTIPLIER;
-    const lateralCoeff = spec.dragLinear + spec.dragQuad * lateralVel.length();
-    const dragVec = axialVel.multiplyScalar(-axialCoeff).add(lateralVel.multiplyScalar(-lateralCoeff));
+    // kvadratisk ledd gir "veggen" nær toppfart.
+    //
+    // Kraften peker ALLTID rett mot fartsvektoren. Det er hele poenget med en ren luftmotstand: den
+    // bremser, den styrer ikke. Anisotropien (propellskivene som "fallskjerm") ligger derfor i
+    // STØRRELSEN, ikke i retningen.
+    // BUG rettet: en tidligere versjon dekomponerte kraften langs dronens egne akser og satte hver
+    // komponent for seg. Det ga kraften en komponent PÅ TVERS av farten - altså et løft-lignende bidrag
+    // en ren drag-modell ikke har noe grunnlag for. I marsjfart med nesa ned pekte det bidraget NEDOVER,
+    // og spiste høyden: største nese-ned-vinkel som holdt høyden falt fra 74,2° til 61,7° ved full gass
+    // (brukerrapport: "jeg merker jeg ikke kan tilte like mye frem før jeg mister høyde"). Med kraften
+    // låst mot fartsvektoren er den geometriske grensen tilbake på arccos(vekt/trekkraft) = 74,2°, som er
+    // det fysisk riktige taket for et punktmasse-rotorfartøy.
+    //
+    // To ledd styrer hvor mye av fallskjerm-tillegget som gjelder:
+    //   throughDisc: hvor mye av strømningen som faktisk går GJENNOM skiva (1 = rett gjennom, 0 = langs).
+    //     En drone i vannrett marsjfart har skivene på høykant i strømmen og skal ikke bremses som en
+    //     plate - det var den opprinnelige begrunnelsen for å forlate verdens-Y-varianten.
+    //   poweredFrac: en propell som GÅR PÅ GASS suger luft gjennom skiva og virker ikke som en plate
+    //     (brukeren: "ikke så mye når propellene gir gass?"). Effekten er derfor størst på tomgang -
+    //     som er nøyaktig der den ble innført, for at et gasskutt ikke skulle føles "såpete". Målt mot
+    //     vekten, så hover-gass nuller tillegget ut. Powered vertikal nedstigning er uansett dekket av
+    //     sin egen modell, se computeVrsThrustFactor.
+    const airSpeed = airRelativeVelocity.length();
+    const dragVec = new THREE.Vector3();
+    if (airSpeed > 1e-6) {
+        const dragDir = airRelativeVelocity.clone().multiplyScalar(1 / airSpeed);
+        const throughDisc = Math.abs(dragDir.dot(bodyUp));
+        const poweredFrac = clamp(thrustForce / (spec.mass * GRAVITY), 0, 1);
+        const aniso = 1 + (VERTICAL_DRAG_MULTIPLIER - 1) * throughDisc * (1 - poweredFrac);
+        const dragMag = (spec.dragLinear + spec.dragQuad * airSpeed) * airSpeed * aniso;
+        dragVec.copy(dragDir).multiplyScalar(-dragMag);
+    }
     const accel = new THREE.Vector3().add(thrustVec).add(gravityVec).add(dragVec).multiplyScalar(1 / spec.mass);
 
     droneState.velocity.add(accel.clone().multiplyScalar(dt));
@@ -7012,6 +7033,35 @@ function toggleKill(source) {
 function isGamepadKillBound() {
     return getActiveGamepad() != null && gamepadMap.buttons.kill !== null;
 }
+// Er kill-bryteren bundet til noe som ALLEREDE styrer en annen handling? Da vil et kutt utløse begge -
+// og var kollisjonen mot "reset", ble piloten resatt i samme øyeblikk som hen kuttet. Det er akkurat
+// den situasjonen som fikk "Uforutsette hendelser" til å se ut som om den feilet på en korrekt respons,
+// så øvelsen slipper ikke gjennom med et slikt oppsett (se startExercise/showExerciseDetail).
+function killBindingConflict() {
+    if (!gamepadMap.buttons.kill) return null;
+    const konflikter = Sim.findExistingBindingConflicts(gamepadMap.buttons);
+    for (let i = 0; i < konflikter.length; i++) {
+        if (konflikter[i].a === "kill") return konflikter[i].b;
+        if (konflikter[i].b === "kill") return konflikter[i].a;
+    }
+    return null;
+}
+// Samlet krav for øvelser med requiresGamepadKill: bundet OG uten kollisjon.
+function isGamepadKillUsable() {
+    return isGamepadKillBound() && killBindingConflict() === null;
+}
+// Forklaringen bak requiresGamepadKill-gaten. To ULIKE årsaker som trenger hvert sitt svar: bryteren er
+// ikke bundet i det hele tatt, eller den er bundet til noe som allerede styrer en annen handling. Den
+// siste er lett å overse - bryteren SER jo bundet ut - så meldingen må navngi hva den kolliderer med.
+function killGateReasonText() {
+    const konflikt = killBindingConflict();
+    if (konflikt) {
+        return "Kill/Arm deler bryterposisjon med " + Sim.bindingActionLabel(konflikt, BUTTON_ACTION_LABELS) +
+            ". Begge utløses av samme bevegelse, så et kutt ville også utløst " +
+            Sim.bindingActionLabel(konflikt, BUTTON_ACTION_LABELS).toLowerCase() + ". Bind én av dem til noe annet.";
+    }
+    return "Krever at Kill/Arm-knappen er bundet til en fysisk fjernkontroll.";
+}
 
 // Kort statustekst for gjeldende killswitch-fase - delt mellom øvelsesdetaljvisningen (showExerciseDetail)
 // og HUD-linjen (updateExerciseHud).
@@ -7189,7 +7239,13 @@ function updateHud() {
     // den RIKTIGE responsen (se markKillswitchStageResolved). Et "KRASJ! Trykk R for å resette" oppå
     // kvitteringen leste da ut som at forsøket mislyktes - samme resonnement som targetHitPendingUntil
     // rett over: krasjet var meningen. Skjules derfor i dette vinduet.
-    const ksSuccessCrash = exerciseState.active && exerciseState.ksPhase === "resolved";
+    // MÅ også sjekke at gjeldende steg FAKTISK er et killswitch-steg: ksPhase nullstilles ikke når en
+    // øvelse avsluttes, så etter én gjennomført "Uforutsette hendelser" ble den stående på "resolved"
+    // resten av økten - og en betingelse på fasen ALENE skjulte da krasjbanneret i samtlige senere
+    // øvelser (brukerrapport: "Krasj popupen har forsvunnet?"). Fasen nullstilles nå også i
+    // resetStageProgress, men stegtype-sjekken her er den som er semantisk riktig.
+    const ksStage = exerciseState.active ? getExerciseStage() : null;
+    const ksSuccessCrash = !!ksStage && ksStage.type === "killswitch" && exerciseState.ksPhase === "resolved";
     crashBanner.classList.toggle("show", droneState.crashed && !droneState.injured &&
         !exerciseState.targetHitPendingUntil && !ksSuccessCrash);
     // Loiter er dimensjonert (I-ledd + LOITER_MAX_LEAN_ANGLE, se konstantene) for å holde posisjonen i
@@ -7312,6 +7368,30 @@ function buildGamepadButtonsPanel() {
     gamepadKillGridHandle = Sim.buildGamepadKillGrid(killContainer, gamepadMap.buttons, "kill", KILL_ACTION_LABEL, buttonManager, getActiveGamepad, saveGamepadMap);
     const container = document.getElementById("gamepadButtonsGrid");
     Sim.buildGamepadButtonsGrid(container, gamepadMap.buttons, BUTTON_ACTION_LABELS, buttonManager, getActiveGamepad, saveGamepadMap);
+    renderBindingConflictWarning();
+}
+
+// Kollisjoner LAGRET fra før sjekken i Sim.createButtonBindingManager fantes. Den sjekken hindrer nye
+// slike bindinger, men rører ikke et kart som allerede ligger i localStorage - og nettopp et slikt kart
+// var årsaken til brukerrapporten: kill og reset lå på samme knapp, så et kutt utløste også en reset og
+// øvelsen så ut til å feile på en korrekt respons. Uten dette varselet ville den lagrede feilen blitt
+// stående usynlig helt til brukeren tilfeldigvis bandt en av dem på nytt.
+function renderBindingConflictWarning() {
+    const el = document.getElementById("gamepadConflictWarning");
+    if (!el) return;
+    const konflikter = Sim.findExistingBindingConflicts(gamepadMap.buttons);
+    if (konflikter.length === 0) {
+        el.style.display = "none";
+        el.textContent = "";
+        return;
+    }
+    el.style.display = "";
+    el.textContent = "Samme bryterposisjon styrer flere ting: " +
+        konflikter.map(function (k) {
+            return Sim.bindingActionLabel(k.a, BUTTON_ACTION_LABELS) + " og " +
+                Sim.bindingActionLabel(k.b, BUTTON_ACTION_LABELS);
+        }).join("; ") +
+        ". Begge utløses samtidig - bind én av dem på nytt til en annen bryter eller posisjon.";
 }
 
 const gamepadPanelEl = document.getElementById("gamepadPanel");
@@ -7830,6 +7910,10 @@ function requiredRepsFor(stage) {
 }
 
 function resetStageProgress() {
+    // Killswitch-fasen henger ellers igjen etter at en killswitch-øvelse er ferdig - se krasjbanner-
+    // betingelsen i updateHud. spawnKillswitchStage setter den til "wait" like etter for de stegene som
+    // faktisk trenger den, så nullstillingen her er trygg.
+    exerciseState.ksPhase = null;
     exerciseState.wpIndex = 0;
     exerciseState.lapsCleanCount = 0;
     exerciseState.attemptViolationCount = 0;
@@ -7969,8 +8053,8 @@ function showExerciseSummary(exerciseId, elapsedSec, isNewBest, isNearBest, just
                 if (!startExercise(nextId)) {
                     gateEl.style.display = "";
                     gateEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ' +
-                        EXERCISES[nextId].label + ' krever at Kill/Arm-knappen er bundet til en fysisk ' +
-                        'fjernkontroll. Bind den, og trykk "Neste" på nytt. ' +
+                        EXERCISES[nextId].label + ': ' + killGateReasonText() +
+                        ' Trykk "Neste" på nytt etterpå. ' +
                         '<button type="button" id="summaryGateCalibrationBtn">Åpne kalibrering</button>';
                     document.getElementById("summaryGateCalibrationBtn").addEventListener("click", function () {
                         togglePanel(document.getElementById("gamepadPanel"));
@@ -8577,7 +8661,7 @@ function startExercise(id) {
     // trykket "Neste: 12. Uforutsette hendelser" uten en bundet kill-bryter, forsvant altså kortet og
     // absolutt ingenting skjedde - brukerrapport: "klikker på neste øvelse ... men skjer ingenting".
     // Meny-veien var aldri utsatt (startBtn.disabled = gateBlocked der), kun denne.
-    if (exercise.requiresGamepadKill && !isGamepadKillBound()) return false;
+    if (exercise.requiresGamepadKill && !isGamepadKillUsable()) return false;
     stopExercise();
     exerciseState.savedDroneClass = droneState.droneClass;
     exerciseState.savedCameraModeIndex = cameraModeIndex;
@@ -11162,11 +11246,11 @@ function showExerciseDetail(id) {
         cancelBtn.style.display = "";
     } else {
         const progress = exerciseProgress[id] || { passed: false, bestTimeSec: null };
-        const gateBlocked = exercise.requiresGamepadKill && !isGamepadKillBound();
+        const gateBlocked = exercise.requiresGamepadKill && !isGamepadKillUsable();
         if (gateBlocked) {
             progressEl.style.display = "";
             progressEl.classList.add("sim-exercise-gate-warning");
-            progressEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Krever at Kill/Arm-knappen er bundet til en fysisk fjernkontroll. ' +
+            progressEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ' + killGateReasonText() + ' ' +
                 '<button type="button" id="gateOpenCalibrationBtn">Åpne kalibrering</button>';
             document.getElementById("gateOpenCalibrationBtn").addEventListener("click", function () {
                 togglePanel(document.getElementById("gamepadPanel"));
