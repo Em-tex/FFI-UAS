@@ -2386,6 +2386,27 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 }
 .builder-item-table .col-check { width: 36px; text-align: center; }
 .builder-item-table .col-remove { width: 40px; text-align: center; }
+
+/* Memory item-merking (se createItemRow i js/sjekkliste-bygger.js): en avkryssingsboks med en liten
+   "M" ved siden av, slik at kolonnen forklarer seg selv uten en egen overskriftsrad (tabellene i
+   byggeren har ingen). Merkede punkter vises fete allerede mens man bygger - samme markering som de
+   får i utskriften, så det man ser er det man får. */
+.builder-item-table .col-memory { width: 46px; text-align: center; }
+.memory-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #b4bcc4;
+    cursor: pointer;
+}
+.memory-toggle input[type="checkbox"] { width: 15px !important; height: 15px !important; }
+.memory-toggle:hover { color: var(--ffi-blue); }
+.builder-item-table tr.memory-item .memory-toggle { color: var(--ffi-blue); }
+.builder-item-table tr.memory-item .item-text,
+.builder-item-table tr.memory-item .item-target { font-weight: 700; }
 /* Radnummerering (1., 2., 3. ...) - tellerverdien settes av CSS (counter-reset/-increment), ikke JS,
    slik at den automatisk starter på nytt for hver sjekklistedel/tabell og holder seg riktig uansett om
    rader legges til, fjernes eller flyttes (se tdNumber i createItemRow). */
@@ -2880,6 +2901,10 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-row { display: contents; }
 .print-rows .print-row .print-cell { border-bottom: 1px solid #e5e5e5; }
 .print-rows .print-row:last-child .print-cell { border-bottom: none; }
+/* Memory items (se createItemRow/buildSectionBox i js/sjekkliste-bygger.js) - hele linjen i fet
+   skrift, inkludert radnummeret, slik at den er lett å kjenne igjen i en tett sjekkliste. */
+.print-rows .print-row-memory .print-cell { font-weight: 700; }
+.print-single-action.print-memory { font-weight: 700; }
 /* BUG (rapportert av brukeren, med skjermbilde: "UAS SITS"-raden i Kontaktliste fikk en rar, brutt kant
    midt i raden der verditeksten pakket til to linjer) - med align-items:center på selve griddet fikk
    hver .print-cell KUN sin egen INNHOLDS-høyde (sentrert i den ledige plassen i raden), ikke hele

@@ -48,11 +48,18 @@ const SCHEMA_VERSION = 35;
 // selve <thead>-raden med disse to kolonnenavnene vises ikke lenger i sjekklistebyggeren. Utskriften
 // hadde forøvrig ALDRI en slik overskriftsrad i utgangspunktet (se buildSectionBox), så dette er en
 // ren skjerm-endring.
+// memory: om fanen i det hele tatt har "M"-avkryssing (memory items, se createItemRow). ERP er unntatt
+// (brukerønske) - den fanen beskriver hva som gjøres ETTER en hendelse, på bakken og med tid til å
+// lese; et punkt man skal kunne utenat hører ikke hjemme der.
+// memoryDefault: nye punkter (og punkter fra en mal/lagret liste fra før merkingen fantes) starter
+// avkrysset. Contingency og emergency er situasjoner som håndteres mens farkosten er i lufta, der
+// utgangspunktet er at punktene SKAL sitte i hukommelsen - da er det færrest klikk å starte med alt
+// merket og heller fjerne merket på de få unntakene.
 const ITEM_LABELS = {
-    normal: { text: "Sjekkpunkt", target: "Status / grense", checkbox: false, showHeader: false },
-    contingency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false },
-    emergency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false },
-    erp: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false }
+    normal: { text: "Sjekkpunkt", target: "Status / grense", checkbox: false, showHeader: false, memory: true, memoryDefault: false },
+    contingency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false, memory: true, memoryDefault: true },
+    emergency: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false, memory: true, memoryDefault: true },
+    erp: { text: "Situasjon", target: "Tiltak", checkbox: false, showHeader: false, memory: false, memoryDefault: false }
 };
 
 // Normal-fanens sjekklisteINNHOLD per fartøytype - "generisk" (passer enhver drone) og "fx10" (FX-10
@@ -510,8 +517,9 @@ function createLimitRow(key, value, keyPlaceholder, valuePlaceholder, isNormal, 
 // "Tiltak" ellers) - text-cellen utelates bare helt fra selve raden når singleColumn er satt, se
 // getState() sin "tr.querySelector('.item-text') finnes kanskje ikke her"-guard og
 // buildSectionBoxesForPrint/buildSectionBox for tilsvarende utskrifts-håndtering.
-function createItemRow(item, showCheckbox, isNormal, singleColumn) {
+function createItemRow(item, showCheckbox, isNormal, singleColumn, memoryOptions) {
     item = item || { text: "", target: "", checked: false, variant: "", aircraft: "" };
+    memoryOptions = memoryOptions || {};
     const tr = document.createElement("tr");
     const onEdit = isNormal ? function () { saveState(); markNormalCustom(); } : saveState;
     // Malvalget (MÅK/spesifikk) et sjekkpunkt hører til er satt av standardmalen, ikke redigerbart per
@@ -571,6 +579,41 @@ function createItemRow(item, showCheckbox, isNormal, singleColumn) {
     targetInput.addEventListener("input", function () { autoGrowTextarea(targetInput); onEdit(); });
     tdTarget.appendChild(targetInput);
     tr.appendChild(tdTarget);
+
+    // Memory item - et punkt som skal kunne utføres fra hukommelsen, uten å slå opp i sjekklisten
+    // først (brukerønske). Merkingen er ikke en egen kolonne i selve sjekklisten, men en markering av
+    // linjen: den skrives ut med fet skrift (se buildSectionBox/print-row-memory), og vises fet også
+    // på skjermen mens man bygger, slik at det er lett å se hvilke punkter som er merket.
+    // Avkryssingsboksen selv er no-print - den hører til byggeren, ikke til den ferdige sjekklisten.
+    // Fanen kan være helt uten merking (ERP, se ITEM_LABELS) - da lages kolonnen ikke i det hele tatt.
+    if (memoryOptions.show) {
+        // Et punkt uten lagret merking (fra standardmalen, eller fra en liste lagret før merkingen
+        // fantes) arver fanens utgangspunkt - se memoryDefault i ITEM_LABELS. Et punkt brukeren
+        // selv har krysset AV blir lagret som false og beholder det.
+        const isMemory = item.memory === undefined || item.memory === null
+            ? !!memoryOptions.defaultOn
+            : !!item.memory;
+        if (isMemory) tr.classList.add("memory-item");
+        const tdMemory = document.createElement("td");
+        tdMemory.className = "col-memory no-print";
+        const memoryLabel = document.createElement("label");
+        memoryLabel.className = "memory-toggle";
+        memoryLabel.title = "Memory item - skrives ut med fet skrift";
+        const memoryCheck = document.createElement("input");
+        memoryCheck.type = "checkbox";
+        memoryCheck.className = "item-memory";
+        memoryCheck.checked = isMemory;
+        memoryCheck.addEventListener("change", function () {
+            tr.classList.toggle("memory-item", memoryCheck.checked);
+            onEdit();
+        });
+        const memoryText = document.createElement("span");
+        memoryText.textContent = "M";
+        memoryLabel.appendChild(memoryCheck);
+        memoryLabel.appendChild(memoryText);
+        tdMemory.appendChild(memoryLabel);
+        tr.appendChild(tdMemory);
+    }
 
     const tdRemove = document.createElement("td");
     tdRemove.className = "col-remove";
@@ -681,14 +724,18 @@ function createSectionEl(tabKey, section) {
             '<th class="col-number"></th>' +
             '<th>' + labels.text + '</th>' +
             '<th>' + labels.target + '</th>' +
+            (labels.memory ? '<th class="col-memory"></th>' : '') +
             '<th class="col-remove"></th>' +
             '</tr></thead>';
     }
     const tbody = document.createElement("tbody");
     table.appendChild(tbody);
 
+    // Memory-oppsettet for fanen, satt ett sted og sendt videre til hver rad (se ITEM_LABELS).
+    const memoryOptions = { show: !!labels.memory, defaultOn: !!labels.memoryDefault };
+
     (section.items || []).forEach(function (item) {
-        tbody.appendChild(createItemRow(item, labels.checkbox, isNormal, section.singleColumn));
+        tbody.appendChild(createItemRow(item, labels.checkbox, isNormal, section.singleColumn, memoryOptions));
     });
 
     const footer = document.createElement("div");
@@ -699,7 +746,7 @@ function createSectionEl(tabKey, section) {
     addItemBtn.className = "btn btn-secondary add-row-btn";
     addItemBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Legg til sjekkpunkt';
     addItemBtn.addEventListener("click", function () {
-        const tr = createItemRow(null, labels.checkbox, isNormal, section.singleColumn);
+        const tr = createItemRow(null, labels.checkbox, isNormal, section.singleColumn, memoryOptions);
         tbody.appendChild(tr);
         tr.querySelectorAll("textarea").forEach(autoGrowTextarea);
         onEdit();
@@ -865,10 +912,14 @@ function getState() {
                     // uten denne guarden ville .value på null kastet en TypeError og knekt HELE lagringen
                     // (også de andre, ikke-relaterte fanene) hver gang brukeren skrev noe som helst.
                     const textEl = tr.querySelector(".item-text");
+                    const memoryEl = tr.querySelector(".item-memory");
                     return {
                         text: textEl ? textEl.value : "",
                         target: tr.querySelector(".item-target").value,
                         checked: checkbox ? checkbox.checked : false,
+                        // Memory item (se createItemRow). Et lagret skjema eller en JSON-fil fra før
+                        // dette fantes har ingen slik verdi - da er punktet ganske enkelt ikke merket.
+                        memory: memoryEl ? memoryEl.checked : false,
                         variant: tr.dataset.variant || "",
                         aircraft: tr.dataset.aircraft || ""
                     };
@@ -1434,7 +1485,7 @@ function buildSectionBox(section, showCheckbox, startNumber) {
 
     if (items.length === 1) {
         const single = document.createElement("div");
-        single.className = "print-single-action";
+        single.className = "print-single-action" + (items[0].memory ? " print-memory" : "");
         single.textContent = items[0].target && items[0].target.trim() ? items[0].target : items[0].text;
         box.appendChild(single);
         return box;
@@ -1494,7 +1545,9 @@ function buildSectionBox(section, showCheckbox, startNumber) {
             cells.push({ className: "print-label print-label-situation", text: item.text });
             cells.push({ className: "print-value", text: item.target || "" });
         }
-        table.appendChild(buildPrintRow(cells));
+        // Memory items skrives ut med fet skrift - hele linjen, ikke bare det ene feltet, slik at den
+        // er lett å kjenne igjen i en tett sjekkliste (se .print-row-memory i css/style.css).
+        table.appendChild(buildPrintRow(cells, item.memory ? "print-row-memory" : ""));
     });
     box.appendChild(table);
     return box;

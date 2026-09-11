@@ -28,8 +28,14 @@
 
     <div style="text-align:center; padding: 20px 0 30px 0;">
         <h1>Sjekkliste-bygger</h1>
-        <p style="max-width: 700px; margin: 0 auto 20px; color: #666;">
+        <p style="max-width: 700px; margin: 0 auto 10px; color: #666;">
             Tilpass sjekklistene og last ned som PDF.
+        </p>
+        <!-- Forklaring på "M"-kolonnen i sjekkpunkttabellene (se createItemRow i
+             js/sjekkliste-bygger.js). Står her, én gang øverst, i stedet for i hver enkelt
+             sjekklistedel - da blir den ikke gjentatt et titalls ganger nedover siden. -->
+        <p class="no-print" style="max-width: 700px; margin: 0 auto 20px; color: #888; font-size: 0.88rem;">
+            Kryss av sjekkboksen «M» for å markere memory items. Disse blir stående i fet skrift på sjekklisten.
         </p>
         <button class="btn no-print" id="downloadPdfBtnTop"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
         <button class="btn btn-secondary no-print" id="downloadJsonBtnTop"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
