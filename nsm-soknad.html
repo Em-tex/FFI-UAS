@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSM søknadskjema - FFI UAS</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="js/menu.js"></script>
+</head>
+<body class="nsm-page">
+
+<!-- Vises kun mens brukeren drar en fil inn over vinduet (se dragenter/dragleave/drop i
+     js/nsm-soknad.js). Denne siden tar imot TO slags filer: en JSON-fil lastet ned herfra, og et
+     bilde som blir kartutsnittet - derfor en mer generell tekst enn på de andre sidene. -->
+<div class="drop-json-overlay no-print" id="dropJsonOverlay">
+    <div class="drop-json-overlay-inner">
+        <i class="fa-solid fa-file-import"></i>
+        <p>Slipp JSON-filen eller kartbildet her</p>
+    </div>
+</div>
+
+<div class="container">
+
+    <div style="text-align:center; padding: 20px 0 16px 0;">
+        <h1>Søknad om flyging med sensor i sensorforbudsområde</h1>
+    </div>
+
+    <!-- Hvor søknaden skal sendes - no-print, siden dette er en instruks til den som fyller ut, ikke
+         en del av selve søknaden NSM skal lese. Knappen åpner e-postklienten med begge adressene og
+         emnefeltet ferdig utfylt (href settes av updateMailLink i js/nsm-soknad.js, som tar med
+         området fra punkt 3 når det er fylt ut). -->
+    <div class="form-intro no-print">
+        <i class="fa-solid fa-envelope"></i>
+        <p>
+            Søknaden sendes til <a href="mailto:luft@nsm.no">luft@nsm.no</a>
+            med kopi til <a href="mailto:rpas@ffi.no">rpas@ffi.no</a>.
+            Husk å legge ved PDF-en.
+        </p>
+        <a class="btn form-intro-action js-mail-link" href="mailto:luft@nsm.no?cc=rpas@ffi.no">
+            <i class="fa-solid fa-paper-plane"></i> Åpne e-post
+        </a>
+    </div>
+
+    <div class="nsm-form-actions no-print" style="margin-bottom: 24px;">
+        <button class="btn" id="downloadPdfBtnTop"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
+        <button class="btn btn-secondary" id="downloadJsonBtnTop"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
+    </div>
+
+    <!-- Rekkefølgen på seksjonene: først HVEM som søker og hvem man kontakter, så de korte
+         faktaopplysningene om HVOR og NÅR (med områdeeier rett etterpå, som hører til stedet), så den
+         løpende teksten om HVA og HVORDAN, deretter kartutsnittet som illustrerer beskrivelsen rett
+         over, og til slutt HVILKET MATERIELL som brukes. Kartutsnittet ligger altså sent i skjemaet
+         (det tar mye plass og skal ikke bryte opp lesingen), men fortsatt like etter beskrivelsen det
+         hører sammen med. -->
+
+    <!-- ===================== 1. OPPLYSNINGER OM SØKER ===================== -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-building" style="color:white;"></i>
+            <h2>1. Opplysninger om søker</h2>
+        </div>
+        <div class="nsm-rows">
+            <div class="nsm-row">
+                <label class="nsm-row-label" for="nsmOrgName">Virksomhetens navn</label>
+                <div class="nsm-row-value">
+                    <textarea id="nsmOrgName" class="no-print nsm-oneline" rows="1"></textarea>
+                    <span class="print-value" data-print-for="nsmOrgName"></span>
+                </div>
+            </div>
+            <div class="nsm-row">
+                <label class="nsm-row-label" for="nsmOrgNumber">Organisasjonsnummer</label>
+                <div class="nsm-row-value">
+                    <textarea id="nsmOrgNumber" class="no-print nsm-oneline" rows="1"></textarea>
+                    <span class="print-value" data-print-for="nsmOrgNumber"></span>
+                </div>
+            </div>
+            <div class="nsm-row">
+                <label class="nsm-row-label" for="nsmAddress">Postadresse</label>
+                <div class="nsm-row-value">
+                    <textarea id="nsmAddress" class="no-print nsm-oneline" rows="1"></textarea>
+                    <span class="print-value" data-print-for="nsmAddress"></span>
+                </div>
+            </div>
+            <!-- Ett felt, ikke to: i NSM-skjemaet er dette én rad der operatørnumrene føres opp under
+                 hverandre - derfor et flerlinjefelt som vokser med innholdet (se autoGrow). -->
+            <div class="nsm-row">
+                <label class="nsm-row-label" for="nsmOperatorNumbers">UAS-operatørnumre</label>
+                <div class="nsm-row-value">
+                    <textarea id="nsmOperatorNumbers" class="no-print" rows="2"></textarea>
+                    <span class="print-value print-value-multiline" data-print-for="nsmOperatorNumbers"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== 2. KONTAKTPERSONER =====================
+         Slått sammen av det som tidligere var to seksjoner - "kontaktperson for søknaden" og
+         "involvert personell" (brukerønske). NSM trenger å vite hvem de skal ringe, ikke hvem som
+         ellers deltar, så dette er én tabell med to faste rader: den som svarer på selve søknaden, og
+         den som svarer under selve flygingen. Begge radene kan ikke slettes, men funksjonsteksten kan
+         endres. Trengs flere kontaktpersoner, legges de til under.
+         "Stilling / rolle" fra det opprinnelige NSM-skjemaet er borte som eget felt: funksjonen i
+         denne søknaden er nettopp det NSM trenger, og den står allerede i første kolonne. -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-address-card" style="color:white;"></i>
+            <h2>2. Kontaktpersoner</h2>
+        </div>
+        <table class="nsm-contact-table">
+            <thead>
+                <tr>
+                    <th class="col-role">Funksjon</th>
+                    <th>Navn</th>
+                    <th>Telefon</th>
+                    <th>E-post</th>
+                    <th class="col-remove no-print"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="col-role">
+                        <textarea id="nsmContactRole" class="no-print nsm-oneline" rows="1"></textarea>
+                        <span class="print-value" data-print-for="nsmContactRole"></span>
+                    </td>
+                    <td>
+                        <textarea id="nsmContactName" class="no-print nsm-oneline" rows="1" placeholder="Navn på aktivitetsansvarlig"></textarea>
+                        <span class="print-value" data-print-for="nsmContactName"></span>
+                    </td>
+                    <td>
+                        <textarea id="nsmContactPhone" class="no-print nsm-oneline" rows="1"></textarea>
+                        <span class="print-value" data-print-for="nsmContactPhone"></span>
+                    </td>
+                    <td>
+                        <textarea id="nsmContactEmail" class="no-print nsm-oneline" rows="1"></textarea>
+                        <span class="print-value" data-print-for="nsmContactEmail"></span>
+                    </td>
+                    <td class="col-remove no-print"></td>
+                </tr>
+                <!-- Kontaktpunktet under selve flygingen. Raden kan slettes (knappen til høyre) for de
+                     søknadene der den ikke hører hjemme - se toggleOpsContactRow i js/nsm-soknad.js. -->
+                <tr id="opsContactRow">
+                    <td class="col-role">
+                        <textarea id="nsmOpsContactRole" class="no-print nsm-oneline" rows="1"></textarea>
+                        <span class="print-value" data-print-for="nsmOpsContactRole"></span>
+                    </td>
+                    <td>
+                        <textarea id="nsmOpsContactName" class="no-print nsm-oneline" rows="1"></textarea>
+                        <span class="print-value" data-print-for="nsmOpsContactName"></span>
+                    </td>
+                    <td>
+                        <textarea id="nsmOpsContactPhone" class="no-print nsm-oneline" rows="1"></textarea>
+                        <span class="print-value" data-print-for="nsmOpsContactPhone"></span>
+                    </td>
+                    <td>
+                        <textarea id="nsmOpsContactEmail" class="no-print nsm-oneline" rows="1"></textarea>
+                        <span class="print-value" data-print-for="nsmOpsContactEmail"></span>
+                    </td>
+                    <td class="col-remove no-print">
+                        <button type="button" class="remove-row-btn" id="removeOpsContactBtn" title="Fjern raden">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+            <!-- Eventuelle ekstra kontaktpersoner - bygges av js/nsm-soknad.js. -->
+            <tbody id="contactRows"></tbody>
+        </table>
+        <div class="nsm-map-actions no-print" style="justify-content: flex-start; padding: 14px 16px 16px;">
+            <button type="button" class="btn btn-secondary" id="addContactBtn">
+                <i class="fa-solid fa-plus"></i> Legg til kontaktperson
+            </button>
+            <!-- Vises bare når kontaktpunkt-raden er slettet, slik at den kan hentes tilbake. -->
+            <button type="button" class="btn btn-secondary" id="addOpsContactBtn" hidden>
+                <i class="fa-solid fa-plus"></i> Legg til kontaktpunkt
+            </button>
+        </div>
+    </div>
+
+    <!-- ===================== 3. STED OG TIDSROM FOR OPPDRAGET =====================
+         Området står øverst, og går også igjen i emnefeltet til "Åpne e-post"-knappen (se
+         updateMailLink i js/nsm-soknad.js). -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-calendar-days" style="color:white;"></i>
+            <h2>3. Sted og tidsrom for oppdraget</h2>
+        </div>
+        <div class="nsm-rows">
+            <div class="nsm-row">
+                <label class="nsm-row-label" for="nsmArea">Område</label>
+                <div class="nsm-row-value">
+                    <textarea id="nsmArea" class="no-print nsm-oneline" rows="1"></textarea>
+                    <span class="print-value" data-print-for="nsmArea"></span>
+                </div>
+            </div>
+            <div class="nsm-row">
+                <label class="nsm-row-label" for="nsmStartDate">Ønsket startdato</label>
+                <div class="nsm-row-value">
+                    <input type="date" id="nsmStartDate" class="no-print">
+                    <span class="print-value" data-print-for="nsmStartDate"></span>
+                </div>
+            </div>
+            <div class="nsm-row">
+                <label class="nsm-row-label" for="nsmEndDate">Ønsket sluttdato</label>
+                <div class="nsm-row-value">
+                    <input type="date" id="nsmEndDate" class="no-print">
+                    <span class="print-value" data-print-for="nsmEndDate"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== 4. KONTAKT MED OMRÅDEEIER =====================
+         Rett etter stedet det handler om. Ja/nei-spørsmål til den som fyller ut - detaljfeltet under
+         vises bare når svaret er "ja" (se toggleAreaOwnerDetails i js/nsm-soknad.js), slik at skjemaet
+         ikke ber om en avtale som ikke finnes. -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-handshake" style="color:white;"></i>
+            <h2>4. Kontakt med områdeeier</h2>
+        </div>
+        <div class="nsm-rows">
+            <div class="nsm-row">
+                <span class="nsm-row-label">Er områdeeier kontaktet?</span>
+                <div class="nsm-row-value">
+                    <div class="nsm-radio-group no-print">
+                        <label class="nsm-radio"><input type="radio" name="nsmAreaOwner" value="ja"> Ja</label>
+                        <label class="nsm-radio"><input type="radio" name="nsmAreaOwner" value="nei"> Nei</label>
+                    </div>
+                    <span class="print-value" id="nsmAreaOwnerPrint"></span>
+                </div>
+            </div>
+        </div>
+        <div class="nsm-block" id="areaOwnerDetails" hidden>
+            <p class="nsm-hint no-print">
+                Hvem er kontaktet (navn, rolle, virksomhet), når, og hva er avtalt?
+            </p>
+            <textarea id="nsmAreaOwnerDetails" class="nsm-textarea-lg no-print" style="min-height: 110px;"></textarea>
+            <span class="print-value print-value-multiline" data-print-for="nsmAreaOwnerDetails"></span>
+        </div>
+    </div>
+
+    <!-- ===================== 5. UAS DATA =====================
+         Materiellet hører sammen med de andre faktaopplysningene over, og står derfor FØR den løpende
+         teksten om formål og gjennomføring (brukerønske). Én blokk per UAS - blokkene bygges av
+         js/nsm-soknad.js, siden antallet varierer fra søknad til søknad. -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-helicopter" style="color:white;"></i>
+            <h2>5. UAS data</h2>
+        </div>
+        <div id="uasBlocks"></div>
+        <div class="nsm-block no-print" style="padding-top: 14px;">
+            <button type="button" class="btn btn-secondary add-row-btn" id="addUasBtn">
+                <i class="fa-solid fa-plus"></i> Legg til UAS
+            </button>
+        </div>
+    </div>
+
+    <!-- ===================== 6. FORMÅL MED OPPDRAGET ===================== -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-bullseye" style="color:white;"></i>
+            <h2>6. Formål med oppdraget</h2>
+        </div>
+        <div class="nsm-block">
+            <textarea id="nsmPurpose" class="nsm-textarea-lg no-print"></textarea>
+            <span class="print-value print-value-multiline" data-print-for="nsmPurpose"></span>
+        </div>
+    </div>
+
+    <!-- ===================== 7. BESKRIVELSE =====================
+         Feltets id er fortsatt nsmMapDescription, fra da beskrivelsen og kartutsnittet var én seksjon;
+         navnet er beholdt så et skjema som allerede ligger mellomlagret i noens nettleser (eller i en
+         nedlastet JSON-fil) ikke mister teksten. -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-align-left" style="color:white;"></i>
+            <h2>7. Beskrivelse</h2>
+        </div>
+        <div class="nsm-block">
+            <p class="nsm-hint no-print">
+                Beskriv hvordan flygingen gjennomføres: hvor den foregår, hvilken vei sensoren peker,
+                og hva det tas bilde eller video av. Forklar hvordan dere hindrer at gradert eller
+                skjermingsverdig informasjon fanges opp av sensoren. Si også hvor video fra dronen
+                strømmes, og om opptak lagres - i så fall hvor.
+            </p>
+            <textarea id="nsmMapDescription" class="nsm-textarea-lg no-print"></textarea>
+            <span class="print-value print-value-multiline" data-print-for="nsmMapDescription"></span>
+        </div>
+    </div>
+
+    <!-- ===================== 8. KARTUTSNITT =====================
+         Sist i skjemaet (brukerønske): bildene tar mye plass, og med dem til slutt leses resten av
+         søknaden sammenhengende - beskrivelsen rett over viser til det samme området. -->
+    <div class="section">
+        <div class="section-header">
+            <i class="fa-solid fa-map-location-dot" style="color:white;"></i>
+            <h2>8. Kartutsnitt</h2>
+        </div>
+        <div class="nsm-block">
+            <!-- To veier til et kartutsnitt: et ferdig bilde (skjermbilde fra f.eks. Norgeskart - kan
+                 også dras inn i vinduet eller limes inn med Ctrl+V), eller tegneverktøyet i
+                 js/kart-tegner.js, som lager bildet selv av kartet og det markerte området.
+                 Et oppdrag kan strekke seg over flere områder, så skjemaet tar imot flere utsnitt -
+                 selve listen bygges av renderMaps() i js/nsm-soknad.js. -->
+            <div id="mapList"></div>
+            <div class="nsm-map-drop no-print" id="mapDrop">
+                <i class="fa-solid fa-image"></i>
+                <p>Legg ved et kartutsnitt som viser området</p>
+                <div class="nsm-map-actions">
+                    <button type="button" class="btn btn-secondary" id="mapUploadBtn">
+                        <i class="fa-solid fa-upload"></i> Last opp bilde
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="mapDrawBtn">
+                        <i class="fa-solid fa-draw-polygon"></i> Tegn område på kart
+                    </button>
+                </div>
+                <p class="nsm-map-drop-hint">Du kan også dra et bilde inn i vinduet, eller lime det inn med Ctrl+V.</p>
+            </div>
+            <!-- Vises i stedet for droppsonen så snart det finnes minst ett utsnitt. -->
+            <div class="nsm-map-actions no-print" id="mapAddActions" hidden style="margin-top: 16px;">
+                <button type="button" class="btn btn-secondary" id="mapAddUploadBtn">
+                    <i class="fa-solid fa-plus"></i> Legg til bilde
+                </button>
+                <button type="button" class="btn btn-secondary" id="mapAddDrawBtn">
+                    <i class="fa-solid fa-plus"></i> Legg til kartutsnitt
+                </button>
+            </div>
+            <input type="file" id="mapInput" accept="image/*" style="display:none">
+        </div>
+    </div>
+
+    <!-- Samme "Åpne e-post"-lenke som i stripen øverst (js-mail-link - updateMailLink setter href på
+         begge): når skjemaet er ferdig utfylt og PDF-en lastet ned, er man nederst på siden, og da
+         skal ikke neste steg kreve at man scroller til toppen igjen. -->
+    <!-- Knappene ligger i en flex-rad med luft både vannrett og loddrett: som en vanlig tekstlinje
+         (slik de lå før) klemte "Nullstill skjema" seg inntil raden over i det knappene brøt over to
+         linjer. Nullstill har dessuten fått sin egen rad med god avstand - den er den eneste av dem
+         som sletter noe, og skal ikke stå vegg i vegg med de ufarlige. -->
+    <div class="nsm-form-actions no-print" style="margin-top: 34px;">
+        <button class="btn" id="downloadPdfBtn"><i class="fa-solid fa-file-pdf"></i> Last ned som PDF</button>
+        <a class="btn js-mail-link" href="mailto:luft@nsm.no?cc=rpas@ffi.no"><i class="fa-solid fa-paper-plane"></i> Åpne e-post</a>
+        <button class="btn btn-secondary" id="downloadJsonBtn"><i class="fa-solid fa-file-code"></i> Last ned som JSON</button>
+        <button class="btn btn-secondary" id="uploadJsonBtn"><i class="fa-solid fa-file-import"></i> Last inn JSON</button>
+        <input type="file" id="uploadJsonInput" accept="application/json,.json" style="display:none">
+    </div>
+    <div class="nsm-form-actions no-print" style="margin-top: 18px;">
+        <button class="btn btn-danger" id="resetFormBtn"><i class="fa-solid fa-rotate-left"></i> Nullstill skjema</button>
+    </div>
+
+</div>
+
+<script src="js/kart-tegner.js"></script>
+<script src="js/nsm-soknad.js"></script>
+</body>
+</html>

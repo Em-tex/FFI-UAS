@@ -2985,14 +2985,24 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 .print-single-action { padding: 5px 8px; font-size: 8.5pt; line-height: 1.4; }
 
 /* ============================================================================
-   Vurdering av godkjenninger (godkjenningsvurdering.html)
+   Vurdering av aktivitet (godkjenningsvurdering.html)
    Skjemaet operativ leder UAS fyller ut ved vurdering av en ny godkjenning.
    ============================================================================ */
 
-/* Hjelpetekst helt øverst - dette skjemaet fylles IKKE ut av den som søker om å få fly, og uten en
-   tydelig avsender-linje ville en pilot som finner siden i menyen fort tro at dette var enda et skjema
-   hen selv måtte levere sammen med søknaden. */
-.review-intro {
+/* BUG (rapportert to ganger: varselet "Fikk ikke lastet kartfliser" sto og lyste over et kart som
+   fungerte helt fint): nettleserens egen regel for hidden-attributtet, [hidden] { display: none },
+   er en UA-regel og taper mot ENHVER display-regel i dette stilarket - f.eks. ".mapdraw-offline
+   { display: flex }". Elementer som skjules med el.hidden = true (varselet, forslagslisten i
+   stedssøket, "Legg til"-knappene under kartutsnittene, sletteknappen på en enslig UAS-blokk) ble
+   dermed liggende synlige uansett. Denne ene regelen slår fast at hidden VINNER, uansett hva som
+   ellers står om display. */
+[hidden] { display: none !important; }
+
+/* Hjelpetekst-stripe øverst i et skjema. Brukt to steder, derfor et generelt navn og ikke et
+   side-spesifikt: "Vurdering av aktivitet" bruker den til å si hvem som skal fylle ut skjemaet (en
+   pilot som finner siden i menyen skulle ellers fort tro at dette var enda et skjema hen selv måtte
+   levere), og NSM-skjemaet til å si hvor søknaden skal sendes. */
+.form-intro {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -3002,8 +3012,20 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     padding: 14px 18px;
     margin-bottom: 20px;
 }
-.review-intro i { color: var(--ffi-blue); font-size: 1.1rem; }
-.review-intro p { margin: 0; color: #444; font-size: 0.95rem; }
+/* Kun ikonet som hører til selve stripen - ">" holder regelen unna ikoner inne i en knapp i stripen
+   (der skal ikonet være hvitt, som resten av knappeteksten). */
+.form-intro > i { color: var(--ffi-blue); font-size: 1.1rem; }
+.form-intro p { margin: 0; color: #444; font-size: 0.95rem; }
+/* Scopet til avsnittsteksten, IKKE til .form-intro a generelt: en regel på ".form-intro a" ville
+   (høyere spesifisitet enn ".btn") også ha farget teksten på selve knappen under blå - altså blå
+   skrift på blå knapp. */
+.form-intro p a { color: var(--ffi-blue); }
+/* Handlingsknapp helt til høyre i stripen (NSM-skjemaets "Åpne e-post"). margin-left:auto skyver den
+   ut mot kanten uansett hvor lang teksten er; flex-wrap gjør at den legger seg under på smal skjerm i
+   stedet for å klemme teksten sammen. */
+.form-intro { flex-wrap: wrap; }
+.form-intro p { flex: 1 1 260px; }
+.form-intro-action { margin-left: auto; white-space: nowrap; text-decoration: none; }
 
 /* Helhetsvurderingen - tre tilstander, satt av updateVerdict i js/godkjenningsvurdering.js. */
 .review-verdict {
@@ -3202,7 +3224,7 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
 
 @media print {
     /* Radene skal ikke kappes midt i (sjekkpunkt på én side, status og kommentar på neste). */
-    .review-row, .review-verdict, .review-intro { break-inside: avoid; page-break-inside: avoid; }
+    .review-row, .review-verdict, .form-intro { break-inside: avoid; page-break-inside: avoid; }
     .review-title-print { flex: 1; font-weight: 600; }
     .review-status-print { font-weight: 600; }
     .review-row[data-status="forbedring"] .review-status-print { color: #a01414; }
@@ -3214,5 +3236,452 @@ ul.equipment-simple-list { padding: 16px 20px 0; }
     .review-list-hint { display: none; }
     /* Fargene i helhetsvurderingen og på statusradene bærer selve konklusjonen - uten dette skriver
        Chrome dem ut som hvite bokser (samme grunn som ved .section-header lenger opp i filen). */
-    .review-verdict, .review-intro { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .review-verdict, .form-intro { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ============================================================================
+   NSM søknadskjema (nsm-soknad.html)
+   Bygget som en utfyllbar utgave av selve NSM-skjemaet: nummererte seksjoner med en
+   etikett-kolonne til venstre og verdien til høyre, slik at utskriften ligner papirskjemaet
+   framfor en nettside med inputbokser.
+   ============================================================================ */
+
+/* Seksjonsoverskriftene er tettere og i versaler her enn ellers på nettstedet - de tilsvarer de
+   nummererte overskriftsstripene i NSM-skjemaet, ikke en vanlig "boks-tittel". */
+.nsm-page .section { margin-bottom: 18px; }
+.nsm-page .section-header { padding: 9px 16px; }
+.nsm-page .section-header h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.nsm-row {
+    display: grid;
+    grid-template-columns: 230px 1fr;
+    border-top: 1px solid var(--border-color);
+}
+.nsm-rows > .nsm-row:first-child { border-top: none; }
+.nsm-row-label {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #333;
+    background: #fafbfc;
+    border-right: 1px solid var(--border-color);
+    /* Et langt, ubrutt ord i en etikett skal brekke om, ikke presse kolonnen bredere. */
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+.nsm-row-value { padding: 4px 8px; min-width: 0; }
+/* Feltene er uten synlig kantlinje til de får fokus - da ser raden ut som en utfylt skjemacelle
+   (slik den blir på papiret) i stedet for en nettside full av inputbokser, men det er fortsatt
+   tydelig hvor man skriver når man klikker. */
+.nsm-row-value input[type="text"],
+.nsm-row-value input[type="date"],
+.nsm-row-value textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.95rem;
+    color: #222;
+}
+.nsm-row-value textarea { resize: vertical; overflow: hidden; line-height: 1.5; display: block; }
+/* Enlinjefelt som likevel er <textarea> (se createUasBlock/createPersonRow og nsm-oneline i
+   js/nsm-soknad.js): en lang verdi brytes om og feltet vokser i høyden, i stedet for at teksten
+   forsvinner ut til siden slik den gjør i en vanlig <input>. Enter er slått av i JS, så feltet
+   oppfører seg ellers som en enlinjes inntasting. */
+/* "textarea.nsm-oneline", ikke bare ".nsm-oneline": regelen over (.nsm-row-value textarea) har
+   høyere spesifisitet og ville ellers ha beholdt resize: vertical, slik at enlinjefeltene fikk et
+   dra-håndtak i hjørnet de ikke har bruk for. */
+textarea.nsm-oneline { resize: none; overflow: hidden; }
+.nsm-row-value input:hover, .nsm-row-value textarea:hover { border-color: #e2e6ea; }
+.nsm-row-value input:focus, .nsm-row-value textarea:focus {
+    outline: none;
+    background: white;
+    border-color: var(--ffi-blue);
+    box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1);
+}
+@media (max-width: 600px) {
+    /* Etiketten legger seg over feltet på smal skjerm - 230 px etikettkolonne ville ellers presset
+       selve skrivefeltet ned til en stripe. */
+    .nsm-row { grid-template-columns: 1fr; }
+    .nsm-row-label { border-right: none; border-bottom: 1px solid var(--border-color); }
+}
+
+/* Knapperadene over og under skjemaet. .btn har bare en vannrett margin, så en vanlig tekstlinje med
+   knapper får ingen luft mellom radene når knappene brytes over flere linjer - derfor flex med gap,
+   som gir samme avstand begge veier. */
+.nsm-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+}
+.nsm-form-actions .btn { margin: 0; }
+
+/* Seksjoner med løpende tekst (formål, beskrivelse) og knapperaden under pilottabellen. */
+.nsm-block { padding: 16px; }
+/* Veiledning om hva som skal stå i feltet under - kun på skjermen (.no-print i HTML-en), den er en
+   instruks til den som fyller ut og skal ikke bli stående i selve søknaden. */
+.nsm-hint {
+    margin: 0 0 12px;
+    color: #777;
+    font-size: 0.87rem;
+    line-height: 1.5;
+}
+.nsm-textarea-lg {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 160px;
+    padding: 12px 14px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    resize: vertical;
+    overflow: hidden;
+}
+.nsm-textarea-lg:focus {
+    outline: none;
+    border-color: var(--ffi-blue);
+    box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1);
+}
+
+/* Kartutsnittet: droppsone med de to måtene å skaffe et kart på (last opp et bilde, eller tegn
+   området i kartverktøyet, se js/kart-tegner.js), deretter selve bildet med knappene for å bytte,
+   redigere tegningen eller fjerne det. */
+.nsm-map-drop {
+    border: 2px dashed #c7ced6;
+    border-radius: 8px;
+    padding: 28px 20px;
+    text-align: center;
+    color: #77808a;
+}
+.nsm-map-drop > i { font-size: 1.8rem; display: block; margin-bottom: 10px; }
+.nsm-map-drop p { margin: 0; font-size: 0.95rem; }
+.nsm-map-drop-hint { margin-top: 14px !important; font-size: 0.82rem; color: #9aa3ad; }
+.nsm-map-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 16px;
+}
+/* .btn har en egen sidemargin for knapperader på midten av siden - her styrer flex-gap avstanden. */
+.nsm-map-actions .btn { margin: 0; }
+/* Ett kartutsnitt i listen (det kan være flere, se renderMaps i js/nsm-soknad.js). */
+.nsm-map-item + .nsm-map-item { margin-top: 24px; }
+.nsm-map-item img {
+    display: block;
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+.nsm-map-item-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ffi-blue);
+    margin-bottom: 8px;
+}
+.nsm-map-item .nsm-map-actions { justify-content: flex-start; margin-top: 12px; }
+
+/* Ja/nei-spørsmålet om områdeeier. */
+.nsm-radio-group { display: flex; gap: 20px; padding: 8px 10px; }
+.nsm-radio { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; cursor: pointer; }
+.nsm-radio input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--ffi-blue); }
+
+/* Én blokk per UAS - tittelen ("UAS 1", "UAS 2") skiller dem fra hverandre når det er flere, og
+   sletteknappen ligger på samme linje til høyre (skjult når det bare finnes én blokk). */
+.nsm-uas-block + .nsm-uas-block { border-top: 8px solid var(--ffi-light-bg); }
+.nsm-uas-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px 6px;
+}
+.nsm-uas-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ffi-blue);
+}
+
+.nsm-contact-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* Faste kolonnebredder (table-layout: fixed): uten dem fordeler nettleseren bredden etter hva som
+   tilfeldigvis står i cellene, og kolonnene hopper i bredde mens man skriver. E-post får resten av
+   plassen, siden det er den lengste verdien. */
+.nsm-contact-table .col-role { width: 24%; }
+.nsm-contact-table th:nth-child(2), .nsm-contact-table td:nth-child(2) { width: 20%; }
+/* Telefon er den korteste verdien og får minst plass, slik at e-postkolonnen (den lengste) blir bred
+   nok til at en vanlig adresse står på én linje. */
+.nsm-contact-table th:nth-child(3), .nsm-contact-table td:nth-child(3) { width: 14%; }
+.nsm-contact-table .col-remove { width: 44px; text-align: center; }
+.nsm-contact-table th {
+    text-align: left;
+    padding: 9px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #444;
+    background: #fafbfc;
+    border-bottom: 1px solid var(--border-color);
+}
+.nsm-contact-table td { padding: 4px 8px; border-bottom: 1px solid var(--border-color); }
+/* Bare aller siste rad i tabellen skal mangle bunnlinje. Tabellen har TO <tbody> (de faste radene og
+   de som legges til), og en regel på "tr:last-child" alene ville truffet siste rad i BEGGE - da falt
+   streken mellom de faste radene og de tillagte bort, slik at radene fløt sammen. */
+.nsm-contact-table tbody:last-of-type tr:last-child td { border-bottom: none; }
+/* Kolonneskiller: feltene er uten synlig kantlinje (som i radene over), og uten disse strekene ville
+   en tom pilotrad sett ut som én stor, tom flate der det ikke går fram hvor navn slutter og telefon
+   begynner. Sletteknappens kolonne står utenfor - den er ikke en del av selve skjemaet. */
+.nsm-contact-table th + th:not(.col-remove),
+.nsm-contact-table td + td:not(.col-remove) { border-left: 1px solid var(--border-color); }
+.nsm-contact-table input[type="text"],
+.nsm-contact-table textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+.nsm-contact-table input:hover, .nsm-contact-table textarea:hover { border-color: #e2e6ea; }
+.nsm-contact-table input:focus, .nsm-contact-table textarea:focus {
+    outline: none;
+    background: white;
+    border-color: var(--ffi-blue);
+    box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1);
+}
+
+/* ---- Kartverktøyet (js/kart-tegner.js) ----
+   Egen dialog over siden med et canvas-kart man kan panorere, zoome og tegne et område i. Canvasen
+   er både visningen og det som eksporteres som bilde. */
+.mapdraw-overlay {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.mapdraw-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px 22px;
+    width: min(960px, 96vw);
+    max-height: 94vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+.mapdraw-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mapdraw-head h3 { margin: 0 0 10px; color: var(--ffi-blue); border-bottom: none; padding-bottom: 0; }
+.mapdraw-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: #9aa3ad;
+    cursor: pointer;
+}
+.mapdraw-close:hover { color: var(--ffi-blue); }
+/* Søkefeltet med forslagslisten under (se stedsnavnsøket i js/kart-tegner.js). */
+.mapdraw-search { position: relative; margin-bottom: 12px; }
+.mapdraw-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9aa3ad;
+    font-size: 0.9rem;
+    pointer-events: none;
+}
+.mapdraw-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 12px 9px 34px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.95rem;
+}
+.mapdraw-search-input:focus {
+    outline: none;
+    border-color: var(--ffi-blue);
+    box-shadow: 0 0 0 3px rgba(3, 71, 127, 0.1);
+}
+.mapdraw-suggest {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 5;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+}
+.mapdraw-suggest-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #f0f2f4;
+    padding: 9px 14px;
+    cursor: pointer;
+    font-family: 'Overpass', sans-serif;
+}
+.mapdraw-suggest-item:last-child { border-bottom: none; }
+.mapdraw-suggest-item:hover { background: var(--ffi-light-bg); }
+.mapdraw-suggest-name { font-size: 0.95rem; color: #222; }
+/* Stedstype, kommune og fylke - det som skiller to steder med samme navn fra hverandre. */
+.mapdraw-suggest-place { font-size: 0.8rem; color: #777; }
+.mapdraw-suggest-msg { padding: 10px 14px; font-size: 0.88rem; color: #777; }
+
+.mapdraw-canvas-wrap { position: relative; }
+.mapdraw-canvas {
+    display: block;
+    width: 100%;
+    /* Høyden styres av sideforholdet, og bredden av dialogen - det som vises på skjermen er nøyaktig
+       det bildet som lagres, så brukeren ser hele tiden hva utsnittet blir. */
+    aspect-ratio: 8 / 5;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #e8eef2;
+    cursor: crosshair;
+    touch-action: none; /* dra i kartet skal panorere, ikke scrolle siden bak */
+}
+.mapdraw-zoom { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; }
+.mapdraw-zoom-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: white;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--ffi-blue);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+.mapdraw-zoom-btn:hover { background: var(--ffi-light-bg); }
+/* Valg av bakgrunnskart, nede i venstre hjørne av kartet - gråtone er standard, se KART_DEFAULT_LAYER
+   i js/kart-tegner.js. */
+.mapdraw-layers {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    display: flex;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+.mapdraw-layer-btn {
+    border: 1px solid var(--border-color);
+    background: white;
+    color: #555;
+    font-family: 'Overpass', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 7px 12px;
+    cursor: pointer;
+}
+.mapdraw-layer-btn + .mapdraw-layer-btn { border-left: none; }
+.mapdraw-layer-btn:hover { background: var(--ffi-light-bg); }
+.mapdraw-layer-btn.active { background: var(--ffi-blue); border-color: var(--ffi-blue); color: white; }
+/* Varsel om manglende kartfliser: en smal stripe øverst i kartet, ikke et dekkende lag - kartet under
+   skal fortsatt kunne brukes og leses (se kommentaren ved elementet i js/kart-tegner.js). */
+.mapdraw-offline {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 60px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: #fdf1ef;
+    border: 1px solid #e6b7b0;
+    border-radius: 6px;
+    color: #a01414;
+    font-size: 0.87rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+.mapdraw-hint { margin: 10px 0 14px; font-size: 0.85rem; color: #777; }
+.mapdraw-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.mapdraw-actions .btn { margin: 0; }
+.mapdraw-actions-spacer { flex: 1; }
+
+/* Fargevelger for området som tegnes - selve knappen ER fargen, så den trenger ingen etikett (navnet
+   ligger i title-attributtet). Den valgte fargen får en tydelig ring rundt seg. */
+.mapdraw-colors { display: flex; gap: 6px; margin-right: 4px; }
+.mapdraw-color-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 0 0 1px var(--border-color);
+    cursor: pointer;
+    padding: 0;
+}
+.mapdraw-color-btn:hover { box-shadow: 0 0 0 2px #9aa3ad; }
+.mapdraw-color-btn.active { box-shadow: 0 0 0 3px var(--ffi-blue); }
+
+@media print {
+    /* Korte seksjoner holdes samlet (arvet fra den generelle .section-regelen lenger opp), men en
+       seksjon med løpende tekst eller et kartutsnitt kan fint være høyere enn det som er igjen av
+       siden - da skal den brekke naturlig i stedet for å dyttes i sin helhet til neste side og
+       etterlate et stort hull. Enkeltradene beskyttes hver for seg under. */
+    .nsm-page .section:has(.nsm-block) { break-inside: auto; page-break-inside: auto; }
+    .nsm-row, .nsm-contact-table tr { break-inside: avoid; page-break-inside: avoid; }
+    /* Etikettkolonnen og tabellhodet er lyse flater med mening (de skiller etikett fra verdi) -
+       uten dette dropper Chrome bakgrunnen og radene flyter sammen på papiret. */
+    .nsm-row-label, .nsm-contact-table th {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    /* Verdien står som ren tekst i cellen (fylt av syncPrintFields) - block, ikke inline, slik at
+       lange verdier bryter pent innenfor cellen i stedet for å presse raden bredere. */
+    .nsm-row-value .print-value,
+    .nsm-block .print-value {
+        display: block !important;
+        padding: 8px 10px;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    /* Bevarer avsnitt og linjeskift fra tekstfeltene i stedet for å slå alt sammen til én lang linje. */
+    .print-value-multiline { white-space: pre-line; }
+    .nsm-block .print-value { padding: 0; }
+    .nsm-contact-table td .print-value { display: block !important; padding: 6px 10px; }
+    .nsm-contact-table tr.row-empty-print { display: none !important; }
+    /* Hvert kartutsnitt skal få plass på siden det står på, ikke sprenge arket - og ikke deles i to
+       av et sideskift, slik at halve kartet havner på neste side. Med flere utsnitt brekker listen
+       mellom bildene i stedet. */
+    /* Skillet mellom to UAS-blokker er en tykk, lys stripe på skjermen. På papiret ser den ut som et
+       hakk i tabellen - der holder det med den samme tynne streken som skiller radene ellers. */
+    .nsm-uas-block + .nsm-uas-block { border-top: 1px solid var(--border-color); }
+    .nsm-uas-head { padding-top: 10px; }
+    .nsm-map-item { break-inside: avoid; page-break-inside: avoid; }
+    .nsm-map-item img { max-height: 120mm; width: auto; max-width: 100%; margin: 0 auto; }
+    .nsm-map-item + .nsm-map-item { margin-top: 10mm; }
+    .nsm-map-item-title { margin-bottom: 4px; }
+    .nsm-page .section { box-shadow: none; }
 }

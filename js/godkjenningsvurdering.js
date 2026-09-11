@@ -489,7 +489,10 @@ function closeGuide() {
 /* ---------- Lagring, eksport og import ---------- */
 
 function getState() {
-    const state = { skjema: "Vurdering av godkjenninger", __version: STATE_VERSION, felt: {}, punkter: {} };
+    // "skjema" er kun en merkelapp i den nedlastede JSON-filen (til hjelp for et menneske som åpner
+    // den) - innlasting gjenkjenner filen på "punkter", ikke på dette navnet, så eldre filer lastet
+    // ned mens skjemaet het "Vurdering av godkjenninger" importeres fortsatt uten problemer.
+    const state = { skjema: "Vurdering av aktivitet", __version: STATE_VERSION, felt: {}, punkter: {} };
     FIELD_IDS.forEach(function (id) {
         const el = document.getElementById(id);
         if (el) state.felt[id] = el.value;
@@ -559,7 +562,7 @@ function buildStandardFilename() {
     const subject = sanitizeForFilename(document.getElementById("reviewSubject").value) || "Uten navn";
     const applicant = sanitizeForFilename(document.getElementById("reviewApplicant").value) || "Ukjent søker";
     const date = formatDateForFilename(document.getElementById("reviewDate").value) || "udatert";
-    return "Vurdering av godkjenning - " + subject + " - " + applicant + " - " + date;
+    return "Vurdering av aktivitet - " + subject + " - " + applicant + " - " + date;
 }
 
 function downloadJson(filename, dataObj) {

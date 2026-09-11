@@ -36,14 +36,18 @@ document.addEventListener("DOMContentLoaded", function() {
             ]
         },
         {
-            // Het tidligere "Risikovurdering" - omdøpt til "Godkjenning for å fly" (brukerønske: mer
-            // beskrivende for hva verktøyene under faktisk brukes til). Selve filnavnet
-            // risikovurdering.html er bevisst IKKE endret - eventuelle bokmerker og delte lenker til
-            // oversikten skal fortsatt virke.
-            name: "Godkjenning for å fly", icon: "fa-circle-check", children: [
+            // Het tidligere "Risikovurdering", deretter en kort periode "Godkjenning for å fly" -
+            // nå "Godkjenning av aktivitet", samme ordbruk som FFIs egne styrende dokumenter
+            // ("godkjenning av UAS-aktivitet"; UAS er underforstått i en UAS-portal). Underpunktet
+            // heter "Vurdering av aktivitet" av samme grunn: det er selve AKTIVITETEN operativ leder
+            // vurderer, godkjenningen er resultatet - "vurdering av godkjenninger" ble sirkulært.
+            // Filnavnene risikovurdering.html og godkjenningsvurdering.html er bevisst IKKE endret -
+            // eventuelle bokmerker og delte lenker skal fortsatt virke.
+            name: "Godkjenning av aktivitet", icon: "fa-circle-check", children: [
                 { name: "Oversikt", link: "risikovurdering.html", icon: "fa-house" },
                 { name: "Sjekkliste-bygger", link: "sjekkliste-bygger.html", icon: "fa-list-check" },
-                { name: "Vurdering av godkjenninger", link: "godkjenningsvurdering.html", icon: "fa-clipboard-check" }
+                { name: "Vurdering av aktivitet", link: "godkjenningsvurdering.html", icon: "fa-clipboard-check" },
+                { name: "NSM søknadskjema", link: "nsm-soknad.html", icon: "fa-file-signature" }
             ]
         }
         // Legg til flere sider her etter hvert, f.eks.:
