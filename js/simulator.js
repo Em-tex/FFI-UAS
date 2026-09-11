@@ -927,10 +927,10 @@ const EXERCISES = {
         // oppfølgingsrunder: (1) selve strekliste-graderingen erstattet av en egen ikon-LISTE
         // (#exerciseDetailMedalRow, se medalThresholdRowHtml/showExerciseDetail - "Legg til ikoner med
         // gull, sølv og bronsje medalje/pokaler", "de medaljene må stå på liste") i stedet for tekst. (2)
-        // åpningssetningen om banelayouten kuttet helt. (3) platinum-teksten flyttet til exercise.medalNote
-        // (EGEN felt, IKKE en del av selve fullDescription) - vises av showExerciseDetail rett UNDER
-        // ikon-listen (brukeren: "over teksten '...' - må stå OVER medaljesetningen, ikke i samme
-        // avsnitt lenger, se den nye #exerciseDetailMedalNote-plasseringen i simulator.html). (4)
+        // åpningssetningen om banelayouten kuttet helt. (3) platinum-teksten flyttet UT av fullDescription
+        // og vises av showExerciseDetail rett UNDER ikon-listen (brukeren: "over teksten '...' - må stå OVER
+        // medaljesetningen, ikke i samme avsnitt lenger", se #exerciseDetailMedalNote i simulator.html). Den
+        // sto en tid som et medalNote-felt her, men genereres nå av medalNoteFor for alle tre racingbanene. (4)
         // "Spawner i Racing-klasse, Acro-modus og FPV-kamera." kuttet helt (brukeren) - fra ALLE fire
         // Acro-tidsaktivitetenes fullDescription (race1/race3/raceTunnel/targetStrike), ikke bare denne.
         fullDescription: "Klokken starter automatisk idet du krysser start/mål-porten (svart/hvitt " +
@@ -938,9 +938,6 @@ const EXERCISES = {
             "alle de andre portene i rekkefølge og kommer tilbake til samme port. Du kan fly så mange " +
             "runder du vil - hver fullførte runde havner i ledertavlen (lagres lokalt i nettleseren), " +
             "med beste tid øverst.",
-        medalNote: "Sammen med de tre andre tidsaktivitetene avgjør den dårligste medaljen din samlede " +
-            "Acro-bekreftelse. Slår du 0:26.46 får du i tillegg platinum - ny rekord, ta skjermbilde og " +
-            "send det til rpas@ffi.no.",
         // Ikke noTiming (ex11 sin variant) - racing har en helt egen, løpende klokke (se
         // updateExerciseHud/raceStartTime), bare vist annerledes enn de vanlige øvelsenes tidtaking.
         stages: [{ id: "race-lap", label: "Racingbane", type: "racing", lapsRequired: 1 }]
@@ -7021,6 +7018,13 @@ function resetDrone() {
     // Gass er en ikke-selvsentrerende "holdt" verdi på tastatur - må nullstilles eksplisitt ved reset,
     // ellers tar droneen av igjen umiddelbart. (Gamepad overskriver denne uansett neste frame.)
     inputState.stick.throttle = 0;
+    // Linjen over er en PROGRAMSTYRT pinneendring, ikke pilotens - og resultatkortets ekstratid tolker
+    // pinnebevegelse som "nå flyr han" (se updateRaceResultPopup). Punkt-til-punkt- og fleirundersbanene
+    // resetter dronen nettopp mens det kortet står, så uten dette ville et rekordkort forsvunnet av seg
+    // selv i samme øyeblikk. Baselinen forkastes i stedet og samples på nytt etter resetten. (I dag
+    // kjører updateExercise før updateRaceResultPopup i animate, så rekkefølgen redder oss allerede -
+    // men det er en usynlig avhengighet å basere seg på, og feilen den skjuler er vanskelig å se.)
+    raceResultPopupStick = null;
     droneState.batteryPercent = 100;
     droneState.injured = false;
     droneState.injuredTarget = null;
@@ -8860,7 +8864,7 @@ function handleResetRequest() {
     // på en eksplisitt tastetrykk), IKKE etterlate en foreldet, senere avfyrt automatisk reset OG la
     // resultat-kortet henge synlig igjen på skjermen etter at dronen alt har flyttet seg.
     exerciseState.raceFinishPendingUntil = 0;
-    if (raceResultPopupUntil) { raceResultPopupUntil = 0; raceResultPopupEl.classList.remove("show"); }
+    if (raceResultPopupUntil) hideRaceResultPopup();
     if (!exerciseState.active) {
         resetDrone();
         return;
@@ -10358,6 +10362,14 @@ function acroRunResultMessage(id, timeSec, medal, resultLabel) {
 // egen "NY REKORD!"-linje (tier-platinum) - tydelig mer staffasje jo bedre resultatet er, ikke bare en
 // tekstforskjell mellom nivåene.
 const RACE_RESULT_POPUP_MS = 4500;
+// "platinum medaljen som dukker opp etter mål når man har slått rekorden. kan henge oppe 10 sekunder
+// ekstra" (brukeren). En slått rekord er sjelden OG skal dokumenteres - kortet ber selv om skjermbilde
+// (raceResultRecordTextEl under) - så det trenger mer enn de 4,5 sekundene et vanlig resultat får.
+// Lagt i showRaceResultPopup, ikke på kallstedene, så både racingbanene og targetStrike får det likt.
+// Gjelder KUN isNewRecord, ikke medaljen i seg selv: platinum uten kjent rekord å slå finnes ikke i dag
+// (acroMedalForTime deler bare ut platinum når ACRO_RECORD_SEC har en nøkkel), men skulle det endre seg
+// er det den faktiske rekorden som fortjener ekstratiden, ikke fargen på medaljen.
+const RACE_RESULT_RECORD_EXTRA_MS = 10000;
 const raceResultPopupEl = document.getElementById("raceResultPopup");
 const raceResultMedalIconEl = document.getElementById("raceResultMedalIcon");
 const raceResultLabelEl = document.getElementById("raceResultLabel");
@@ -10365,6 +10377,20 @@ const raceResultTimeEl = document.getElementById("raceResultTime");
 const raceResultMedalTextEl = document.getElementById("raceResultMedalText");
 const raceResultRecordTextEl = document.getElementById("raceResultRecordText");
 let raceResultPopupUntil = 0; // 0 = ingen popup vises - ellers tidspunktet den skal skjules igjen
+// Den GARANTERTE delen av visningen (alltid displayMs). Ekstratiden en slått rekord får på toppen
+// (RACE_RESULT_RECORD_EXTRA_MS) kan avbrytes av pinnebevegelse - se updateRaceResultPopup - men denne
+// delen kan ikke det. Uten et slikt gulv ville kortet blinket bort med det samme på enkeltrunde-banen,
+// der piloten krysser målporten i full fart og fortsatt står på pinnene.
+let raceResultPopupHoldUntil = 0;
+// Pinnestillingen slik den var da ekstratiden begynte, samplet FØRST da (ikke da kortet kom opp) - under
+// den garanterte tiden flyr piloten uansett videre, så en baseline derfra hadde vært utgått med en gang.
+let raceResultPopupStick = null;
+function hideRaceResultPopup() {
+    raceResultPopupUntil = 0;
+    raceResultPopupHoldUntil = 0;
+    raceResultPopupStick = null;
+    raceResultPopupEl.classList.remove("show");
+}
 function showRaceResultPopup(resultLabel, timeSec, medal, isNewRecord, displayMs) {
     raceResultLabelEl.textContent = resultLabel + " fullført!";
     raceResultTimeEl.textContent = formatExerciseTime(timeSec, 2);
@@ -10379,17 +10405,42 @@ function showRaceResultPopup(resultLabel, timeSec, medal, isNewRecord, displayMs
     raceResultRecordTextEl.textContent = isNewRecord ?
         "NY REKORD! Ta skjermbilde og send til rpas@ffi.no for dokumentasjon." : "";
     raceResultPopupEl.classList.add("show");
-    raceResultPopupUntil = performance.now() + displayMs;
+    const now = performance.now();
+    raceResultPopupHoldUntil = now + displayMs;
+    raceResultPopupUntil = raceResultPopupHoldUntil + (isNewRecord ? RACE_RESULT_RECORD_EXTRA_MS : 0);
+    raceResultPopupStick = null;
 }
 // Kalt fra animate() (samme "sjekk hvert bilde"-mønster som exerciseWarningBanner) - skjuler popup-kortet
-// igjen når displayMs er over. Selve dronresetten (raceFinishPendingUntil) er en HELT separat tidtaking i
-// updateRacingStage - de to har bevisst samme varighet (RACE_RESULT_POPUP_MS) i dag, men er ikke koblet
-// sammen, så en fremtidig justering av den ene ikke ved et uhell endrer den andre.
+// igjen når tiden er ute. Selve dronresetten (raceFinishPendingUntil) er en HELT separat tidtaking i
+// updateRacingStage - de to er IKKE koblet sammen. De deler grunnvarighet (RACE_RESULT_POPUP_MS), men en
+// slått rekord forlenger bare KORTET (RACE_RESULT_RECORD_EXTRA_MS), ikke resetten - dronen settes tilbake
+// til start som vanlig mens kortet blir hengende, og en manuell R fjerner kortet med det samme (se
+// handleResetRequest), så ingen blir sittende fast og vente på at det forsvinner.
+//
+// Ekstratiden viker for flyging, på samme måte som oppgaveteksten gjør det (se maybeDismissStartHint,
+// samme EXERCISE_HINT_STICK_DELTA-terskel - det er det samme spørsmålet: flyr han nå?). Grunnen er
+// enkeltrunde-banen: den resetter IKKE dronen etter mål (se updateRacingStage), så piloten flyr videre
+// mens kortet står sentrert og nesten ugjennomsiktig midt i FPV-bildet. Står man stille for å lese eller
+// ta skjermbilde, får man hele ekstratiden; gir man gass igjen, slipper kortet taket med det samme.
+// Vanlige resultater (bronse/sølv/gull) har ingen ekstratid, så for dem gjør denne grenen ingenting -
+// holdUntil og popupUntil er da like, og den første testen fanger alt.
 function updateRaceResultPopup(now) {
-    if (raceResultPopupUntil && now >= raceResultPopupUntil) {
-        raceResultPopupUntil = 0;
-        raceResultPopupEl.classList.remove("show");
+    if (!raceResultPopupUntil) return;
+    if (now >= raceResultPopupUntil) { hideRaceResultPopup(); return; }
+    if (now < raceResultPopupHoldUntil) return;
+    const s = inputState.stick;
+    // Kopi, ikke referanse - inputState.stick muteres i hvert bilde, så en referanse ville alltid
+    // sammenlignet pinnen med seg selv og aldri registrert noen bevegelse.
+    if (!raceResultPopupStick) {
+        raceResultPopupStick = { roll: s.roll, pitch: s.pitch, yaw: s.yaw, throttle: s.throttle };
+        return;
     }
+    const base = raceResultPopupStick;
+    const flyr = Math.abs(s.roll - base.roll) > EXERCISE_HINT_STICK_DELTA ||
+        Math.abs(s.pitch - base.pitch) > EXERCISE_HINT_STICK_DELTA ||
+        Math.abs(s.yaw - base.yaw) > EXERCISE_HINT_STICK_DELTA ||
+        Math.abs(s.throttle - base.throttle) > EXERCISE_HINT_STICK_DELTA;
+    if (flyr) hideRaceResultPopup();
 }
 
 function updateRacingStage(stage, dt, now) {
@@ -10509,18 +10560,17 @@ const ACRO_MEDAL_THRESHOLDS = {
     targetStrike: { gold: 150, silver: 180, bronze: 260 }
 };
 // Platinum: KUN for de banene der en ekte, kjent rekord finnes å slå - operativ leder UAS sine egne
-// rekorder (0:26.46 på enkeltrundebanen, 1:23.10 på tre runder-banen, 0:47.97 på Til topps), IKKE en
+// rekorder (0:26.05 på enkeltrundebanen, 1:23.10 på tre runder-banen, 0:47.97 på Til topps), IKKE en
 // vanlig spillers personlige beste (brukeren, presisert: "det skal ikke bli platinum. Det er kun hvis
 // man slår operativ leder UAS sine rekorder som blir platinum" - se også acroDiplomaOverlay sin note i
 // simulator.html, som tidligere feilaktig omtalte dette som "dine egne rekorder"). targetStrike er den
 // eneste banen uten en etablert rekord ennå - den får ikke et platinum-nivå før en reell referansetid
 // finnes (legg til nøkkelen her den dagen det er aktuelt).
-// race1 hevet fra 26.12 til 26.46: 26.12 ble satt på den gamle racingdronen (store propeller). Etter at
-// rammen ble skalert ned (visualScale 0.52) og skyvet satt tilbake til 18 N er 26.46 operativ leders
-// beste tid på dagens fysikk. Grensen er streng (timeSec < record under), så selve 26.46-runden gir ikke
-// platinum - den må slås. race3 satt ned tilsvarende, fra 84.05 til 83.10 (1:23.10) - samme grunn,
-// samme bane, bare tre sammenhengende runder.
-const ACRO_RECORD_SEC = { race1: 26.46, race3: 83.10, raceTunnel: 47.97 };
+// Grensene er strenge (timeSec < record under): tiden i tabellen gir IKKE selv platinum, den må slås.
+// Alle tre er satt på dagens fysikk (visualScale 0.52, 18 N). Den gamle 26.12-tiden på enkeltrunde ble
+// satt på den forrige racingdronen med store propeller og er ikke sammenlignbar - se racing-klassens
+// kommentar øverst i filen.
+const ACRO_RECORD_SEC = { race1: 26.05, race3: 83.10, raceTunnel: 47.97 };
 const ACRO_MEDAL_RANK = { bronze: 1, silver: 2, gold: 3, platinum: 4 };
 const ACRO_MEDAL_LABELS_NB = { bronze: "bronse", silver: "sølv", gold: "gull", platinum: "platinum" };
 function acroMedalLabel(medal) { return ACRO_MEDAL_LABELS_NB[medal] || ""; }
@@ -10538,6 +10588,20 @@ function medalThresholdRowHtml(id) {
     return item("gold", "under " + formatExerciseTime(t.gold, 0)) +
         item("silver", formatExerciseTime(t.gold, 0) + "–" + formatExerciseTime(t.silver, 0)) +
         item("bronze", formatExerciseTime(t.silver, 0) + "–" + formatExerciseTime(t.bronze, 0));
+}
+// Platinum-setningen under medalje-ikonlisten i øvelsesdetaljene (#exerciseDetailMedalNote). Brukeren:
+// "Hver øvelsesbeskrivelse for de 3 racingbanene må nevne hva plat rekorden er" - før dette sto teksten
+// håndskrevet på race1 alene, så race3 og raceTunnel hadde et platinum-nivå piloten aldri fikk vite om.
+// Bygget AV ACRO_RECORD_SEC i stedet for skrevet inn på hver øvelse: rekordene byttes ut hver gang noen
+// slår dem, og tre håndskrevne kopier ville før eller siden vist en tid tabellen ikke lenger bruker.
+// Returnerer "" for aktiviteter uten kjent rekord (targetStrike i dag) - de har ikke noe platinum-nivå
+// å fortelle om, og da skjules raden helt av kallstedet.
+function medalNoteFor(id) {
+    const record = ACRO_RECORD_SEC[id];
+    if (record === undefined) return "";
+    return "Sammen med de tre andre tidsaktivitetene avgjør den dårligste medaljen din samlede " +
+        "Acro-bekreftelse. Slår du " + formatExerciseTime(record, 2) + " får du i tillegg platinum - " +
+        "ny rekord, ta skjermbilde og send det til rpas@ffi.no.";
 }
 // Under bronsegrensen fullføres aktiviteten fortsatt (tiden logges i ledertavlen som vanlig, se
 // finishTimedAcroRun), men den teller ikke som gradert ennå i utsjekk-sammenheng - returnerer null.
@@ -11268,11 +11332,13 @@ function showExerciseDetail(id) {
     const medalRowHtml = medalThresholdRowHtml(id);
     medalRowEl.innerHTML = medalRowHtml;
     medalRowEl.style.display = medalRowHtml ? "" : "none";
-    // exercise.medalNote (valgfritt, se race1) - egen kort tekst (platinum-rekorden osv.) vist rett UNDER
-    // selve medalje-ikon-listen over, IKKE som en del av selve fullDescription-avsnittet lenger.
+    // Platinum-setningen (se medalNoteFor) vist rett UNDER selve medalje-ikon-listen over, IKKE som en del
+    // av fullDescription-avsnittet. exercise.medalNote finnes fortsatt som overstyring for en øvelse som
+    // trenger en annen tekst enn den genererte - ingen bruker den i dag.
     const medalNoteEl = document.getElementById("exerciseDetailMedalNote");
-    medalNoteEl.textContent = exercise.medalNote || "";
-    medalNoteEl.style.display = exercise.medalNote ? "" : "none";
+    const medalNote = exercise.medalNote || medalNoteFor(id);
+    medalNoteEl.textContent = medalNote;
+    medalNoteEl.style.display = medalNote ? "" : "none";
     // Direkte snarvei til kalibreringspanelet for øvelser som krever en fysisk kill-bryter (kun ex11 pt.
     // nå) - vises UANSETT om bryteren allerede er bundet eller ikke (i motsetning til gateBlocked-
     // varselet under, som kun vises når den IKKE er det) - praktisk å ha lett tilgjengelig for å
